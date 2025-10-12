@@ -1,0 +1,546 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import "./ui-grid.css";
+import "./index.css";
+
+/** =========================
+ *  Types
+ *  ========================= */
+type SupplierId = "cmj" | "trl" | "mdz";
+type ColorMode = "solid" | "checker";
+type Unit = "mm" | "in";
+
+interface Ring {
+  row: number;
+  col: number;
+  x: number;       // world coordinates (pre-projection)
+  y: number;       // world coordinates (pre-projection)
+  radius: number;  // inner radius (ID/2)
+  color?: string;
+  previewColor?: string;
+  supplier?: SupplierId;
+}
+
+interface Params {
+  rows: number;
+  cols: number;
+  innerDiameter: number;   // mm (or in if unit==="in")
+  wireDiameter: number;    // mm
+  overlapX: number;        // percent overlap (0..1) -> controls pitchX
+  overlapY: number;        // percent overlap (0..1) -> controls pitchY
+  colorMode: ColorMode;
+  ringColor: string;
+  altColor: string;
+  bgColor: string;
+  supplier: SupplierId;
+  ringSpec: string;
+  unit: Unit;
+}
+
+/** =========================
+ *  Defaults & Data
+ *  ========================= */
+const DEFAULTS: Params = {
+  rows: 10,
+  cols: 14,
+  innerDiameter: 6.35, // 1/4"
+  wireDiameter: 1.6,   // ~16 swg
+  overlapX: 0.33,      // helps push into E4-1 look
+  overlapY: 0.20,
+  colorMode: "solid",
+  ringColor: "#9aa4ad",
+  altColor: "#59616a",
+  bgColor: "#0b0f14",
+  supplier: "cmj",
+  ringSpec: `1/4" 16swg AR~4.0`,
+  unit: "mm",
+};
+
+const SUPPLIER_COLORS: Record<
+  SupplierId,
+  { supplier: SupplierId; name: string; hex: string }[]
+> = {
+  cmj: [
+    { supplier: "cmj", name: "Bright Aluminum", hex: "#C0C0C0" },
+    { supplier: "cmj", name: "Black", hex: "#000000" },
+    { supplier: "cmj", name: "Gold", hex: "#FFD700" },
+    { supplier: "cmj", name: "Silver", hex: "#B8B8B8" },
+    { supplier: "cmj", name: "Blue", hex: "#0A58FF" },
+    { supplier: "cmj", name: "Kelly Green", hex: "#4CBB17" },
+    { supplier: "cmj", name: "Violet", hex: "#8F00FF" },
+    { supplier: "cmj", name: "Orange", hex: "#FF8C00" },
+  ],
+  trl: [
+    { supplier: "trl", name: "Black Ice", hex: "#1D1F2B" },
+    { supplier: "trl", name: "Frost", hex: "#D4D4D4" },
+    { supplier: "trl", name: "Dark Rose", hex: "#A05056" },
+    { supplier: "trl", name: "Royal Blue", hex: "#4169E1" },
+  ],
+  mdz: [
+    { supplier: "mdz", name: "Aluminum", hex: "#C0C0C0" },
+    { supplier: "mdz", name: "Black", hex: "#000000" },
+    { supplier: "mdz", name: "Silver", hex: "#B8B8B8" },
+  ],
+};
+
+/** =========================
+ *  Helper functions
+ *  ========================= */
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
+const hexToRgb = (hex: string) => {
+  const s = hex.replace("#", "");
+  const n = parseInt(s, 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+};
+
+function lightenColor(hex: string, amount: number) {
+  const { r, g, b } = hexToRgb(hex);
+  const mix = (c: number) => Math.min(255, Math.floor(c + (255 - c) * amount));
+  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+}
+function darkenColor(hex: string, amount: number) {
+  const { r, g, b } = hexToRgb(hex);
+  const mix = (c: number) => Math.max(0, Math.floor(c * (1 - amount)));
+  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+}
+
+/** small utility to see if canvas has more than just background (not used now, handy later) */
+function canvasHasNonBgContent(canvas: HTMLCanvasElement, bgHex: string, samples = 12): boolean {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return false;
+  const { width: w, height: h } = canvas;
+  const data = ctx.getImageData(0, 0, w, h).data;
+  const { r: br, g: bg, b: bb } = hexToRgb(bgHex);
+  const bgRGB: [number, number, number] = [br, bg, bb];
+  const close = (a: [number, number, number], b: [number, number, number], tol = 8) =>
+    Math.abs(a[0] - b[0]) <= tol &&
+    Math.abs(a[1] - b[1]) <= tol &&
+    Math.abs(a[2] - b[2]) <= tol;
+
+  for (let i = 0; i < samples; i++) {
+    const x = Math.floor(((i % 4) + 0.5) * (w / 4));
+    const y = Math.floor((Math.floor(i / 4) + 0.5) * (h / 3));
+    const idx = (y * w + x) * 4;
+    const rgb: [number, number, number] = [data[idx], data[idx + 1], data[idx + 2]];
+    if (!close(rgb, bgRGB)) return true;
+  }
+  return false;
+}
+
+/** =========================
+ *  Geometry (European 4-in-1)
+ *  ========================= */
+// Pitch: we derive from desired overlap. A slightly denser horizontal pitch and a
+// smaller vertical pitch (with half-offset on odd rows) yields E4-1 look.
+function pitches(p: Params) {
+  const base = p.innerDiameter + p.wireDiameter;
+  const pitchX = base * (1 - p.overlapX); // tighter horizontally
+  const pitchY = base * (0.55 + (1 - p.overlapY) * 0.2); // a bit denser vertically
+  return { pitchX, pitchY };
+}
+
+function worldSize(p: Params) {
+  const { pitchX, pitchY } = pitches(p);
+  const width = (p.cols - 1) * pitchX + p.innerDiameter;
+  const height = (p.rows - 1) * pitchY + p.innerDiameter;
+  return { width, height };
+}
+
+function generateRings(p: Params): Ring[] {
+  const rings: Ring[] = [];
+  const { pitchX, pitchY } = pitches(p);
+  const radius = p.innerDiameter / 2;
+
+  for (let row = 0; row < p.rows; row++) {
+    // Half-offset every other row (brick pattern)
+    const rowOffsetX = (row % 2 === 0 ? 0 : pitchX / 2);
+    for (let col = 0; col < p.cols; col++) {
+      const x = col * pitchX + rowOffsetX;
+      const y = row * pitchY;
+      rings.push({ row, col, x, y, radius });
+    }
+  }
+  return rings;
+}
+
+/** =========================
+ *  Main App
+ *  ========================= */
+export default function App() {
+  // Params and rings
+  const [params, setParams] = useState<Params>(DEFAULTS);
+  const [rings, setRings] = useState<Ring[]>(() => generateRings(DEFAULTS));
+
+  // Selection + paint
+  const [selected, setSelected] = useState<Ring | null>(null);
+  const [paintMode, setPaintMode] = useState(false);
+  const [eraseMode, setEraseMode] = useState(false);
+  const [isPainting, setIsPainting] = useState(false);
+  const [currentBrush, setCurrentBrush] = useState("#C0C0C0");
+
+  // View transforms
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const panStart = useRef<{ x: number; y: number } | null>(null);
+
+  // Canvas
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Derived world size and padding
+  const { worldW, worldH, pad } = useMemo(() => {
+    const { width, height } = worldSize(params);
+    const pad = Math.max(40, params.innerDiameter * 2);
+    return { worldW: width, worldH: height, pad };
+  }, [params]);
+
+  /** ===== Fit to screen on mount & when rows/cols change ===== **/
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    const fit = () => {
+      const { width, height } = worldSize(params);
+      const rect = canvasRef.current!.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      const padPx = 100;
+      const scaleX = (rect.width - padPx) / width;
+      const scaleY = (rect.height - padPx) / height;
+      setScale(Math.max(0.05, Math.min(scaleX, scaleY)));
+      setOffset({ x: 0, y: 0 });
+    };
+    // wait 1 RAF so the canvas actually has its layout size
+    requestAnimationFrame(fit);
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [params.rows, params.cols]);
+
+  /** ===== Size canvas to full window & draw whenever inputs change ===== **/
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    canvas.style.width = `${window.innerWidth}px`;
+    canvas.style.height = `${window.innerHeight}px`;
+    canvas.width = Math.round(window.innerWidth * dpr);
+    canvas.height = Math.round(window.innerHeight * dpr);
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    draw(ctx, window.innerWidth, window.innerHeight);
+  }, [rings, params, scale, offset, worldW, worldH]);
+
+  /** ===== Helpers for hit-testing and coordinate transforms ===== **/
+  function screenToWorld(clientX: number, clientY: number) {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    // Centered canvas coords -> world coords
+    const sx = clientX - rect.left - rect.width / 2;
+    const sy = clientY - rect.top - rect.height / 2;
+    // reverse of: translate to center, scale, translate offset and center world
+    return {
+      x: sx / scale - offset.x + worldW / 2,
+      y: sy / scale - offset.y + worldH / 2,
+    };
+  }
+
+  function hitTest(wx: number, wy: number): Ring | null {
+    const tol = params.wireDiameter * 0.75;
+    for (const r of rings) {
+      const dx = wx - r.x;
+      const dy = wy - r.y;
+      if (Math.sqrt(dx * dx + dy * dy) <= r.radius + tol) return r;
+    }
+    return null;
+  }
+
+
+  /** =========================
+   *  Drawing
+   *  ========================= */
+  function draw(ctx: CanvasRenderingContext2D, cssW: number, cssH: number) {
+    // Background
+    ctx.save();
+    ctx.clearRect(0, 0, cssW, cssH);
+    ctx.fillStyle = params.bgColor;
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    // View transform
+    ctx.translate(cssW / 2, cssH / 2);
+    ctx.scale(scale, scale);
+    ctx.translate(offset.x - worldW / 2, offset.y - worldH / 2);
+
+    // Visual squash to suggest perspective
+    const SQUASH_Y = 0.75;
+
+    // Config for the ring look
+    const wire = params.wireDiameter / 2; // ring band thickness /2
+    const gapAngle = Math.PI / 7;         // the "open slit" size (in radians), centered at 0 (east)
+    const topHalf: [number, number]   = [gapAngle / 2, Math.PI - gapAngle / 2];
+    const bottomHalf: [number, number]= [Math.PI + gapAngle / 2, 2 * Math.PI - gapAngle / 2];
+
+    // Utility: draw a band (donut slice) from start..end in world units
+    function drawBand(r: Ring, start: number, end: number, color: string) {
+      const R = r.radius;
+      const outerR = R + wire;
+      const innerR = Math.max(0.5, R - wire);
+
+      ctx.beginPath();
+      ctx.arc(0, 0, outerR, start, end, false);
+      ctx.arc(0, 0, innerR, end, start, true);
+      ctx.closePath();
+
+      // Subtle metallic grad that preserves the actual ring color
+      const grad = ctx.createRadialGradient(0, 0, innerR, 0, 0, outerR);
+      grad.addColorStop(0, lightenColor(color, 0.28));
+      grad.addColorStop(0.55, color);
+      grad.addColorStop(1, darkenColor(color, 0.22));
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Crisp outer line
+      ctx.strokeStyle = "rgba(0,0,0,0.9)";
+      ctx.lineWidth = Math.max(0.1, wire * 0.55);
+      ctx.stroke();
+    }
+
+    // Which half is "over" vs "under"?  We alternate by parity -> classic E4-1
+    // Even parity rings draw TOP on pass=1 (over), BOTTOM on pass=0 (under).
+    // Odd parity rings do the opposite.
+    const parityOverIsTop = (row: number, col: number) => ((row + col) % 2 === 0);
+
+    // Two passes: under first (pass=0), over second (pass=1)
+    for (let pass = 0; pass < 2; pass++) {
+      for (const r of rings) {
+        ctx.save();
+        ctx.translate(r.x, r.y);
+        ctx.scale(1, SQUASH_Y);
+
+        // color choice
+        const ringColor =
+          r.previewColor ||
+          r.color ||
+          (params.colorMode === "checker"
+            ? ( (r.row + r.col) % 2 ? params.altColor : params.ringColor )
+            : params.ringColor);
+
+        const overTop = parityOverIsTop(r.row, r.col);
+
+        // Decide which half to draw on this pass
+        const drawTopNow = (pass === 1 && overTop) || (pass === 0 && !overTop);
+        const drawBottomNow = (pass === 1 && !overTop) || (pass === 0 && overTop);
+
+        // Draw only one half on this pass (leaves the slit).
+        if (drawTopNow)  drawBand(r, topHalf[0], topHalf[1], ringColor);
+        if (drawBottomNow) drawBand(r, bottomHalf[0], bottomHalf[1], ringColor);
+
+        ctx.restore();
+      }
+    }
+
+    // Selection ring glow
+    if (selected) {
+      ctx.save();
+      ctx.translate(selected.x, selected.y);
+      ctx.scale(1, SQUASH_Y);
+      ctx.strokeStyle = "rgba(255,255,0,0.9)";
+      ctx.lineWidth = Math.max(1.2 / scale, wire * 0.6);
+      ctx.beginPath();
+      ctx.arc(0, 0, selected.radius + wire + 2 / scale, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  /** =========================
+   *  Interactions
+   *  ========================= */
+  const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const { x, y } = screenToWorld(e.clientX, e.clientY);
+    if (paintMode || eraseMode) {
+      setIsPainting(true);
+      paintAt(x, y);
+      return;
+    }
+    setIsPanning(true);
+    panStart.current = { x: e.clientX - offset.x, y: e.clientY - offset.y };
+  };
+
+  const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isPainting && (paintMode || eraseMode)) {
+      const { x, y } = screenToWorld(e.clientX, e.clientY);
+      paintAt(x, y);
+    } else if (isPanning && panStart.current) {
+      setOffset({ x: e.clientX - panStart.current.x, y: e.clientY - panStart.current.y });
+    }
+  };
+
+  const onMouseUp = () => {
+    setIsPainting(false);
+    setIsPanning(false);
+    panStart.current = null;
+  };
+
+  const onClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const { x, y } = screenToWorld(e.clientX, e.clientY);
+    setSelected(hitTest(x, y));
+  };
+
+  // Paint or erase a single ring at world position
+  const paintAt = (wx: number, wy: number) => {
+    const hit = hitTest(wx, wy);
+    if (!hit) return;
+    setRings((prev) =>
+      prev.map((r) => {
+        if (r.row === hit.row && r.col === hit.col) {
+          return { ...r, color: eraseMode ? undefined : currentBrush };
+        }
+        return r;
+      })
+    );
+  };
+
+  /** =========================
+   *  Toolbar utilities
+   *  ========================= */
+  function fitToView() {
+    if (!canvasRef.current) return;
+    const { width, height } = worldSize(params);
+    const rect = canvasRef.current.getBoundingClientRect();
+    const best = Math.min((rect.width - pad * 2) / width, (rect.height - pad * 2) / height);
+    setScale(best);
+    setOffset({ x: 0, y: 0 });
+  }
+  function centerView() {
+    setOffset({ x: 0, y: 0 });
+  }
+  function oneToOne() {
+    setScale(1);
+    setOffset({ x: 0, y: 0 });
+  }
+  function zoomIn() { setScale((s) => clamp(s * 1.1, 0.05, 12)); }
+  function zoomOut() { setScale((s) => clamp(s / 1.1, 0.05, 12)); }
+
+  function resetWeave() {
+    setRings(generateRings(params));
+    setSelected(null);
+  }
+
+  // Change grid size handlers (kept simple)
+  function setRows(n: number) {
+    const next = { ...params, rows: clamp(Math.floor(n || 1), 1, 200) };
+    setParams(next);
+    setRings(generateRings(next));
+  }
+  function setCols(n: number) {
+    const next = { ...params, cols: clamp(Math.floor(n || 1), 1, 200) };
+    setParams(next);
+    setRings(generateRings(next));
+  }
+  /** =========================
+   *  UI
+   *  ========================= */
+  return (
+    <div className="chainmail-stage">
+      {/* Top-left: zoom & center */}
+      <div className="top-left-controls">
+        <button className="icon-btn" title="Zoom In" onClick={zoomIn}>＋</button>
+        <button className="icon-btn" title="Zoom Out" onClick={zoomOut}>－</button>
+        <button className="icon-btn" title="Center" onClick={centerView}>🎯</button>
+      </div>
+
+      {/* Left vertical toolbar */}
+      <div className="toolbar-left">
+        <button
+          className="icon-btn"
+          title={paintMode ? "Painting (on)" : "Paint"}
+          style={{ outline: paintMode ? "2px solid #19c37d" : "none" }}
+          onClick={() => { setPaintMode((v) => !v); if (eraseMode) setEraseMode(false); }}
+        >
+          🎨
+        </button>
+        <button
+          className="icon-btn"
+          title={eraseMode ? "Erase (on)" : "Erase"}
+          style={{ outline: eraseMode ? "2px solid #ef4444" : "none" }}
+          onClick={() => { setEraseMode((v) => !v); if (paintMode) setPaintMode(false); }}
+        >
+          🧽
+        </button>
+        <button className="icon-btn" title="Reset Weave" onClick={resetWeave}>♻️</button>
+      </div>
+
+      {/* Right floating icons like ScaleDesigner */}
+      <div className="floating-icons">
+        <button onClick={oneToOne} title="1:1 scale">1️⃣</button>
+        <button onClick={zoomIn} title="Zoom in">🔍</button>
+        <button onClick={zoomOut} title="Zoom out">🔎</button>
+        <button onClick={fitToView} title="Fit to screen">🖼️</button>
+      </div>
+
+      {/* Palette */}
+      <div className="palette-dock panel">
+        <div className="panel-heading">Palette</div>
+        <div className="palette-row">
+          {SUPPLIER_COLORS[params.supplier].map((c) => (
+            <div
+              key={c.hex}
+              className="swatch"
+              style={{
+                background: c.hex,
+                borderColor: c.hex.toLowerCase() === currentBrush.toLowerCase() ? "#fff" : "rgba(255,255,255,.6)",
+                outline: c.hex.toLowerCase() === currentBrush.toLowerCase() ? "2px solid #6ea8fe" : "none"
+              }}
+              title={c.name}
+              onClick={() => setCurrentBrush(c.hex)}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Center stage with full-window canvas */}
+      <div className="stage-center">
+        <canvas
+          ref={canvasRef}
+          id="chainmail-canvas"
+          onMouseDown={onMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onMouseLeave={onMouseUp}
+          onClick={onClick}
+          className={
+            paintMode
+              ? "cursor-crosshair"
+              : isPanning
+                ? "cursor-grabbing"
+                : "cursor-grab"
+          }
+        />
+      </div>
+
+      {/* Simple bottom-right mini controls for rows/cols (optional) */}
+      <div className="preview-dock panel">
+        <div className="panel-heading">Grid</div>
+        <div className="panel-section" style={{ display: "grid", gridTemplateColumns: "auto auto", gap: 8 }}>
+          <label style={{ alignSelf: "center" }}>Rows</label>
+          <input
+            className="mini-input"
+            type="number"
+            value={params.rows}
+            onChange={(e) => setRows(parseInt(e.target.value || "1", 10))}
+          />
+          <label style={{ alignSelf: "center" }}>Cols</label>
+          <input
+            className="mini-input"
+            type="number"
+            value={params.cols}
+            onChange={(e) => setCols(parseInt(e.target.value || "1", 10))}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}

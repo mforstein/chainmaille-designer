@@ -1,0 +1,174 @@
+// src/components/RingRenderer.tsx
+import React, { useEffect, useMemo, useRef } from "react";
+import * as THREE from "three";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
+
+export type ColorMode = "solid" | "checker";
+
+export interface Ring {
+  row: number;
+  col: number;
+  x: number; // in mm
+  y: number; // in mm
+  radius: number; // innerDiameter / 2 (mm)
+}
+
+export interface RenderParams {
+  rows: number;
+  cols: number;
+  innerDiameter: number; // mm
+  wireDiameter: number;  // mm
+  colorMode: ColorMode;
+  ringColor: string;
+  altColor: string;
+  bgColor: string;
+}
+
+type PaintMap = Map<string, string | null>; // "r,c" -> hex
+const keyAt = (r: number, c: number) => `${r},${c}`;
+
+type Props = {
+  rings: Ring[];
+  params: RenderParams;
+
+  paint: PaintMap;
+  setPaint: React.Dispatch<React.SetStateAction<PaintMap>>;
+
+  paintMode: boolean;
+  eraseMode: boolean;
+  activeColor: string;
+
+  // hover support (optional, matches app)
+  hoverRC?: { r: number; c: number } | null;
+  setHoverRC?: React.Dispatch<React.SetStateAction<{ r: number; c: number } | null>>;
+
+  scale: number;
+  setScale: (s: number) => void;
+  offset: { x: number; y: number };
+  setOffset: (o: { x: number; y: number }) => void;
+};
+
+export default function RingRenderer({
+  rings,
+  params,
+  paint,
+  paintMode,
+  eraseMode,
+  activeColor,
+  setPaint,
+  scale,
+}: Props) {
+  const mountRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!mountRef.current) return;
+
+    const mount = mountRef.current;
+
+    // Scene setup
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(params.bgColor || "#0F1115");
+
+    // Camera setup
+    const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.1, 1000);
+    camera.position.set(0, 0, 80);
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(mount.clientWidth, mount.clientHeight);
+    mount.appendChild(renderer.domElement);
+
+    // Lighting
+    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+    const directional = new THREE.DirectionalLight(0xffffff, 0.9);
+    directional.position.set(1, 1, 2);
+    scene.add(ambient, directional);
+
+    // Controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    // Geometry for rings
+    const ringGroup = new THREE.Group();
+    const ringGeo = new THREE.TorusGeometry(params.innerDiameter / 2, params.wireDiameter / 4, 16, 100);
+
+    rings.forEach((ring) => {
+      const color = paint.get(keyAt(ring.row, ring.col)) || params.ringColor;
+      const mat = new THREE.MeshStandardMaterial({
+        color: new THREE.Color(color),
+        metalness: 0.85,
+        roughness: 0.25,
+      });
+
+      const mesh = new THREE.Mesh(ringGeo, mat);
+      mesh.position.set(ring.x, -ring.y, 0);
+      ringGroup.add(mesh);
+    });
+
+    scene.add(ringGroup);
+
+    // Fit grid
+    const boundsX = params.cols * params.innerDiameter * 0.7;
+    const boundsY = params.rows * params.innerDiameter * 0.6;
+    ringGroup.position.set(-boundsX / 2, boundsY / 2, 0);
+
+    // Animate
+    const animate = () => {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    // Resize handling
+    const handleResize = () => {
+      camera.aspect = mount.clientWidth / mount.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(mount.clientWidth, mount.clientHeight);
+    };
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      mount.removeChild(renderer.domElement);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [rings, params, paint, scale, activeColor]);
+
+  return (
+    <div
+      ref={mountRef}
+      style={{
+        width: "70vw",
+        height: "70vh",
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+      }}
+    />
+  );
+}
+
+/* ======================================================
+   generateRings() — required by App.tsx
+   ====================================================== */
+export function generateRings(params: {
+  rows: number;
+  cols: number;
+  innerDiameter: number;
+  wireDiameter: number;
+}) {
+  const rings: Ring[] = [];
+  const pitchX = params.innerDiameter * 0.8;
+  const pitchY = params.innerDiameter * 0.7;
+  const radius = (params.innerDiameter + params.wireDiameter) / 2;
+
+  for (let r = 0; r < params.rows; r++) {
+    for (let c = 0; c < params.cols; c++) {
+      const x = c * pitchX + (r % 2 === 1 ? pitchX / 2 : 0);
+      const y = r * pitchY;
+      rings.push({ row: r, col: c, x, y, radius });
+    }
+  }
+  return rings;
+}

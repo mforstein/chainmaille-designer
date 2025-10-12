@@ -1,0 +1,393 @@
+// src/App.tsx
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import "./index.css";
+import "./ui/ui-grid.css";
+
+import useUnlocked from "./hooks/useUnlocked";
+import Paywall from "./components/Paywall";
+import EulaDialog from "./components/EulaDialog";
+import ImageOverlayPanel from "./ImageOverlayPanel";
+// REPLACE this line:
+// import RingRenderer, { generateRings } from "./components/RingRenderer";
+
+// WITH:
+import RingRenderer3D from "./components/RingRenderer3D";
+import { generateRings } from "./components/RingRenderer"; // keep your existing grid generator if you like
+
+// =========================
+// Types
+// =========================
+export type SupplierId = "cmj" | "trl" | "mdz";
+export type ColorMode = "solid" | "checker";
+export type Unit = "mm" | "in";
+
+type Num = number;
+interface Ring {
+  row: number;
+  col: number;
+  x: number;
+  y: number;
+  radius: number;
+}
+interface Params {
+  rows: number;
+  cols: number;
+  innerDiameter: number;
+  wireDiameter: number;
+  overlapX: number;
+  overlapY: number;
+  colorMode: ColorMode;
+  ringColor: string;
+  altColor: string;
+  bgColor: string;
+  supplier: SupplierId;
+  ringSpec: string;
+  unit: Unit;
+}
+type PaintMap = Map<string, string | null>;
+
+// =========================
+// Palettes
+// =========================
+const SUPPLIERS = [
+  { id: "cmj", name: "Craft Maille (CMJ)" },
+  { id: "trl", name: "The Ring Lord (TRL)" },
+  { id: "mdz", name: "Medeivalza (MDZ)" },
+] as const;
+
+const PALETTES = {
+  cmj: [
+    { name: "Black", hex: "#0B0B0B" },
+    { name: "White", hex: "#EDEDED" },
+    { name: "Gold", hex: "#FFD700" },
+    { name: "Silver", hex: "#B8B8B8" },
+    { name: "Blue", hex: "#0A58FF" },
+    { name: "Kelly Green", hex: "#4CBB17" },
+    { name: "Violet", hex: "#8F00FF" },
+    { name: "Orange", hex: "#FF8C00" },
+  ],
+  trl: [
+    { name: "Black Ice", hex: "#1D1F2B" },
+    { name: "Frost", hex: "#D4D4D4" },
+    { name: "Dark Rose", hex: "#A05056" },
+    { name: "Royal Blue", hex: "#4169E1" },
+  ],
+  mdz: [
+    { name: "Aluminum", hex: "#C0C0C0" },
+    { name: "Black", hex: "#000000" },
+    { name: "Silver", hex: "#B8B8B8" },
+  ],
+};
+const ALL_PALETTE = [...PALETTES.cmj, ...PALETTES.trl, ...PALETTES.mdz];
+const RING_SPECS = [
+  { label: "ID 6.35mm / WD 1.6mm (AR≈5.0)" },
+  { label: "ID 5.00mm / WD 1.2mm (AR≈5.2)" },
+  { label: "ID 3.97mm / WD 1.19mm (AR≈4.3)" },
+];
+
+// =========================
+// Helpers
+// =========================
+const keyAt = (r: number, c: number) => `${r},${c}`;
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+const hexToRgb = (hex: string) => {
+  const s = hex.replace("#", "");
+  const n = parseInt(s, 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+};
+const mmToIn = (mm: number) => mm / 25.4;
+
+// =========================
+// App
+// =========================
+export default function App() {
+  // Params
+  const [params, setParams] = useState<Params>(() => {
+    const saved = localStorage.getItem("cmd.params");
+    return (
+      (saved && JSON.parse(saved)) || {
+        rows: 24,
+        cols: 24,
+        innerDiameter: 6.35,
+        wireDiameter: 1.6,
+        overlapX: 0.3,
+        overlapY: 0.3,
+        colorMode: "solid",
+        ringColor: "#C9C9C9",
+        altColor: "#B2B2B2",
+        bgColor: "#0F1115",
+        supplier: "cmj",
+        ringSpec: RING_SPECS[0].label,
+        unit: "mm",
+      }
+    );
+  });
+
+  const [rings, setRings] = useState<Ring[]>(() => generateRings(params));
+const [paint, setPaint] = useState<PaintMap>(new Map());
+
+  // UI + state
+  const [scale, setScale] = useState<Num>(1.0);
+  const [offset, setOffset] = useState({ x: 40, y: 60 });
+  const [paintMode, setPaintMode] = useState(true);
+  const [eraseMode, setEraseMode] = useState(false);
+  const [activeColor, setActiveColor] = useState("#8F00FF");
+  const [hoverRC, setHoverRC] = useState<{ r: number; c: number } | null>(null);
+
+  // Overlay
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [overlayImage, setOverlayImage] = useState<HTMLImageElement | null>(null);
+  const [imageScale, setImageScale] = useState(1.0);
+  const [previewOffset, setPreviewOffset] = useState({ x: 0, y: 0 });
+  const [previewRotation, setPreviewRotation] = useState(0);
+  const [paletteSource, setPaletteSource] =
+    useState<"current" | SupplierId | "all">("current");
+
+  // Derived palette
+  const palette = useMemo(() => {
+    if (paletteSource === "current") return PALETTES[params.supplier];
+    if (paletteSource === "all") return ALL_PALETTE;
+    return PALETTES[paletteSource];
+  }, [paletteSource, params.supplier]);
+
+  // Persist + rebuild
+  useEffect(() => {
+    localStorage.setItem("cmd.params", JSON.stringify(params));
+  }, [params]);
+  useEffect(() => {
+    localStorage.setItem("cmd.paint", JSON.stringify(Array.from(paint.entries())));
+  }, [paint]);
+  useEffect(() => {
+    setRings(generateRings(params));
+  }, [params.rows, params.cols, params.innerDiameter, params.wireDiameter, params.overlapX, params.overlapY]);
+
+  // Image preview loader
+  useEffect(() => {
+    if (!imageFile) {
+      setOverlayImage(null);
+      return;
+    }
+    const url = URL.createObjectURL(imageFile);
+    const img = new Image();
+    img.onload = () => setOverlayImage(img);
+    img.src = url;
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
+
+  // Apply transfer
+  const applyImageTransfer = useCallback(() => {
+    if (!overlayImage) return;
+    const tmp = document.createElement("canvas");
+    tmp.width = params.cols;
+    tmp.height = params.rows;
+    const ctx = tmp.getContext("2d")!;
+    ctx.drawImage(overlayImage, 0, 0, tmp.width, tmp.height);
+    const data = ctx.getImageData(0, 0, tmp.width, tmp.height).data;
+
+    const pickColor = (r: number, g: number, b: number): string => {
+      let best = palette[0].hex,
+        bestD = Infinity;
+      for (const p of palette) {
+        const q = hexToRgb(p.hex);
+        const d = (q.r - r) ** 2 + (q.g - g) ** 2 + (q.b - b) ** 2;
+        if (d < bestD) {
+          bestD = d;
+          best = p.hex;
+        }
+      }
+      return best;
+    };
+
+    const next = new Map(paint);
+    for (let y = 0; y < tmp.height; y++) {
+      for (let x = 0; x < tmp.width; x++) {
+        const i = (y * tmp.width + x) * 4;
+        const r = data[i],
+          g = data[i + 1],
+          b = data[i + 2],
+          a = data[i + 3];
+        if (a < 8) continue;
+        next.set(keyAt(y, x), pickColor(r, g, b));
+      }
+    }
+    setPaint(next);
+  }, [overlayImage, palette, paint, params.cols, params.rows]);
+
+  // Stats
+  const colourUsage = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const [, v] of paint.entries()) {
+      if (!v) continue;
+      map.set(v, (map.get(v) || 0) + 1);
+    }
+    return [...map.entries()]
+      .map(([hex, count]) => ({ hex, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [paint]);
+
+  const resetGrid = (next: Partial<Params> = {}) => {
+    setParams((prev) => ({ ...prev, ...next }));
+    setPaint(new Map());
+  };
+
+  // ========= Render =========
+  return (
+    <div className="chainmail-stage">
+      <EulaDialog />
+
+      {/* === Top Toolbar (Zoom + Grid) === */}
+      <div className="top-left-controls">
+        <div
+          className="panel"
+          style={{ padding: 8, display: "flex", gap: 8, alignItems: "center" }}
+        >
+          <span className="panel-heading" style={{ padding: 0 }}>Zoom</span>
+          <button className="icon-btn" onClick={() => setScale(clamp(scale + 0.1, 0.1, 20))}>＋</button>
+          <button className="icon-btn" onClick={() => setScale(clamp(scale - 0.1, 0.1, 20))}>－</button>
+          <input
+            className="mini-input"
+            type="number"
+            value={scale}
+            step={0.05}
+            min={0.1}
+            max={20}
+            onChange={(e) => setScale(clamp(parseFloat(e.target.value) || 1, 0.1, 20))}
+          />
+          <div style={{ width: 8 }} />
+          <span className="panel-heading" style={{ padding: 0 }}>Grid</span>
+          <input
+            className="mini-input"
+            type="number"
+            min={1}
+            max={300}
+            value={params.cols}
+            onChange={(e) => setParams(p => ({ ...p, cols: clamp(+e.target.value || p.cols, 1, 300) }))}
+          />
+          <span>×</span>
+          <input
+            className="mini-input"
+            type="number"
+            min={1}
+            max={300}
+            value={params.rows}
+            onChange={(e) => setParams(p => ({ ...p, rows: clamp(+e.target.value || p.rows, 1, 300) }))}
+          />
+          <button className="icon-btn" onClick={() => resetGrid()}>Reset</button>
+        </div>
+      </div>
+
+      {/* === Left Toolbar === */}
+      <div className="toolbar-left">
+        <div className="panel" style={{ width: 260 }}>
+          <div className="panel-heading">Tools</div>
+          <div className="panel-section" style={{ display: "flex", gap: 8 }}>
+            <button className={`tool-btn ${paintMode ? "active" : ""}`} onClick={() => { setPaintMode(true); setEraseMode(false); }}>🎨 Paint</button>
+            <button className={`tool-btn ${eraseMode ? "active" : ""}`} onClick={() => { setEraseMode(true); setPaintMode(false); }}>🧽 Erase</button>
+          </div>
+<div className="panel-section" style={{ marginTop: 8 }}>
+  <button
+    className="tool-btn"
+    onClick={() => {
+      setPaint(new Map());
+      localStorage.removeItem("cmd.paint");
+    }}
+  >
+    🔄 Reset Colors
+  </button>
+</div>
+          <div className="panel-section">
+            <label style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Brush</span>
+              <input type="color" value={activeColor} onChange={(e) => setActiveColor(e.target.value)} />
+            </label>
+          </div>
+
+          <div className="panel-heading" style={{ marginTop: 8 }}>Palette</div>
+          <div className="panel-section">
+            <label style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Supplier</span>
+              <select
+                value={params.supplier}
+                onChange={(e) => setParams(p => ({ ...p, supplier: e.target.value as SupplierId }))}
+              >
+                {SUPPLIERS.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </label>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 4 }}>
+              {PALETTES[params.supplier].map(c => (
+                <button
+                  key={c.hex}
+                  className="swatch"
+                  title={c.name}
+                  style={{ background: c.hex }}
+                  onClick={() => setActiveColor(c.hex)}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="panel-heading" style={{ marginTop: 8 }}>Image Overlay</div>
+          <div className="panel-section">
+            <ImageOverlayPanel
+              imageFile={imageFile}
+              setImageFile={setImageFile}
+              imageScale={imageScale}
+              setImageScale={setImageScale}
+              paletteSource={paletteSource}
+              setPaletteSource={setPaletteSource}
+              onApplyTransfer={() => {}}
+              previewOffset={previewOffset}
+              setPreviewOffset={setPreviewOffset}
+              previewRotation={previewRotation}
+              setPreviewRotation={setPreviewRotation}
+            />
+            <Paywall feature="Apply Image Transfer">
+              <button className="tool-btn" onClick={applyImageTransfer}>Apply Transfer</button>
+            </Paywall>
+          </div>
+        </div>
+      </div>
+
+      {/* === Canvas === */}
+<div className="canvas-container" style={{ position: "absolute", inset: 0 }}>
+  <RingRenderer3D
+    rings={rings}
+    params={{
+      rows: params.rows,
+      cols: params.cols,
+      innerDiameter: params.innerDiameter,
+      wireDiameter: params.wireDiameter,
+      colorMode: params.colorMode,
+      ringColor: params.ringColor,
+      altColor: params.altColor,
+      bgColor: params.bgColor,
+    }}
+    paint={paint}
+    setPaint={setPaint}
+    paintMode={paintMode}
+    eraseMode={eraseMode}
+    activeColor={activeColor}
+    hoverRC={hoverRC}
+    setHoverRC={setHoverRC}
+  />
+
+  {/* your existing overlay preview div can stay on top if you still want it */}
+  {overlayImage && (
+    <div
+      style={{
+        position: "absolute",
+        top: previewOffset.y,
+        left: previewOffset.x,
+        transform: `scale(${imageScale}) rotate(${previewRotation}deg)`,
+        opacity: 0.45,
+        pointerEvents: "none",
+        mixBlendMode: "lighten",
+      }}
+    >
+      <img src={overlayImage.src} alt="Overlay" draggable={false} style={{ maxWidth: "100%" }} />
+    </div>
+  )}
+</div>
+    </div>
+  );
+}

@@ -1,0 +1,99 @@
+// src/components/PrintPreviewOverlay.tsx
+import React from "react";
+
+interface UsageRow {
+  supplier: string;
+  supplierId: string;
+  name: string;
+  hex: string;
+  count: number;
+  packs: number;
+  swg: string;
+  id: string;
+  ar: string;
+}
+
+interface Props {
+  pagesX: number;
+  pagesY: number;
+  usageRows: UsageRow[];
+  totalPacks: number;
+  onCancel: () => void;
+  onPrint: () => void;
+}
+
+export default function PrintPreviewOverlay({
+  pagesX,
+  pagesY,
+  usageRows,
+  totalPacks,
+  onCancel,
+  onPrint,
+}: Props) {
+  return (
+    <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white p-4 rounded-lg text-black max-h-[90%] overflow-auto w-[90%]">
+        <h2 className="text-lg font-bold mb-4">Print Preview (8.5" × 11")</h2>
+
+        {/* Grid preview */}
+        <div
+          className="grid gap-2 justify-center"
+          style={{ gridTemplateColumns: `repeat(${pagesX}, auto)` }}
+        >
+          {Array.from({ length: pagesX * pagesY }, (_, i) => (
+            <div
+              key={i}
+              className="border border-black flex items-center justify-center w-32 h-40 text-xl font-bold"
+            >
+              Page {i + 1}
+            </div>
+          ))}
+        </div>
+
+        {/* BOM summary */}
+        <div className="mt-6">
+          <h3 className="font-semibold text-base mb-2">Bill of Materials</h3>
+          <table className="w-full border border-black text-sm">
+            <thead>
+              <tr className="bg-gray-200">
+                <th className="border px-2 py-1 text-left">Supplier</th>
+                <th className="border px-2 py-1 text-left">Color</th>
+                <th className="border px-2 py-1 text-right">Rings</th>
+                <th className="border px-2 py-1 text-right">Packs</th>
+              </tr>
+            </thead>
+            <tbody>
+              {usageRows.map((row, i) => (
+                <tr key={i}>
+                  <td className="border px-2 py-1">{row.supplier}</td>
+                  <td className="border px-2 py-1">{row.name}</td>
+                  <td className="border px-2 py-1 text-right">{row.count}</td>
+                  <td className="border px-2 py-1 text-right">{row.packs}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="text-right mt-2 font-semibold">
+            Total Packs: {totalPacks}
+          </div>
+        </div>
+
+        {/* Controls */}
+        <div className="flex justify-end gap-2 mt-4">
+          <button
+            onClick={onCancel}
+            className="px-3 py-1 rounded bg-gray-700 text-white"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onPrint}
+            className="px-3 py-1 rounded bg-blue-700 text-white"
+          >
+            Print
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

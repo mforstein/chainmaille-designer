@@ -1,0 +1,192 @@
+/* Dotted grid background like ScaleDesigner */
+/* fix layout clipping for floating controls */
+.chainmail-stage {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: #111827;
+  background-image: radial-gradient(#1f2937 1px, transparent 1px);
+  background-size: 24px 24px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.top-left-controls,
+.toolbar-left,
+.floating-icons {
+  z-index: 1000;
+}
+
+.stage-center canvas {
+  display: block;
+  margin: 0 auto;
+}
+
+/* Center stage content */
+.stage-center {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+/* Floating panels */
+.panel {
+  background: rgba(17, 24, 39, 0.9); /* slate-900/90 */
+  border: 1px solid rgba(71, 85, 105, 0.8); /* slate-600 */
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.35);
+  backdrop-filter: blur(6px);
+}
+
+.panel-heading {
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #cbd5e1; /* slate-300 */
+  padding: 8px 10px 0 10px;
+}
+
+.panel-section {
+  padding: 8px 10px 10px 10px;
+}
+
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid rgba(71, 85, 105, 0.8);
+  background: rgba(30, 41, 59, 0.9);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+.icon-btn:hover { background: rgba(51, 65, 85, 0.95); }
+
+.dock {
+  position: absolute;
+  padding: 8px;
+}
+
+/* toolbars */
+.toolbar-left  { left: 12px; top: 80px; display: grid; gap: 8px; }
+.toolbar-right { right: 12px; top: 80px; display: grid; gap: 8px; }
+
+.top-left-controls {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* bottom docks */
+.palette-dock { left: 12px; bottom: 12px; }
+.preview-dock { right: 12px; bottom: 12px; width: 280px; }
+
+.palette-row {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 8px;
+}
+
+.swatch {
+  width: 22px; height: 22px; border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.65);
+  cursor: pointer;
+}
+.swatch:hover { transform: scale(1.06); }
+
+.mini-input {
+  width: 64px;
+  padding: 4px 6px;
+  font-size: 12px;
+  color: #e5e7eb; /* slate-200 */
+  background: #111827; /* gray-900 */
+  border: 1px solid #475569; /* slate-600 */
+  border-radius: 6px;
+}
+
+/* canvas keeps exact pixel size you set */
+#chainmail-canvas {
+  outline: 1px solid rgba(255,255,255,.06);
+  background: #111827;
+  border-radius: 10px;
+  opacity: 0;
+  animation: fadeIn 0.4s ease forwards;
+}
+
+@keyframes fadeIn {
+  to { opacity: 1; }
+}
+/* Floating right-side icons like ScaleDesigner */
+.floating-icons {
+  position: absolute;
+  right: 12px;
+  top: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 100;
+}
+
+.floating-icons button {
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid rgba(71, 85, 105, 0.8);
+  background: rgba(30, 41, 59, 0.9);
+  color: #e5e7eb;
+  font-size: 16px;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.2s;
+}
+
+.floating-icons button:hover {
+  background: rgba(51, 65, 85, 0.95);
+  transform: translateY(-1px);
+}
+.stage {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.toolbar-left, .toolbar-right {
+  position: absolute;
+  z-index: 50;
+}
+
+.toolbar-left {
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.toolbar-right {
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+/* === Minus / collapse icon fallback for iOS === */
+.icon-btn::before {
+  content: "−";
+  display: inline-block;
+  font-weight: bold;
+  font-size: 20px;
+  line-height: 1;
+  color: #dbe4ee;
+}
+
+.icon-btn.collapsed::before {
+  content: "+";
+}
+.icon-btn i {
+  pointer-events: none;
+  font-size: 16px;
+  color: #e5e7eb;
+}

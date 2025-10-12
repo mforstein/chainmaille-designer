@@ -1,0 +1,156 @@
+/* index.css */
+:root {
+  --bg: #0b0f14;
+  --panel: #0f1720;
+  --ink: #dbe4ee;
+  --muted: #8fa1b3;
+  --accent: #6ea8fe;
+  --on: #19c37d;
+  --danger: #ef4444;
+  --border: #1f2a36;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Inter, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji";
+}
+
+.app-root { padding: 16px 20px; }
+.title { margin: 0 0 8px; font-weight: 800; font-size: 32px; color: #cfe1ff; letter-spacing: .2px; }
+
+.toolbar {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 8px; padding: 8px; border: 1px solid var(--border);
+  background: var(--panel); border-radius: 12px; margin-bottom: 12px;
+}
+.toolbar button {
+  background: #17202a; color: var(--ink); border: 1px solid var(--border);
+  padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 13px;
+}
+.toolbar button:hover { background: #1d2733; }
+.toolbar button.on { background: #15302a; border-color: #1f6f55; color: #bdf5dc; }
+.toolbar .sep { width: 1px; height: 24px; background: var(--border); margin: 0 4px; }
+.toolbar label { color: var(--muted); font-size: 12px; }
+.toolbar .val { color: var(--muted); font-size: 12px; min-width: 48px; display: inline-block; text-align: right; }
+.toolbar input[type="range"] { width: 140px; }
+.toolbar .num {
+  width: 64px; padding: 4px 6px; background: #0e1319; color: var(--ink);
+  border: 1px solid var(--border); border-radius: 8px;
+}
+.toolbar .debug { margin-left: 6px; display: flex; align-items: center; gap: 6px; }
+
+.stage {
+  display: grid; grid-template-columns: 200px 1fr; gap: 12px;
+  align-items: start;
+}
+.left-dock {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 10px;
+}
+.palette-title { color: var(--muted); font-size: 12px; margin-bottom: 6px; }
+.swatches { display: grid; grid-template-columns: repeat(6, 28px); gap: 8px; }
+.swatch {
+  width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border);
+  cursor: pointer;
+}
+.swatch.active { outline: 2px solid var(--accent); }
+
+.canvas-wrap {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: radial-gradient(900px 600px at 40% -15%, #111f32, transparent 60%) , #0a0f14;
+  padding: 12px; display: flex; justify-content: center; align-items: center; min-height: 540px;
+}
+.canvas-wrap canvas { display: block; background: transparent; border-radius: 8px; }
+.canvas-wrap.grab { cursor: grab; }
+.canvas-wrap.grabbing { cursor: grabbing; }
+.canvas-wrap.crosshair { cursor: crosshair; }
+html, body, #root, .chainmail-stage, .stage-center, canvas {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: #0b0f14;
+}
+/* === Universal checkbox fix for iOS Safari === */
+input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background-color: #111827;
+  position: relative;
+}
+input[type="checkbox"]:checked::after {
+  content: "✓";
+  position: absolute;
+  top: -2px;
+  left: 3px;
+  color: #19c37d;
+  font-size: 14px;
+  font-weight: bold;
+}
+/* === iOS & Touch Fixes === */
+html, body {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* === Universal checkbox fix for iOS Safari === */
+input[type="checkbox"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(100, 116, 139, 0.8);
+  background-color: #111827;
+  position: relative;
+  cursor: pointer;
+}
+input[type="checkbox"]:checked::after {
+  content: "✓";
+  position: absolute;
+  top: -1px;
+  left: 3px;
+  color: #19c37d;
+  font-size: 15px;
+  font-weight: bold;
+}
+
+/* === Mobile-safe buttons === */
+button, .icon-btn {
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+  cursor: pointer;
+}
+
+/* === iOS Safari fix for hidden icons === */
+.icon-btn::before {
+  content: "−";
+  display: inline-block;
+  font-weight: bold;
+  font-size: 20px;
+  line-height: 1;
+  color: #dbe4ee;
+}
+.icon-btn.collapsed::before {
+  content: "+";
+}
+
+/* ensure visible tap feedback */
+button:active, .icon-btn:active {
+  transform: scale(0.96);
+  opacity: 0.9;
+}

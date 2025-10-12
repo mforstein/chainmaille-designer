@@ -1,0 +1,1159 @@
+// src/App.tsx
+import React, { useEffect, useMemo, useRef, useState } from "react";
+
+/* ============================== Types ============================== */
+interface Ring {
+  row: number;
+  col: number;
+  x: number;      // world coords
+  y: number;      // world coords
+  radius: number; // world units
+  color?: string; // custom color if painted or mapped
+  supplier?: SupplierId; // who the ring color came from
+}
+type SupplierId = "cmj" | "trl";
+type ColorMode = "solid" | "checker";
+type Unit = "mm" | "in";
+
+interface Params {
+  rows: number;
+  cols: number;
+  innerDiameter: number; // mm
+  wireDiameter: number;  // mm (stroke baseline)
+  overlapX: number;      // 0..1
+  overlapY: number;      // 0..1
+  colorMode: ColorMode;
+  ringColor: string;
+  altColor: string;
+  bgColor: string;
+  supplier: SupplierId;
+  ringSpec: string;
+  unit: Unit;
+}
+
+/* ============================== Data ============================== */
+
+const SUPPLIERS = [
+  { id: "cmj", name: "Chainmail Joe" },
+  { id: "trl", name: "The Ring Lord" },
+] as const;
+
+const RING_SPECS = [
+  { label: '1/4" 16swg AR~4.0', inner: 6.35, wire: 1.6 },
+  { label: '5/16" 16swg AR~5.0', inner: 7.94, wire: 1.6 },
+  { label: '3/8" 16swg AR~6.2', inner: 9.53, wire: 1.6 },
+  { label: '1/4" 18swg AR~4.4', inner: 6.35, wire: 1.2 },
+  { label: '5/16" 18swg AR~6.1', inner: 7.94, wire: 1.2 },
+];
+
+const DEFAULTS: Params = {
+  rows: 20,
+  cols: 20,
+  innerDiameter: 6.35,
+  wireDiameter: 1.6,
+  overlapX: 0.30,
+  overlapY: 0.15,
+  colorMode: "solid",
+  ringColor: "#b8c2cc",
+  altColor: "#94a3b8",
+  bgColor: "#0b0f14",
+  supplier: "cmj",
+  ringSpec: '1/4" 16swg AR~4.0',
+  unit: "mm",
+};
+
+// pack size fixed per request
+const FIXED_PACK_SIZE = 1800;
+
+/**
+ * Supplier color matrices with labels.
+ * Hexes are representative; edit to match the packaging if you have official swatches.
+ * Keeping lists explicit so BOM + palette labels are deterministic.
+ */
+const SUPPLIER_COLORS: Record<
+  Params["supplier"],
+  { supplier: SupplierId; name: string; hex: string }[]
+> = {
+  cmj: [
+    { supplier: "cmj", name: "Bright Aluminum", hex: "#C0C0C0" },
+    { supplier: "cmj", name: "Black",           hex: "#000000" },
+    { supplier: "cmj", name: "Gold",            hex: "#FFD700" },
+    { supplier: "cmj", name: "Silver",          hex: "#B8B8B8" },
+    { supplier: "cmj", name: "Red",             hex: "#FF0000" },
+    { supplier: "cmj", name: "Blue",            hex: "#0A58FF" },
+    { supplier: "cmj", name: "Kelly Green",     hex: "#4CBB17" },
+    { supplier: "cmj", name: "OD Green",        hex: "#556B2F" },
+    { supplier: "cmj", name: "Violet",          hex: "#8F00FF" },
+    { supplier: "cmj", name: "Cosmic Pink",     hex: "#FF1493" },
+    { supplier: "cmj", name: "Stormy Gray",     hex: "#708090" },
+    { supplier: "cmj", name: "Orange",          hex: "#FF8C00" },
+    { supplier: "cmj", name: "Turquoise",       hex: "#40E0D0" },
+    { supplier: "cmj", name: "Teal",            hex: "#008080" },
+    { supplier: "cmj", name: "Bronze",          hex: "#CD7F32" },
+    { supplier: "cmj", name: "Copper",          hex: "#B87333" },
+    { supplier: "cmj", name: "Champagne",       hex: "#E6C79C" },
+    { supplier: "cmj", name: "Rose Gold",       hex: "#B76E79" },
+    { supplier: "cmj", name: "Lime",            hex: "#BFFF00" },
+    { supplier: "cmj", name: "Yellow",          hex: "#FFFF00" },
+    { supplier: "cmj", name: "Magenta",         hex: "#FF00FF" },
+    { supplier: "cmj", name: "Purple",          hex: "#800080" },
+    { supplier: "cmj", name: "Navy",            hex: "#001F54" },
+    { supplier: "cmj", name: "Sky Blue",        hex: "#87CEEB" },
+    { supplier: "cmj", name: "Aqua",            hex: "#00FFFF" },
+    { supplier: "cmj", name: "Mint",            hex: "#98FF98" },
+    { supplier: "cmj", name: "Dark Red",        hex: "#8B0000" },
+    { supplier: "cmj", name: "Maroon",          hex: "#800000" },
+    { supplier: "cmj", name: "Charcoal",        hex: "#36454F" },
+    { supplier: "cmj", name: "Gunmetal",        hex: "#2A3439" },
+  ],
+  trl: [
+    { supplier: "trl", name: "Black Ice",       hex: "#1D1F2B" },
+    { supplier: "trl", name: "Frost",           hex: "#D4D4D4" },
+    { supplier: "trl", name: "Dark Rose",       hex: "#A05056" },
+    { supplier: "trl", name: "Lime",            hex: "#BFFF00" },
+    { supplier: "trl", name: "Orange",          hex: "#FFA500" },
+    { supplier: "trl", name: "Yellow",          hex: "#FFFF00" },
+    { supplier: "trl", name: "Green",           hex: "#008000" },
+    { supplier: "trl", name: "Purple",          hex: "#800080" },
+    { supplier: "trl", name: "Blue",            hex: "#0000FF" },
+    { supplier: "trl", name: "Silver",          hex: "#C0C0C0" },
+    { supplier: "trl", name: "Copper",          hex: "#B87333" },
+    { supplier: "trl", name: "Bronze",          hex: "#CD7F32" },
+    { supplier: "trl", name: "Teal",            hex: "#008080" },
+    { supplier: "trl", name: "Turquoise",       hex: "#40E0D0" },
+    { supplier: "trl", name: "Pink",            hex: "#FF69B4" },
+    { supplier: "trl", name: "Royal Blue",      hex: "#4169E1" },
+    { supplier: "trl", name: "Sea Green",       hex: "#2E8B57" },
+    { supplier: "trl", name: "Graphite",        hex: "#3B3B3B" },
+    { supplier: "trl", name: "Steel",           hex: "#7A7A7A" },
+    { supplier: "trl", name: "Champagne",       hex: "#E6C79C" },
+  ],
+};
+
+// resolve (supplier, hex) -> label
+function supplierColorName(s: Params["supplier"], hex: string): string {
+  const entry = SUPPLIER_COLORS[s].find(c => c.hex.toUpperCase() === hex.toUpperCase());
+  return entry?.name ?? hex;
+}
+
+/* ============================== Math & color helpers ============================== */
+
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
+function pitches(p: Params) {
+  const pitchX = p.innerDiameter * (1 - p.overlapX);
+  const pitchY = (p.innerDiameter + p.wireDiameter) * (1 - p.overlapY);
+  return { pitchX, pitchY };
+}
+
+function worldSize(p: Params) {
+  const { pitchX, pitchY } = pitches(p);
+  const width = (p.cols - 1) * pitchX + p.innerDiameter;
+  const height = (p.rows - 1) * pitchY + p.innerDiameter;
+  return { width, height };
+}
+
+function generateRings(p: Params): Ring[] {
+  const { pitchX, pitchY } = pitches(p);
+  const r = p.innerDiameter / 2;
+  const rings: Ring[] = [];
+  for (let row = 0; row < p.rows; row++) {
+    for (let col = 0; col < p.cols; col++) {
+      const x = col * pitchX + (row % 2) * (pitchX / 2);
+      const y = row * pitchY;
+      rings.push({ row, col, x, y, radius: r });
+    }
+  }
+  return rings;
+}
+
+// why: preserve painted colors when grid/geometry changes
+function syncRings(p: Params, prev: Ring[]): Ring[] {
+  const base = generateRings(p);
+  if (!prev.length) return base;
+  const colorMap = new Map<string, { color?: string; supplier?: SupplierId }>();
+  for (const r of prev) colorMap.set(`${r.row}:${r.col}`, { color: r.color, supplier: r.supplier });
+  return base.map((r) => {
+    const v = colorMap.get(`${r.row}:${r.col}`);
+    return v ? { ...r, color: v.color, supplier: v.supplier } : r;
+  });
+}
+
+// --- sRGB/Lab conversions & palette matching ---
+
+function srgbToLinear(c: number) {
+  const x = c / 255;
+  return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+}
+function rgbToXyz(r: number, g: number, b: number) {
+  const R = srgbToLinear(r), G = srgbToLinear(g), B = srgbToLinear(b);
+  const X = R * 0.4124564 + G * 0.3575761 + B * 0.1804375;
+  const Y = R * 0.2126729 + G * 0.7151522 + B * 0.0721750;
+  const Z = R * 0.0193339 + G * 0.1191920 + B * 0.9503041;
+  return { X, Y, Z };
+}
+function xyzToLab(X: number, Y: number, Z: number) {
+  const Xn = 0.95047, Yn = 1.0, Zn = 1.08883;
+  const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787037 * t + 16 / 116);
+  const fx = f(X / Xn), fy = f(Y / Yn), fz = f(Z / Zn);
+  const L = 116 * fy - 16, a = 500 * (fx - fy), b = 200 * (fy - fz);
+  return { L, a, b };
+}
+function rgbToLab(r: number, g: number, b: number) {
+  const { X, Y, Z } = rgbToXyz(r, g, b);
+  return xyzToLab(X, Y, Z);
+}
+function deltaE76(a: {L:number;a:number;b:number}, b: {L:number;a:number;b:number}) {
+  const dL = a.L - b.L, da = a.a - b.a, db = a.b - b.b;
+  return Math.sqrt(dL*dL + da*da + db*db);
+}
+function hexToRgb(hex: string) {
+  const s = hex.replace("#", "");
+  const n = parseInt(s.length === 3 ? s.split("").map(c => c + c).join("") : s, 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+interface SupplierSwatch {
+  supplier: SupplierId;
+  name: string;
+  hex: string;
+  r: number;
+  g: number;
+  b: number;
+}
+function buildPalette(mode: "cmj" | "trl" | "both"): SupplierSwatch[] {
+  const list =
+    mode === "both"
+      ? [...SUPPLIER_COLORS.cmj, ...SUPPLIER_COLORS.trl]
+      : [...SUPPLIER_COLORS[mode]];
+  return list.map(({ supplier, name, hex }) => {
+    const { r, g, b } = hexToRgb(hex);
+    return { supplier, name, hex, r, g, b };
+  });
+}
+
+/* ============================== Component ============================== */
+export default function App() {
+  // params + rings
+  const [params, setParams] = useState<Params>(DEFAULTS);
+  const [rings, setRings] = useState<Ring[]>([]);
+  const [selectedRing, setSelectedRing] = useState<Ring | null>(null);
+
+  // tools
+  const [paintMode, setPaintMode] = useState(false);
+  const [eraserMode, setEraserMode] = useState(false);
+  const [isPainting, setIsPainting] = useState(false);
+  const [currentBrushColor, setCurrentBrushColor] = useState("#ffffff");
+  const [customColor, setCustomColor] = useState("#ffffff");
+
+  // viewport
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 40, y: 40 });
+  const [isPanning, setIsPanning] = useState(false);
+  const panStart = useRef<{ x: number; y: number } | null>(null);
+
+  // pagination for large lists
+  const [page, setPage] = useState(0);
+  const pageSize = 200;
+
+  // refs
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  /* ---------- Build/sync rings ---------- */
+  useEffect(() => {
+    setRings((prev) => syncRings(params, prev));
+  }, [
+    params.rows,
+    params.cols,
+    params.innerDiameter,
+    params.wireDiameter,
+    params.overlapX,
+    params.overlapY,
+  ]);
+
+  /* ---------- Canvas sizing + render ---------- */
+  const { worldW, worldH, pad } = useMemo(() => {
+    const { width, height } = worldSize(params);
+    const pad = Math.max(40, params.innerDiameter * 2);
+    return { worldW: width, worldH: height, pad };
+  }, [params]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = Math.ceil(worldW + pad * 2);
+    const cssH = Math.ceil(worldH + pad * 2);
+    canvas.width = Math.max(1, Math.floor(cssW * dpr));
+    canvas.height = Math.max(1, Math.floor(cssH * dpr));
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw(ctx, cssW, cssH);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, rings, selectedRing, scale, offset, worldW, worldH, pad]);
+
+  /* ---------- Color logic ---------- */
+  function ringColorFallback(r: Ring): string {
+    if (r.color) return r.color;
+    if (params.colorMode === "checker" && (r.row + r.col) % 2 === 1)
+      return params.altColor;
+    return params.ringColor;
+  }
+
+  /* ---------- Drawing ---------- */
+  function draw(ctx: CanvasRenderingContext2D, cssW: number, cssH: number) {
+    ctx.save();
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    // background
+    ctx.fillStyle = params.bgColor;
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    // world transform
+    ctx.translate(offset.x + pad, offset.y + pad);
+    ctx.scale(scale, scale);
+
+    // bounds (subtle)
+    ctx.fillStyle = "rgba(255,255,255,0.02)";
+    ctx.fillRect(
+      -params.innerDiameter,
+      -params.innerDiameter,
+      worldW + params.innerDiameter * 2,
+      worldH + params.innerDiameter * 2
+    );
+
+    // rings
+    for (const r of rings) {
+      ctx.strokeStyle = ringColorFallback(r);
+      ctx.lineWidth = params.wireDiameter / scale; // keep visual width constant
+      ctx.beginPath();
+      ctx.arc(r.x, r.y, r.radius, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // selection outline
+    if (selectedRing) {
+      const s = selectedRing;
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2 / scale;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.radius + 3 / scale, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  /* ---------- Coords ---------- */
+  function screenToWorld(clientX: number, clientY: number) {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const sx = clientX - rect.left - pad;
+    const sy = clientY - rect.top - pad;
+    return { x: (sx - offset.x) / scale, y: (sy - offset.y) / scale };
+  }
+
+  /* ---------- Interactions ---------- */
+  // zoom (cursor-centered)
+  function onWheel(e: React.WheelEvent) {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.1 : 0.9;
+    const newScale = clamp(scale * factor, 0.1, 20);
+
+    // cursor anchoring
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left - pad;
+    const my = e.clientY - rect.top - pad;
+    const wx = (mx - offset.x) / scale;
+    const wy = (my - offset.y) / scale;
+    const nx = wx * newScale + offset.x;
+    const ny = wy * newScale + offset.y;
+    setOffset({ x: offset.x + (mx - nx), y: offset.y + (my - ny) });
+    setScale(newScale);
+  }
+
+  function onMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (paintMode || eraserMode) {
+      setIsPainting(true);
+      const { x, y } = screenToWorld(e.clientX, e.clientY);
+      paintAt(x, y);
+      return;
+    }
+    setIsPanning(true);
+    panStart.current = { x: e.clientX - offset.x, y: e.clientY - offset.y };
+  }
+  function onMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (isPainting && (paintMode || eraserMode)) {
+      const { x, y } = screenToWorld(e.clientX, e.clientY);
+      paintAt(x, y);
+      return;
+    }
+    if (!isPanning || !panStart.current) return;
+    setOffset({ x: e.clientX - panStart.current.x, y: e.clientY - panStart.current.y });
+  }
+  function onMouseUp() {
+    setIsPainting(false);
+    setIsPanning(false);
+    panStart.current = null;
+  }
+  function onClick(e: React.MouseEvent<HTMLCanvasElement>) {
+    if (paintMode || eraserMode) return;
+    const { x, y } = screenToWorld(e.clientX, e.clientY);
+    setSelectedRing(hitTest(x, y));
+  }
+
+  function hitTest(wx: number, wy: number): Ring | null {
+    // linear scan is fine up to our max; simple and robust
+    for (const r of rings) {
+      const dx = wx - r.x, dy = wy - r.y;
+      if (dx * dx + dy * dy <= (r.radius + 3) * (r.radius + 3)) return r;
+    }
+    return null;
+  }
+
+  function paintAt(wx: number, wy: number) {
+    const color = eraserMode ? undefined : currentBrushColor;
+    const sup: SupplierId | undefined = eraserMode ? undefined : params.supplier; // why: remember source
+    setRings((prev) =>
+      prev.map((r) => {
+        const dx = wx - r.x, dy = wy - r.y;
+        if (dx * dx + dy * dy <= (r.radius + 3) * (r.radius + 3)) {
+          return { ...r, color, supplier: sup };
+        }
+        return r;
+      })
+    );
+  }
+
+  function assignColorToSelected(color: string) {
+    if (!selectedRing) return;
+    setRings((prev) =>
+      prev.map((r) =>
+        r.row === selectedRing.row && r.col === selectedRing.col
+          ? { ...r, color, supplier: params.supplier }
+          : r
+      )
+    );
+  }
+  function assignColorToAll(color: string) {
+    setRings((prev) => prev.map((r) => ({ ...r, color, supplier: params.supplier })));
+  }
+  function clearAllColors() {
+    setRings((prev) => prev.map((r) => ({ ...r, color: undefined, supplier: undefined })));
+  }
+
+  /* ---------- View helpers ---------- */
+  function fitToView() {
+    const wrap = wrapRef.current!;
+    const vw = wrap.clientWidth - 16;
+    const vh = wrap.clientHeight - 16;
+    const s = clamp(
+      Math.min(vw / (worldW + pad * 2), vh / (worldH + pad * 2)),
+      0.05,
+      20
+    );
+    setScale(s);
+    setOffset({
+      x: (vw - (worldW + pad * 2) * s) / 2 + pad * (1 - s),
+      y: (vh - (worldH + pad * 2) * s) / 2 + pad * (1 - s),
+    });
+  }
+  function centerView() {
+    const wrap = wrapRef.current!;
+    const vw = wrap.clientWidth;
+    const vh = wrap.clientHeight;
+    setOffset({
+      x: vw / 2 - (worldW / 2) * scale - pad,
+      y: vh / 2 - (worldH / 2) * scale - pad,
+    });
+  }
+  function oneToOne() {
+    setScale(1);
+    centerView();
+  }
+  function goToRing(row: number, col: number, targetScale?: number) {
+    const { pitchX, pitchY } = pitches(params);
+    const rx = col * pitchX + (row % 2) * (pitchX / 2);
+    const ry = row * pitchY;
+    const wrap = wrapRef.current!;
+    const vw = wrap.clientWidth;
+    const vh = wrap.clientHeight;
+    const s = clamp(targetScale ?? clamp(scale, 0.2, 6), 0.05, 20);
+    setScale(s);
+    setOffset({ x: vw / 2 - rx * s - pad, y: vh / 2 - ry * s - pad });
+    const ring = rings.find((r) => r.row === row && r.col === col);
+    setSelectedRing(ring ?? null);
+  }
+
+  /* ---------- Pagination ---------- */
+  const total = rings.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = clamp(page, 0, totalPages - 1);
+  const slice = rings.slice(
+    safePage * pageSize,
+    safePage * pageSize + pageSize
+  );
+
+  function parseSpec(label: string) {
+    // e.g. '1/4" 16swg AR~4.0'
+    const id = (label.match(/^[^ ]+/)?.[0] ?? "").replace(/"/g, "");
+    const swg = (label.match(/\s(\d+swg)/i)?.[1] ?? "").toLowerCase();
+    const ar = (label.match(/AR~([\d.]+)/i)?.[1] ?? "");
+    return { id: id ? `${id}"` : "", swg, ar };
+  }
+  const specParsed = useMemo(() => parseSpec(params.ringSpec), [params.ringSpec]);
+
+  // BOM / Usage (by supplier + color)
+  const usageRows = useMemo(() => {
+    const counts = new Map<string, { supplier: SupplierId | undefined; hex: string; count: number }>();
+    for (const r of rings) {
+      const hex = ringColorFallback(r).toUpperCase();
+      const sup = r.color ? (r.supplier ?? params.supplier) : undefined;
+      const key = `${sup ?? "unassigned"}|${hex}`;
+      const prev = counts.get(key);
+      if (prev) prev.count += 1;
+      else counts.set(key, { supplier: sup, hex, count: 1 });
+    }
+
+    const rows = Array.from(counts.values()).map(({ supplier, hex, count }) => {
+      const s: SupplierId = supplier ?? params.supplier;
+      const supplierName = SUPPLIERS.find(x => x.id === s)?.name ?? "Unknown";
+      const label = supplierColorName(s, hex);
+      const packSize = FIXED_PACK_SIZE;
+      const packs = Math.ceil(count / packSize);
+      return {
+        supplier: supplierName,
+        supplierId: s,
+        name: label,
+        hex,
+        count,
+        packs,
+        packSize,
+        swg: specParsed.swg,
+        id: specParsed.id,
+        ar: specParsed.ar,
+      };
+    });
+
+    rows.sort((a, b) => a.supplier.localeCompare(b.supplier) || b.count - a.count);
+    return rows;
+  }, [rings, params.supplier, params.ringSpec, params.colorMode, params.ringColor, params.altColor, specParsed]);
+
+  const totalPacks = useMemo(
+    () => usageRows.reduce((acc, r) => acc + r.packs, 0),
+    [usageRows]
+  );
+
+  /* ============================== Image mapping ============================== */
+
+  const [imgFile, setImgFile] = useState<File | null>(null);
+  const [imgBitmap, setImgBitmap] = useState<ImageBitmap | null>(null);
+  const [imgScale, setImgScale] = useState(1);           // 0.2..2.0
+  const [imgDither, setImgDither] = useState(false);     // Floyd–Steinberg
+  const [imgPaletteMode, setImgPaletteMode] = useState<"cmj" | "trl" | "both">("both");
+
+  const previewRef = useRef<HTMLCanvasElement>(null);
+  const workRef = useRef<HTMLCanvasElement>(null);
+
+  // load file -> ImageBitmap
+  useEffect(() => {
+    let cancelled = false;
+    if (!imgFile) { setImgBitmap(null); return; }
+    (async () => {
+      const bmp = await createImageBitmap(imgFile);
+      if (!cancelled) setImgBitmap(bmp);
+    })();
+    return () => { cancelled = true; };
+  }, [imgFile]);
+
+  function renderImageToGrid(bmp: ImageBitmap, cols: number, rows: number, scaleImg: number) {
+    const canvas = workRef.current!;
+    canvas.width = cols;
+    canvas.height = rows;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+    ctx.clearRect(0, 0, cols, rows);
+
+    const bmpRatio = bmp.width / bmp.height;
+    let drawW = cols, drawH = Math.round(cols / bmpRatio);
+    if (drawH < rows) { drawH = rows; drawW = Math.round(rows * bmpRatio); }
+
+    drawW = Math.round(drawW * scaleImg);
+    drawH = Math.round(drawH * scaleImg);
+
+    const dx = Math.round((cols - drawW) / 2);
+    const dy = Math.round((rows - drawH) / 2);
+
+    (ctx as any).imageSmoothingEnabled = true;
+    (ctx as any).imageSmoothingQuality = "high";
+    ctx.drawImage(bmp, 0, 0, bmp.width, bmp.height, dx, dy, drawW, drawH);
+    return ctx.getImageData(0, 0, cols, rows);
+  }
+
+  function ditherFS(img: ImageData) {
+    const w = img.width, h = img.height, data = img.data;
+    const f = new Float32Array(w * h * 3);
+    for (let i = 0, j = 0; i < data.length; i += 4, j += 3) {
+      f[j+0] = data[i+0] / 255;
+      f[j+1] = data[i+1] / 255;
+      f[j+2] = data[i+2] / 255;
+    }
+    const idx = (x:number,y:number)=> (y*w + x)*3;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const j = idx(x,y);
+        const oldR = f[j+0], oldG = f[j+1], oldB = f[j+2];
+        const newR = Math.round(oldR * 255) / 255;
+        const newG = Math.round(oldG * 255) / 255;
+        const newB = Math.round(oldB * 255) / 255;
+        const errR = oldR - newR, errG = oldG - newG, errB = oldB - newB;
+
+        const spread = (xx:number, yy:number, mul:number) => {
+          if (xx<0||xx>=w||yy<0||yy>=h) return;
+          const k = idx(xx,yy);
+          f[k+0] += errR * mul;
+          f[k+1] += errG * mul;
+          f[k+2] += errB * mul;
+        };
+        spread(x+1, y  , 7/16);
+        spread(x-1, y+1, 3/16);
+        spread(x  , y+1, 5/16);
+        spread(x+1, y+1, 1/16);
+
+        data[(y*w + x)*4 + 0] = Math.max(0, Math.min(255, Math.round(newR*255)));
+        data[(y*w + x)*4 + 1] = Math.max(0, Math.min(255, Math.round(newG*255)));
+        data[(y*w + x)*4 + 2] = Math.max(0, Math.min(255, Math.round(newB*255)));
+      }
+    }
+    return img;
+  }
+
+  function nearestSwatchLab(r: number, g: number, b: number, palette: SupplierSwatch[]) {
+    const lab = rgbToLab(r, g, b);
+    let best = palette[0], bestD = Infinity;
+    for (const p of palette) {
+      const d = deltaE76(lab, rgbToLab(p.r, p.g, p.b));
+      if (d < bestD) { bestD = d; best = p; }
+    }
+    return best;
+  }
+
+  function quantizeToPalette(img: ImageData, palette: SupplierSwatch[]) {
+    const w = img.width, h = img.height, data = img.data;
+    const mapped = new Array(w * h) as { hex:string; supplier: SupplierId }[];
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = (y*w + x) * 4;
+        const r = data[i+0], g = data[i+1], b = data[i+2];
+        const sw = nearestSwatchLab(r, g, b, palette);
+        mapped[y*w + x] = { hex: sw.hex, supplier: sw.supplier };
+        data[i+0] = sw.r; data[i+1] = sw.g; data[i+2] = sw.b;
+      }
+    }
+    return { mapped, img };
+  }
+
+  // live preview
+  useEffect(() => {
+    if (!imgBitmap || !previewRef.current) return;
+    const cols = params.cols, rows = params.rows;
+    const base = renderImageToGrid(imgBitmap, cols, rows, imgScale);
+    const processed = imgDither ? ditherFS(base) : base;
+    const palette = buildPalette(imgPaletteMode);
+    const { img } = quantizeToPalette(processed, palette);
+
+    const p = previewRef.current;
+    const ctx = p.getContext("2d")!;
+    const scalePreview = Math.max(1, Math.floor(160 / Math.max(cols, rows)));
+    p.width = cols * scalePreview;
+    p.height = rows * scalePreview;
+
+    (ctx as any).imageSmoothingEnabled = false;
+    const tmp = document.createElement("canvas");
+    tmp.width = cols; tmp.height = rows;
+    tmp.getContext("2d")!.putImageData(img, 0, 0);
+    ctx.clearRect(0, 0, p.width, p.height);
+    ctx.drawImage(tmp, 0, 0, p.width, p.height);
+  }, [imgBitmap, params.cols, params.rows, imgScale, imgDither, imgPaletteMode]);
+
+  async function applyImageToRings() {
+    if (!imgBitmap) return;
+    const cols = params.cols, rows = params.rows;
+    const base = renderImageToGrid(imgBitmap, cols, rows, imgScale);
+    const processed = imgDither ? ditherFS(base) : base;
+    const palette = buildPalette(imgPaletteMode);
+    const { mapped } = quantizeToPalette(processed, palette);
+
+    setRings(prev =>
+      prev.map(r => {
+        if (r.row < 0 || r.row >= rows || r.col < 0 || r.col >= cols) return r;
+        const m = mapped[r.row * cols + r.col];
+        if (!m) return r;
+        return { ...r, color: m.hex, supplier: m.supplier };
+      })
+    );
+  }
+
+  /* ============================== Render ============================== */
+  const supplierLabel = SUPPLIERS.find((s) => s.id === params.supplier)?.name ?? "Supplier";
+
+  return (
+    <div className="h-screen w-screen bg-slate-900 text-slate-100 grid grid-cols-[320px,1fr,360px] grid-rows-[auto,1fr]">
+      {/* Top bar */}
+      <div className="col-span-3 flex items-center justify-between px-4 py-2 border-b border-slate-800 bg-slate-950/70 backdrop-blur">
+        <div className="text-lg font-semibold">Chainmaille Designer • 4-in-1</div>
+        <div className="flex items-center gap-2 text-xs">
+          <button onClick={fitToView} className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">Fit</button>
+          <button onClick={centerView} className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">Center</button>
+          <button onClick={oneToOne} className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700">1:1</button>
+          <div className="px-2 py-1 rounded border border-slate-700 ml-2">Zoom: {scale.toFixed(2)}×</div>
+        </div>
+      </div>
+
+      {/* Left panel */}
+      <div className="row-span-1 border-r border-slate-800 p-3 overflow-auto">
+        <div className="text-xs uppercase tracking-wide text-slate-400 mb-2">Sheet</div>
+        <label className="block text-sm">Rows: {params.rows}</label>
+        <input
+          type="range"
+          min={5}
+          max={400}
+          value={params.rows}
+          onChange={(e) => setParams({ ...params, rows: parseInt(e.target.value) })}
+          className="w-full mb-3"
+        />
+        <label className="block text-sm">Columns: {params.cols}</label>
+        <input
+          type="range"
+          min={5}
+          max={400}
+          value={params.cols}
+          onChange={(e) => setParams({ ...params, cols: parseInt(e.target.value) })}
+          className="w-full mb-4"
+        />
+
+        <div className="text-xs uppercase tracking-wide text-slate-400 mt-2 mb-2">Geometry</div>
+        <label className="block text-sm">Inner Ø (mm): {params.innerDiameter.toFixed(2)}</label>
+        <input
+          type="range"
+          min={2}
+          max={20}
+          step={0.1}
+          value={params.innerDiameter}
+          onChange={(e) => setParams({ ...params, innerDiameter: parseFloat(e.target.value) })}
+          className="w-full mb-3"
+        />
+        <label className="block text-sm">Wire Ø (mm): {params.wireDiameter.toFixed(2)}</label>
+        <input
+          type="range"
+          min={0.6}
+          max={4}
+          step={0.1}
+          value={params.wireDiameter}
+          onChange={(e) => setParams({ ...params, wireDiameter: parseFloat(e.target.value) })}
+          className="w-full mb-3"
+        />
+        <label className="block text-sm">Overlap X: {params.overlapX.toFixed(2)}</label>
+        <input
+          type="range"
+          min={0}
+          max={0.8}
+          step={0.01}
+          value={params.overlapX}
+          onChange={(e) => setParams({ ...params, overlapX: parseFloat(e.target.value) })}
+          className="w-full mb-3"
+        />
+        <label className="block text-sm">Overlap Y: {params.overlapY.toFixed(2)}</label>
+        <input
+          type="range"
+          min={0}
+          max={0.8}
+          step={0.01}
+          value={params.overlapY}
+          onChange={(e) => setParams({ ...params, overlapY: parseFloat(e.target.value) })}
+          className="w-full mb-4"
+        />
+
+        <div className="text-xs uppercase tracking-wide text-slate-400 mt-2 mb-2">Supplier</div>
+        <label className="block text-sm">Supplier</label>
+        <select
+          value={params.supplier}
+          onChange={(e) => setParams({ ...params, supplier: e.target.value as Params["supplier"] })}
+          className="w-full rounded bg-slate-800 p-2 mb-3"
+        >
+          {SUPPLIERS.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+            </option>
+          ))}
+        </select>
+
+        <label className="block text-sm">Ring Size</label>
+        <select
+          value={params.ringSpec}
+          onChange={(e) => {
+            const spec = RING_SPECS.find((r) => r.label === e.target.value);
+            if (spec)
+              setParams({
+                ...params,
+                ringSpec: spec.label,
+                innerDiameter: spec.inner,
+                wireDiameter: spec.wire,
+              });
+          }}
+          className="w-full rounded bg-slate-800 p-2 mb-4"
+        >
+          {RING_SPECS.map((r) => (
+            <option key={r.label} value={r.label}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+
+        <div className="text-xs uppercase tracking-wide text-slate-400 mt-2 mb-2">Color Mode</div>
+        <select
+          value={params.colorMode}
+          onChange={(e) => setParams({ ...params, colorMode: e.target.value as ColorMode })}
+          className="w-full rounded bg-slate-800 p-2 mb-3"
+        >
+          <option value="solid">Solid</option>
+          <option value="checker">Checker</option>
+        </select>
+
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <div className="text-xs text-slate-300">Primary</div>
+            <input
+              type="color"
+              value={params.ringColor}
+              onChange={(e) => setParams({ ...params, ringColor: e.target.value })}
+              className="w-full h-8"
+            />
+          </div>
+          <div>
+            <div className="text-xs text-slate-300">Alternate</div>
+            <input
+              type="color"
+              value={params.altColor}
+              onChange={(e) => setParams({ ...params, altColor: e.target.value })}
+              className="w-full h-8"
+            />
+          </div>
+          <div className="col-span-2">
+            <div className="text-xs text-slate-300">Background</div>
+            <input
+              type="color"
+              value={params.bgColor}
+              onChange={(e) => setParams({ ...params, bgColor: e.target.value })}
+              className="w-full h-8"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Canvas area */}
+      <div
+        ref={wrapRef}
+        className="row-span-1 bg-slate-800 overflow-auto relative"
+      >
+        <canvas
+          ref={canvasRef}
+          onWheel={onWheel}
+          onMouseDown={onMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onClick={onClick}
+          className={`${
+            paintMode || eraserMode
+              ? "cursor-crosshair"
+              : isPanning
+              ? "cursor-grabbing"
+              : "cursor-grab"
+          }`}
+          style={{ width: worldW + pad * 2, height: worldH + pad * 2 }}
+        />
+        <div className="absolute bottom-2 left-2 text-[10px] text-slate-300 bg-slate-900/60 border border-slate-700 rounded px-2 py-1">
+          Wheel: zoom • Drag: pan • Paint/Eraser: toggle on right
+        </div>
+      </div>
+
+      {/* Right panel */}
+      <div className="row-span-1 border-l border-slate-800 p-3 overflow-auto">
+        {/* Image mapping */}
+        <div className="text-xs uppercase tracking-wide text-slate-400 mb-2">Image</div>
+        <div className="space-y-2 mb-3">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setImgFile(e.target.files?.[0] || null)}
+            className="w-full text-xs"
+          />
+
+          <label className="block text-xs">Scale: {imgScale.toFixed(2)}×</label>
+          <input
+            type="range"
+            min={0.2}
+            max={2.0}
+            step={0.01}
+            value={imgScale}
+            onChange={(e) => setImgScale(parseFloat(e.target.value))}
+            className="w-full"
+          />
+
+          <label className="block text-xs">Palette for mapping</label>
+          <select
+            value={imgPaletteMode}
+            onChange={(e) => setImgPaletteMode(e.target.value as any)}
+            className="w-full rounded bg-slate-800 p-2"
+          >
+            <option value="cmj">Chainmail Joe</option>
+            <option value="trl">The Ring Lord</option>
+            <option value="both">Both (merged)</option>
+          </select>
+
+          <label className="inline-flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={imgDither}
+              onChange={(e) => setImgDither(e.target.checked)}
+            />
+            Dithering (Floyd–Steinberg)
+          </label>
+
+          <div className="text-xs text-slate-300">Preview</div>
+          <canvas
+            ref={previewRef}
+            className="border border-slate-700 rounded bg-slate-900 w-full"
+            style={{ imageRendering: "pixelated" as any }}
+          />
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={applyImageToRings}
+              disabled={!imgBitmap}
+              className="px-2 py-1 bg-indigo-600 rounded disabled:opacity-50"
+            >
+              Apply to Rings
+            </button>
+            <button
+              onClick={() => { setImgFile(null); setImgBitmap(null); }}
+              className="px-2 py-1 bg-slate-700 rounded"
+            >
+              Clear Image
+            </button>
+          </div>
+        </div>
+
+        {/* Palette matrix with labels */}
+        <div className="text-xs uppercase tracking-wide text-slate-400 mb-2">
+          Palette — {supplierLabel}
+        </div>
+        <div className="grid grid-cols-4 gap-3 mb-3">
+          {SUPPLIER_COLORS[params.supplier].map(({ name, hex, supplier }) => (
+            <div key={`${supplier}-${name}`} className="flex flex-col items-center text-[10px]">
+              <button
+                onClick={() => {
+                  setCurrentBrushColor(hex);
+                  if (!paintMode && !eraserMode) assignColorToSelected(hex);
+                }}
+                title={`${name} (${hex})`}
+                style={{ backgroundColor: hex }}
+                className="h-7 w-7 rounded-full border border-white/70"
+              />
+              <div className="mt-1 text-center leading-tight">{name}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Custom + apply */}
+        <div className="mb-3">
+          <input
+            type="color"
+            value={customColor}
+            onChange={(e) => setCustomColor(e.target.value)}
+            className="w-full h-10 mb-2"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => {
+                setCurrentBrushColor(customColor);
+                if (!paintMode && !eraserMode) assignColorToSelected(customColor);
+              }}
+              className="px-2 py-1 bg-slate-700 rounded"
+            >
+              Apply Custom
+            </button>
+            <button
+              onClick={() => assignColorToAll(currentBrushColor)}
+              className="px-2 py-1 bg-slate-600 rounded"
+            >
+              Apply to All
+            </button>
+            <button
+              onClick={clearAllColors}
+              className="col-span-2 px-2 py-1 bg-rose-600 rounded"
+            >
+              Clear All
+            </button>
+          </div>
+        </div>
+
+        {/* Tools */}
+        <div className="text-xs uppercase tracking-wide text-slate-400 mb-2">
+          Tools
+        </div>
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <button
+            onClick={() => {
+              setPaintMode((v) => !v);
+              if (eraserMode) setEraserMode(false);
+            }}
+            className={`px-2 py-1 rounded ${
+              paintMode ? "bg-green-700" : "bg-slate-600"
+            }`}
+          >
+            {paintMode ? "Paint: ON" : "Paint: OFF"}
+          </button>
+          <button
+            onClick={() => {
+              setEraserMode((v) => !v);
+              if (paintMode) setPaintMode(false);
+            }}
+            className={`px-2 py-1 rounded ${
+              eraserMode ? "bg-red-700" : "bg-slate-600"
+            }`}
+          >
+            {eraserMode ? "Eraser: ON" : "Eraser: OFF"}
+          </button>
+        </div>
+
+        {/* Go to ring */}
+        <div className="text-xs uppercase tracking-wide text-slate-400 mb-2">
+          Go to ring
+        </div>
+        <GotoRingForm
+          rows={params.rows}
+          cols={params.cols}
+          onGo={(r, c) => goToRing(r, c, 4)}
+        />
+
+        {/* Usage (with supplier + spec info) */}
+        <div className="text-xs uppercase tracking-wide text-slate-400 mt-4 mb-2">
+          Color Usage (packs @ {FIXED_PACK_SIZE})
+        </div>
+        <div className="space-y-1 mb-2 text-xs">
+          {usageRows.map(({ supplier, name, hex, count, packs, swg, id, ar }) => (
+            <div key={`${supplier}-${hex}`} className="flex flex-col bg-slate-800 rounded px-2 py-1">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block h-3 w-3 rounded-full border" style={{ backgroundColor: hex }} />
+                  <span>{supplier} • {name}</span>
+                </div>
+                <span>{count} rings • {packs} packs</span>
+              </div>
+              <div className="text-slate-400 text-[10px] pl-6">
+                Gauge: {swg || "—"} • ID: {id || "—"} • AR: {ar || "—"}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="text-right text-xs text-slate-300 mb-4">
+          Total packs: {totalPacks}
+        </div>
+
+        {/* Ring List */}
+        <div className="text-xs uppercase tracking-wide text-slate-400 mt-2 mb-2">
+          Ring List (page {safePage + 1}/{totalPages})
+        </div>
+        <div className="flex items-center gap-2 mb-2">
+          <button
+            onClick={() => setPage((p) => clamp(p - 1, 0, totalPages - 1))}
+            className="px-2 py-1 bg-slate-700 rounded"
+          >
+            Prev
+          </button>
+          <button
+            onClick={() => setPage((p) => clamp(p + 1, 0, totalPages - 1))}
+            className="px-2 py-1 bg-slate-700 rounded"
+          >
+            Next
+          </button>
+        </div>
+        <div className="h-64 overflow-auto text-xs space-y-1">
+          {slice.map((r, i) => (
+            <div
+              key={`${r.row}:${r.col}:${i}`}
+              onClick={() => setSelectedRing(r)}
+              className={`p-1 rounded cursor-pointer flex items-center justify-between ${
+                selectedRing &&
+                selectedRing.row === r.row &&
+                selectedRing.col === r.col
+                  ? "bg-slate-600"
+                  : "bg-slate-800"
+              }`}
+            >
+              <span>({r.row},{r.col})</span>
+              <span
+                className="inline-block h-3 w-3 rounded-full"
+                style={{ backgroundColor: ringColorFallback(r) }}
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* hidden work canvas */}
+        <canvas ref={workRef} className="hidden" />
+      </div>
+    </div>
+  );
+}
+
+/* ============================== Small UI helper ============================== */
+function GotoRingForm({
+  rows,
+  cols,
+  onGo,
+}: {
+  rows: number;
+  cols: number;
+  onGo: (row: number, col: number) => void;
+}) {
+  const [row, setRow] = useState(0);
+  const [col, setCol] = useState(0);
+  return (
+    <div className="flex gap-2 mb-2">
+      <input
+        type="number"
+        min={0}
+        max={rows - 1}
+        value={row}
+        onChange={(e) => setRow(parseInt(e.target.value || "0"))}
+        className="w-20 bg-slate-800 border border-slate-700 rounded p-1 text-xs"
+        placeholder="row"
+      />
+      <input
+        type="number"
+        min={0}
+        max={cols - 1}
+        value={col}
+        onChange={(e) => setCol(parseInt(e.target.value || "0"))}
+        className="w-20 bg-slate-800 border border-slate-700 rounded p-1 text-xs"
+        placeholder="col"
+      />
+      <button
+        onClick={() =>
+          onGo(
+            clamp(row, 0, rows - 1),
+            clamp(col, 0, cols - 1)
+          )
+        }
+        className="px-2 py-1 bg-slate-700 rounded text-xs"
+      >
+        Go
+      </button>
+    </div>
+  );
+}
