@@ -60,10 +60,10 @@ function DraggablePanel({
   const panelRef = useRef<HTMLDivElement>(null);
 
   // === Touch + Mouse Drag Support ===
-  const startDrag = (clientX: number, clientY: number) => {
-    setDragging(true);
-    offset.current = { x: clientX - pos.x, y: clientY - pos.y };
-  };
+const startDrag = (clientX: number, clientY: number) => {
+  setDragging(true);
+  offset.current = { x: clientX - pos.x, y: clientY - pos.y };
+};
 
   const handleMouseDown = (e: React.MouseEvent) => startDrag(e.clientX, e.clientY);
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -73,11 +73,13 @@ function DraggablePanel({
 
   const stopDrag = () => setDragging(false);
 
-  const handleMove = (clientX: number, clientY: number) => {
-    if (!dragging) return;
-    setPos({ x: clientX - offset.current.x, y: clientY - offset.current.y });
-  };
-
+const handleMove = (clientX: number, clientY: number) => {
+  if (!dragging) return;
+  setPos({
+    x: clientX - offset.current.x,  // normal (not inverted)
+    y: clientY - offset.current.y,  // normal
+  });
+};
   const handleMouseMove = (e: React.MouseEvent) => handleMove(e.clientX, e.clientY);
   const handleTouchMove = (e: React.TouchEvent) => {
     const t = e.touches[0];
@@ -278,72 +280,59 @@ export default function App() {
         />
       </div>
 
-      {/* === Rotation Toggle === */}
-      <button
-        id="rotateToggle"
-        onClick={() => setRotationEnabled((r) => !r)}
-        style={{
-          position: "fixed",
-          top: 20,
-          left: 20,
-          zIndex: 50,
-          background: rotationEnabled ? "#666" : "#222",
-          color: "#fff",
-          border: "1px solid #444",
-          borderRadius: 6,
-          padding: "6px 10px",
-          cursor: "pointer",
-        }}
-      >
-        {rotationEnabled ? "Lock Rotation" : "Rotate / Pan"}
-      </button>
-
+ 
       {/* === Tools Panel === */}
-      <DraggablePanel id="tools" title="Tools" defaultPosition={{ x: 20, y: window.innerHeight - 240 }}>
-        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-          <button
-            onClick={() => {
-              setPaintMode(true);
-              setEraseMode(false);
-            }}
-          >
-            🎨 Paint
-          </button>
-          <button
-            onClick={() => {
-              setEraseMode(true);
-              setPaintMode(false);
-            }}
-          >
-            🧽 Erase
-          </button>
-          <button onClick={resetColours}>♻️ Reset</button>
-        </div>
+<DraggablePanel
+  id="tools"
+  title="Color Palette"
+  defaultPosition={{ x: 20, y: window.innerHeight - 240 }}
+>
+  <div
+    style={{
+      display: "flex",
+      flexDirection: "column",
+      gap: 8,
+      color: "#ddd",
+      fontSize: 14,
+    }}
+  >
+    <div style={{ fontWeight: "bold", marginBottom: 6 }}>Select Ring Color</div>
 
-        <div style={{ fontWeight: "bold", marginBottom: 6 }}>Palette</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 6 }}>
-          {[
-            "#F2F2F2", "#BFBFBF", "#7A7A7A", "#0C0C0C",
-            "#FFD700", "#E38B29", "#C93F00",
-            "#4593FF", "#1E5AEF", "#28A745", "#007F5F",
-            "#B069FF", "#8F00FF", "#FF3B81",
-          ].map((hex) => (
-            <div
-              key={hex}
-              onClick={() => setActiveColor(hex)}
-              style={{
-                background: hex,
-                width: 24,
-                height: 24,
-                borderRadius: 4,
-                border: activeColor === hex ? "2px solid white" : "1px solid #333",
-                cursor: "pointer",
-              }}
-            />
-          ))}
-        </div>
-      </DraggablePanel>
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(8, 1fr)",
+        gap: 6,
+      }}
+    >
+      {[
+        "#F2F2F2", "#BFBFBF", "#7A7A7A", "#0C0C0C",
+        "#FFD700", "#E38B29", "#C93F00",
+        "#4593FF", "#1E5AEF", "#28A745", "#007F5F",
+        "#B069FF", "#8F00FF", "#FF3B81",
+      ].map((hex) => (
+        <div
+          key={hex}
+          onClick={() => setActiveColor(hex)}
+          style={{
+            background: hex,
+            width: 26,
+            height: 26,
+            borderRadius: 6,
+            border: activeColor === hex ? "2px solid white" : "1px solid #333",
+            cursor: "pointer",
+            transition: "transform 0.1s ease, border 0.2s ease",
+            transform: activeColor === hex ? "scale(1.15)" : "scale(1.0)",
+          }}
+        />
+      ))}
+    </div>
 
+    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
+      Tap or click a color to set active paint color.
+    </div>
+  </div>
+</DraggablePanel>
       {/* === Controls Panel === */}
       <DraggablePanel id="controls" title="Controls" defaultPosition={{ x: window.innerWidth - 260, y: 20 }}>
         <div>
