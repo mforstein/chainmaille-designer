@@ -35,7 +35,7 @@ export default function RingRenderer({
   paintMode,
   eraseMode,
   activeColor,
-  rotationEnabled,
+  rotationEnabled, // not used in code path but kept in props
 }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
 
@@ -52,7 +52,7 @@ export default function RingRenderer({
   const paintModeRef = useRef(localPaintMode);
   const eraseModeRef = useRef(localEraseMode);
   const lockRef = useRef(rotationLocked);
-  const activeColorRef = useRef(activeColor); // NEW FIX: track live active color
+  const activeColorRef = useRef(activeColor);
 
   useEffect(() => {
     paintModeRef.current = localPaintMode;
@@ -64,7 +64,7 @@ export default function RingRenderer({
     lockRef.current = rotationLocked;
   }, [rotationLocked]);
   useEffect(() => {
-    activeColorRef.current = activeColor; // NEW FIX: keep updated
+    activeColorRef.current = activeColor;
   }, [activeColor]);
 
   // zoom model
@@ -98,9 +98,8 @@ export default function RingRenderer({
       45,
       mount.clientWidth / mount.clientHeight,
       0.1,
-      2000
+      5000
     );
-    camera.position.set(0, 0, BASE_Z * 3);
     cameraRef.current = camera;
 
     // Renderer
@@ -121,7 +120,7 @@ export default function RingRenderer({
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.screenSpacePanning = true;
-    controls.enableRotate = false; // we’ll flip this at runtime if unlocked
+    controls.enableRotate = false;
     controlsRef.current = controls;
 
     // Geometry (perfect rings)
@@ -151,19 +150,42 @@ export default function RingRenderer({
     });
     meshesRef.current = meshes;
 
-    const boundsX = params.cols * params.innerDiameter * 0.6;
-    const boundsY = params.rows * params.innerDiameter * 0.55;
-    group.position.set(-boundsX / 2, boundsY / 2, 0);
+    // --- Robust centering & fit (fix) ---
     scene.add(group);
+    group.updateWorldMatrix(true, true);
 
-    // Fit once, and freeze as "initial"
-    const fitZ = Math.max(BASE_Z, Math.max(boundsX, boundsY));
+    const box = new THREE.Box3().setFromObject(group);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+
+    // Move model center to world origin
+    group.position.sub(center);
+
+    // Fit camera Z to object size with small padding
+    const maxDim = Math.max(size.x, size.y, size.z);
+    const fov = (camera.fov * Math.PI) / 180;
+    const fitZ = (maxDim / 2) / Math.tan(fov / 2) * 1.1; // 10% padding
+
     camera.position.set(0, 0, fitZ);
     controls.target.set(0, 0, 0);
     controls.update();
+
+    // Sync zoom model + reset state
     zoomRef.current = BASE_Z / fitZ;
     initialZRef.current = fitZ;
-    initialTargetRef.current = controls.target.clone();
+    initialTargetRef.current = new THREE.Vector3(0, 0, 0);
+
+    // Single resize handler (window size)
+    const onResize = () => {
+      if (!rendererRef.current || !cameraRef.current) return;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      rendererRef.current.setSize(w, h);
+      cameraRef.current.aspect = w / h;
+      cameraRef.current.updateProjectionMatrix();
+    };
+    window.addEventListener("resize", onResize);
+    onResize(); // start fullscreen
 
     // Painting helpers
     const raycaster = new THREE.Raycaster();
@@ -184,7 +206,6 @@ export default function RingRenderer({
         const key = (hits[0].object as any).ringKey as string;
         setPaint((prev) => {
           const n = new Map(prev);
-          // ✅ FIX: use the *current* active color ref, not stale state
           n.set(key, eraseModeRef.current ? null : activeColorRef.current);
           return n;
         });
@@ -205,7 +226,6 @@ export default function RingRenderer({
       if (painting && paintModeRef.current) {
         paintAt(e.clientX, e.clientY);
       } else if (panning && !paintModeRef.current) {
-        // 2D PAN when locked; when unlocked use OrbitControls’ native rotate/pan
         if (lockRef.current && cameraRef.current && controlsRef.current && rendererRef.current) {
           const cam = cameraRef.current;
           const ctr = controlsRef.current;
@@ -213,16 +233,15 @@ export default function RingRenderer({
           const dy = e.clientY - last.y;
           last = { x: e.clientX, y: e.clientY };
 
-          // world units per pixel at current depth
+          // Keep pan speed consistent at any Z
           const fovRad = (cam.fov * Math.PI) / 180;
           const halfHWorld = Math.tan(fovRad / 2) * cam.position.z;
           const halfWWorld = halfHWorld * cam.aspect;
           const perPixelX = (halfWWorld * 2) / renderer.domElement.clientWidth;
           const perPixelY = (halfHWorld * 2) / renderer.domElement.clientHeight;
 
-          // Drag left -> content follows (so camera/target move opposite)
           const moveX = -dx * perPixelX;
-          const moveY = dy * perPixelY; // screen y grows down, world y grows up
+          const moveY = dy * perPixelY;
 
           cam.position.x += moveX;
           cam.position.y += moveY;
@@ -250,19 +269,11 @@ export default function RingRenderer({
     };
     renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
 
-    // Resize
-    const onResize = () => {
-      camera.aspect = mount.clientWidth / mount.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(mount.clientWidth, mount.clientHeight);
-    };
-    window.addEventListener("resize", onResize);
-
     // Animate
     const animate = () => {
       requestAnimationFrame(animate);
 
-      // live recolor from paintRef
+      // live recolor
       for (const m of meshesRef.current) {
         const key = (m as any).ringKey as string;
         const color = paintRef.current.get(key) || params.ringColor;
@@ -273,7 +284,7 @@ export default function RingRenderer({
       const z = BASE_Z / zoomRef.current;
       camera.position.z = THREE.MathUtils.clamp(z, MIN_Z, MAX_Z);
 
-      // runtime controls flags (no re-init = no snap)
+      // runtime controls flags
       if (controlsRef.current) {
         const locked = lockRef.current;
         controlsRef.current.enableRotate = !locked;
@@ -296,14 +307,34 @@ export default function RingRenderer({
       controls.dispose();
       ringGeo.dispose();
     };
-    // IMPORTANT: init exactly once (no deps that cause rebuilds)
+    // init exactly once
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Panel callbacks (update state + refs correctly)
-  const handleTogglePaint = () => setLocalPaintMode((v) => !v);
-  const handleToggleErase = () => setLocalEraseMode((v) => !v);
-  const handleToggleLock = () => setRotationLocked((v) => !v);
+  // --- Mode Control Logic ---
+  const handleTogglePaint = () => {
+    setLocalPaintMode((prev) => {
+      const newVal = !prev;
+      if (newVal) setLocalEraseMode(false);
+      return newVal;
+    });
+  };
+
+  const handleToggleErase = () => {
+    setLocalEraseMode((prev) => !prev);
+    setLocalPaintMode(true);
+  };
+
+  const handleToggleLock = () => {
+    setRotationLocked((prev) => {
+      const newVal = !prev;
+      if (!newVal) {
+        setLocalPaintMode(false);
+        setLocalEraseMode(false);
+      }
+      return newVal;
+    });
+  };
 
   const handleZoomIn = () => {
     zoomRef.current = Math.min(zoomRef.current * 1.1, 20);
@@ -323,8 +354,25 @@ export default function RingRenderer({
   };
 
   return (
-    <div style={{ position: "relative", width: "70vw", height: "70vh" }}>
-      <div ref={mountRef} style={{ width: "100%", height: "100%" }} />
+    <div
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: "100vw",
+        height: "100vh",
+        overflow: "hidden",
+        zIndex: 0,
+      }}
+    >
+      <div
+        ref={mountRef}
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "block",
+        }}
+      />
       <FloatingPanel
         paintMode={localPaintMode}
         eraseMode={localEraseMode}
@@ -341,7 +389,7 @@ export default function RingRenderer({
   );
 }
 
-// ---------------- Geometry generator (unchanged “perfect rings”) ----------------
+// ---------------- Geometry generator ----------------
 export function generateRings(p: {
   rows: number;
   cols: number;

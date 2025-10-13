@@ -5,7 +5,7 @@ import "./ui/ui-grid.css";
 import RingRenderer, { generateRings } from "./components/RingRenderer";
 
 // =========================
-// Types
+/** Types */
 // =========================
 export type SupplierId = "cmj" | "trl" | "mdz";
 export type ColorMode = "solid" | "checker";
@@ -30,14 +30,14 @@ interface Params {
 type PaintMap = Map<string, string | null>;
 
 // =========================
-// Helpers
+/** Helpers */
 // =========================
 const keyAt = (r: number, c: number) => `${r},${c}`;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const mmToIn = (mm: number) => mm / 25.4;
 
 // =========================
-// Draggable Panel Component
+/** Draggable Panel Component */
 // =========================
 function DraggablePanel({
   id,
@@ -60,10 +60,10 @@ function DraggablePanel({
   const panelRef = useRef<HTMLDivElement>(null);
 
   // === Touch + Mouse Drag Support ===
-const startDrag = (clientX: number, clientY: number) => {
-  setDragging(true);
-  offset.current = { x: clientX - pos.x, y: clientY - pos.y };
-};
+  const startDrag = (clientX: number, clientY: number) => {
+    setDragging(true);
+    offset.current = { x: clientX - pos.x, y: clientY - pos.y };
+  };
 
   const handleMouseDown = (e: React.MouseEvent) => startDrag(e.clientX, e.clientY);
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -73,13 +73,13 @@ const startDrag = (clientX: number, clientY: number) => {
 
   const stopDrag = () => setDragging(false);
 
-const handleMove = (clientX: number, clientY: number) => {
-  if (!dragging) return;
-  setPos({
-    x: clientX - offset.current.x,  // normal (not inverted)
-    y: clientY - offset.current.y,  // normal
-  });
-};
+  const handleMove = (clientX: number, clientY: number) => {
+    if (!dragging) return;
+    setPos({
+      x: clientX - offset.current.x, // why: keep natural drag offset
+      y: clientY - offset.current.y,
+    });
+  };
   const handleMouseMove = (e: React.MouseEvent) => handleMove(e.clientX, e.clientY);
   const handleTouchMove = (e: React.TouchEvent) => {
     const t = e.touches[0];
@@ -89,7 +89,7 @@ const handleMove = (clientX: number, clientY: number) => {
   // Save position persistently
   useEffect(() => {
     localStorage.setItem(`panel-pos-${id}`, JSON.stringify(pos));
-  }, [pos]);
+  }, [id, pos]);
 
   // Ensure panels snap back into view if off-screen
   useEffect(() => {
@@ -109,7 +109,7 @@ const handleMove = (clientX: number, clientY: number) => {
     snapBack();
     window.addEventListener("resize", snapBack);
     return () => window.removeEventListener("resize", snapBack);
-  }, []);
+  }, []); // why: run once to correct initial & on resize
 
   return (
     <div
@@ -167,7 +167,7 @@ const handleMove = (clientX: number, clientY: number) => {
   );
 }
 // =========================
-// Main App
+/** Main App */
 // =========================
 export default function App() {
   // === Chainmail parameters ===
@@ -212,12 +212,12 @@ export default function App() {
     localStorage.setItem("cmd.paint", JSON.stringify(Array.from(paint.entries())));
   }, [paint]);
 
-  // Regenerate weave grid
+  // Regenerate weave grid on parameter changes affecting geometry
   useEffect(() => {
     setRings(generateRings(params));
   }, [params.rows, params.cols, params.innerDiameter, params.wireDiameter]);
 
-  // Reset tools
+  // Reset tools (kept separate as requested)
   const resetGrid = () => setPaint(new Map());
   const resetColours = () => setPaint(new Map());
 
@@ -258,18 +258,10 @@ export default function App() {
           "radial-gradient(#2A2C34 1px, transparent 1px) 0 0 / 22px 22px, radial-gradient(#1B1D22 1px, transparent 1px) 11px 11px / 22px 22px, #0E0F12",
       }}
     >
-      {/* === Canvas Center === */}
-      <div
-        style={{
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          zIndex: 1,
-        }}
-      >
+      {/* === Canvas Fullscreen === */}
+      <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
         <RingRenderer
-        key={`${params.rows}x${params.cols}`}
+          key={`${params.rows}x${params.cols}`}
           rings={rings}
           params={params}
           paint={paint}
@@ -277,128 +269,133 @@ export default function App() {
           paintMode={paintMode}
           eraseMode={eraseMode}
           activeColor={activeColor}
+          /** fix: use defined state, not a missing lockRotation */
           rotationEnabled={rotationEnabled}
         />
       </div>
 
- 
       {/* === Tools Panel === */}
-<DraggablePanel
-  id="tools"
-  title="Color Palette"
-  defaultPosition={{ x: 20, y: window.innerHeight - 240 }}
->
-  <div
-    style={{
-      display: "flex",
-      flexDirection: "column",
-      gap: 8,
-      color: "#ddd",
-      fontSize: 14,
-    }}
-  >
-    <div style={{ fontWeight: "bold", marginBottom: 6 }}>Select Ring Color</div>
-
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(8, 1fr)",
-        gap: 6,
-      }}
-    >
-      {[
-        "#F2F2F2", "#BFBFBF", "#7A7A7A", "#0C0C0C",
-        "#FFD700", "#E38B29", "#C93F00",
-        "#4593FF", "#1E5AEF", "#28A745", "#007F5F",
-        "#B069FF", "#8F00FF", "#FF3B81",
-      ].map((hex) => (
+      <DraggablePanel
+        id="tools"
+        title="Color Palette"
+        defaultPosition={{ x: 20, y: window.innerHeight - 240 }}
+      >
         <div
-          key={hex}
-          onClick={() => setActiveColor(hex)}
           style={{
-            background: hex,
-            width: 26,
-            height: 26,
-            borderRadius: 6,
-            border: activeColor === hex ? "2px solid white" : "1px solid #333",
-            cursor: "pointer",
-            transition: "transform 0.1s ease, border 0.2s ease",
-            transform: activeColor === hex ? "scale(1.15)" : "scale(1.0)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            color: "#ddd",
+            fontSize: 14,
           }}
-        />
-      ))}
-    </div>
+        >
+          <div style={{ fontWeight: "bold", marginBottom: 6 }}>Select Ring Color</div>
 
-    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
-      Tap or click a color to set active paint color.
-    </div>
-  </div>
-</DraggablePanel>
-{/* === Controls Panel === */}
-<DraggablePanel id="controls" title="Controls" defaultPosition={{ x: window.innerWidth - 260, y: 20 }}>
-  <div>
-    <div style={{ fontWeight: "bold", marginBottom: 4 }}>Grid Size</div>
-    <div style={{ display: "flex", gap: 6 }}>
-      <input
-        type="number"
-        value={params.cols}
-        min={1}
-        max={200}
-        onChange={(e) => {
-          let val = parseInt(e.target.value);
-          if (isNaN(val)) return;
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(8, 1fr)",
+              gap: 6,
+            }}
+          >
+            {[
+              "#F2F2F2", "#BFBFBF", "#7A7A7A", "#0C0C0C",
+              "#FFD700", "#E38B29", "#C93F00",
+              "#4593FF", "#1E5AEF", "#28A745", "#007F5F",
+              "#B069FF", "#8F00FF", "#FF3B81",
+            ].map((hex) => (
+              <div
+                key={hex}
+                onClick={() => setActiveColor(hex)}
+                style={{
+                  background: hex,
+                  width: 26,
+                  height: 26,
+                  borderRadius: 6,
+                  border: activeColor === hex ? "2px solid white" : "1px solid #333",
+                  cursor: "pointer",
+                  transition: "transform 0.1s ease, border 0.2s ease",
+                  transform: activeColor === hex ? "scale(1.15)" : "scale(1.0)",
+                }}
+              />
+            ))}
+          </div>
 
-          if (val > 500) {
-            // 🚫 reject extreme crash values
-            alert("❌ 500x500 is too large and will crash your browser! Max is 200x200.");
-            val = 200;
-          } else if (val > 200) {
-            alert("⚠️ Grid size limit reached (200 × 200). Clamping to safe max.");
-            val = 200;
-          } else if (val > 50) {
-            alert("⚠️ Large grid sizes (>50) may cause performance lag.");
-          }
+          <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
+            Tap or click a color to set active paint color.
+          </div>
+        </div>
+      </DraggablePanel>
+      {/* === Controls Panel === */}
+      {/* === Controls Panel === */}
+      <DraggablePanel
+        id="controls"
+        title="Controls"
+        defaultPosition={{ x: window.innerWidth - 260, y: 20 }}
+      >
+        <div>
+          <div style={{ fontWeight: "bold", marginBottom: 4 }}>Grid Size</div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input
+              type="number"
+              value={params.cols}
+              min={1}
+              max={200}
+              onChange={(e) => {
+                let val = parseInt(e.target.value);
+                if (isNaN(val)) return;
 
-          const updated = { ...params, cols: val };
-          setParams(updated);
-          setRings(generateRings(updated));
-        }}
-        style={{ width: "50%" }}
-      />
-      <input
-        type="number"
-        value={params.rows}
-        min={1}
-        max={200}
-        onChange={(e) => {
-          let val = parseInt(e.target.value);
-          if (isNaN(val)) return;
+                if (val > 500) {
+                  // 🚫 reject extreme crash values
+                  alert("❌ 500x500 is too large and will crash your browser! Max is 200x200.");
+                  val = 200;
+                } else if (val > 200) {
+                  alert("⚠️ Grid size limit reached (200 × 200). Clamping to safe max.");
+                  val = 200;
+                } else if (val > 50) {
+                  alert("⚠️ Large grid sizes (>50) may cause performance lag.");
+                }
 
-          if (val > 500) {
-            alert("❌ 500x500 is too large and will crash your browser! Max is 200x200.");
-            val = 200;
-          } else if (val > 200) {
-            alert("⚠️ Grid size limit reached (200 × 200). Clamping to safe max.");
-            val = 200;
-          } else if (val > 50) {
-            alert("⚠️ Large grid sizes (>50) may cause performance lag.");
-          }
+                const updated = { ...params, cols: val };
+                setParams(updated);
+                setRings(generateRings(updated));
+              }}
+              style={{ width: "50%" }}
+            />
+            <input
+              type="number"
+              value={params.rows}
+              min={1}
+              max={200}
+              onChange={(e) => {
+                let val = parseInt(e.target.value);
+                if (isNaN(val)) return;
 
-          const updated = { ...params, rows: val };
-          setParams(updated);
-          setRings(generateRings(updated));
-        }}
-        style={{ width: "50%" }}
-      />
-    </div>
-  </div>
-</DraggablePanel>
+                if (val > 500) {
+                  alert("❌ 500x500 is too large and will crash your browser! Max is 200x200.");
+                  val = 200;
+                } else if (val > 200) {
+                  alert("⚠️ Grid size limit reached (200 × 200). Clamping to safe max.");
+                  val = 200;
+                } else if (val > 50) {
+                  alert("⚠️ Large grid sizes (>50) may cause performance lag.");
+                }
+
+                const updated = { ...params, rows: val };
+                setParams(updated);
+                setRings(generateRings(updated));
+              }}
+              style={{ width: "50%" }}
+            />
+          </div>
+        </div>
+      </DraggablePanel>
     </div>
   );
 }
 
 // =========================
-// Print / Report Function
+/** Print / Report Function */
 // =========================
 function printReport() {
   // Load stored parameters
