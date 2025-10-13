@@ -3,13 +3,7 @@ import React, { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 
-export type Ring = {
-  row: number;
-  col: number;
-  x: number;
-  y: number;
-  radius: number;
-};
+export type Ring = { row: number; col: number; x: number; y: number; radius: number };
 
 export interface RenderParams {
   rows: number;
@@ -18,7 +12,6 @@ export interface RenderParams {
   wireDiameter: number;
   ringColor: string;
   bgColor: string;
-  [key: string]: any;
 }
 
 export type PaintMap = Map<string, string | null>;
@@ -32,17 +25,8 @@ type Props = {
   paintMode: boolean;
   eraseMode: boolean;
   activeColor: string;
-  rotationEnabled?: boolean;
-  scale?: number;
-  setScale?: React.Dispatch<React.SetStateAction<number>>;
-  offset?: { x: number; y: number };
-  setOffset?: React.Dispatch<React.SetStateAction<{ x: number; y: number }>>;
-  hoverRC?: { r: number; c: number } | null;
-  setHoverRC?: React.Dispatch<
-    React.SetStateAction<{ r: number; c: number } | null>
-  >;
+  rotationEnabled?: boolean; // ✅ Add this back
 };
-
 export default function RingRenderer({
   rings,
   params,
@@ -51,224 +35,258 @@ export default function RingRenderer({
   paintMode,
   eraseMode,
   activeColor,
-  rotationEnabled = true,
-  scale = 1.0,
 }: Props) {
   const mountRef = useRef<HTMLDivElement>(null);
-  const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-  const [panningEnabled, setPanningEnabled] = useState(false);
+  const sceneRef = useRef<THREE.Scene>();
+  const cameraRef = useRef<THREE.PerspectiveCamera>();
+  const rendererRef = useRef<THREE.WebGLRenderer>();
+  const controlsRef = useRef<OrbitControls>();
+  const meshesRef = useRef<THREE.Mesh[]>([]);
 
-  // --- Zoom handling ---
+  const paintRef = useRef(paint);
+  const paintModeRef = useRef(paintMode);
+  const eraseRef = useRef(eraseMode);
+  const colorRef = useRef(activeColor);
+  const panningRef = useRef(false);
+  const rotateRef = useRef(false);
   const zoomRef = useRef(1);
+
+  const [panningEnabled, setPanningEnabled] = useState(false);
+  const [rotateEnabled, setRotateEnabled] = useState(false);
+
+  const BASE_Z = 80;
   const MIN_Z = 6;
   const MAX_Z = 1200;
-  const BASE_Z = 80;
 
+  // Keep refs synced to latest props
+  useEffect(() => {
+    paintRef.current = paint;
+    paintModeRef.current = paintMode;
+    eraseRef.current = eraseMode;
+    colorRef.current = activeColor;
+    panningRef.current = panningEnabled;
+    rotateRef.current = rotateEnabled;
+  }, [paint, paintMode, eraseMode, activeColor, panningEnabled, rotateEnabled]);
+
+  // ---- Initialize scene once ----
   useEffect(() => {
     if (!mountRef.current) return;
     const mount = mountRef.current;
 
-    // ---------------- Scene ----------------
+    // Scene
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(params.bgColor || "#0F1115");
+    sceneRef.current = scene;
 
-    // ---------------- Camera ----------------
+    // Camera
     const camera = new THREE.PerspectiveCamera(
       45,
       mount.clientWidth / mount.clientHeight,
       0.1,
       2000
     );
-    camera.position.set(0, 0, BASE_Z);
+    camera.position.set(0, 0, BASE_Z * 3);
     cameraRef.current = camera;
 
-    // ---------------- Renderer ----------------
+    // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(mount.clientWidth, mount.clientHeight);
-    (renderer.domElement.style as any).touchAction = "none";
     mount.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
 
-    // ---------------- Lights ----------------
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-    const directional = new THREE.DirectionalLight(0xffffff, 1.0);
-    directional.position.set(1, 1, 2);
-    scene.add(ambient, directional);
+    // Lights
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+    const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+    dir.position.set(3, 5, 10);
+    scene.add(dir);
 
-    // ---------------- Controls ----------------
+    // Controls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.enabled = true;
-    controls.enableZoom = true;
-    controls.screenSpacePanning = true;
+    controls.enableRotate = false;
+    controlsRef.current = controls;
 
-    const applyControlToggles = () => {
-      controls.enableRotate = !!rotationEnabled;
-      controls.enablePan = !!panningEnabled;
-      controls.mouseButtons = {
-        LEFT: panningEnabled ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE,
-        MIDDLE: THREE.MOUSE.DOLLY,
-        RIGHT: THREE.MOUSE.PAN,
-      };
-    };
-    applyControlToggles();
-
-    // ---------------- Geometry ----------------
-    const ringGroup = new THREE.Group();
+    // Rings
     const ringGeo = new THREE.TorusGeometry(
       params.innerDiameter / 2,
       params.wireDiameter / 4,
       16,
       100
     );
-
+    const group = new THREE.Group();
     const meshes: THREE.Mesh[] = [];
-    rings.forEach((ring) => {
-      const color = paint.get(keyAt(ring.row, ring.col)) || params.ringColor;
-      const mat = new THREE.MeshStandardMaterial({
-        color: new THREE.Color(color),
-        metalness: 0.85,
-        roughness: 0.25,
-      });
-
-      const mesh = new THREE.Mesh(ringGeo, mat);
-      mesh.position.set(ring.x, -ring.y, 0);
-      mesh.rotation.y = ring.row % 2 === 0 ? 0.25 : -0.25;
-      (mesh as any).ringKey = keyAt(ring.row, ring.col);
-      ringGroup.add(mesh);
+    rings.forEach((r) => {
+      const mesh = new THREE.Mesh(
+        ringGeo,
+        new THREE.MeshStandardMaterial({
+          color: params.ringColor,
+          metalness: 0.85,
+          roughness: 0.25,
+        })
+      );
+      mesh.position.set(r.x, -r.y, 0);
+      mesh.rotation.y = r.row % 2 === 0 ? 0.25 : -0.25;
+      (mesh as any).ringKey = keyAt(r.row, r.col);
+      group.add(mesh);
       meshes.push(mesh);
     });
+    meshesRef.current = meshes;
 
     const boundsX = params.cols * params.innerDiameter * 0.6;
     const boundsY = params.rows * params.innerDiameter * 0.55;
-    ringGroup.position.set(-boundsX / 2, boundsY / 2, 0);
-    scene.add(ringGroup);
+    group.position.set(-boundsX / 2, boundsY / 2, 0);
+    scene.add(group);
 
-    // ---------------- Raycast Paint ----------------
+    // Fit initial view
+    const fitZ = Math.max(BASE_Z, Math.max(boundsX, boundsY));
+    camera.position.z = fitZ;
+    zoomRef.current = BASE_Z / fitZ;
+
+    // --- Painting ---
     const raycaster = new THREE.Raycaster();
-    const mouse = new THREE.Vector2();
+    const ndc = new THREE.Vector2();
+    let painting = false;
 
-    const handleClick = (event: MouseEvent) => {
-      if (!paintMode && !eraseMode) return;
+    const paintAt = (clientX: number, clientY: number) => {
+      if (!rendererRef.current || !cameraRef.current) return;
       const rect = renderer.domElement.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(mouse, camera);
-      const hit = raycaster.intersectObjects(meshes)[0];
-      if (!hit) return;
-      const mesh = hit.object as THREE.Mesh & { ringKey: string };
-      const ringKey = (mesh as any).ringKey as string;
-      setPaint((prev) => {
-        const next = new Map(prev);
-        next.set(ringKey, eraseMode ? null : activeColor);
-        return next;
-      });
+      ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+      ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+      camera.updateMatrixWorld();
+      raycaster.setFromCamera(ndc, camera);
+      const hits = raycaster.intersectObjects(meshesRef.current, false);
+      if (hits.length > 0) {
+        const key = (hits[0].object as any).ringKey;
+        setPaint((prev) => {
+          const next = new Map(prev);
+          next.set(key, eraseRef.current ? null : colorRef.current);
+          return next;
+        });
+      }
     };
-    renderer.domElement.addEventListener("click", handleClick);
 
-    // ---------------- Wheel Zoom ----------------
+    const onDown = (e: PointerEvent) => {
+      if (!panningRef.current && !rotateRef.current && paintModeRef.current) {
+        painting = true;
+        paintAt(e.clientX, e.clientY);
+      }
+    };
+    const onMove = (e: PointerEvent) => {
+      if (painting && paintModeRef.current && !panningRef.current && !rotateRef.current)
+        paintAt(e.clientX, e.clientY);
+    };
+    const onUp = () => (painting = false);
+
+    renderer.domElement.addEventListener("pointerdown", onDown);
+    renderer.domElement.addEventListener("pointermove", onMove);
+    renderer.domElement.addEventListener("pointerup", onUp);
+
+    // Wheel zoom
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const factor = e.deltaY > 0 ? 1.1 : 0.9;
-      zoomRef.current = Math.max(0.05, Math.min(20, zoomRef.current * factor));
+      const f = e.deltaY < 0 ? 1.1 : 0.9;
+      zoomRef.current = THREE.MathUtils.clamp(zoomRef.current * f, 0.05, 20);
     };
     renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
 
-    // ---------------- Touch Gestures (Pinch Zoom) ----------------
-    let lastDist = 0;
-    const getDist = (t1: Touch, t2: Touch) =>
-      Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-
-    const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        e.preventDefault();
-        const dist = getDist(e.touches[0], e.touches[1]);
-        if (lastDist > 0) {
-          const scaleFactor = dist / lastDist;
-          zoomRef.current = Math.max(
-            0.05,
-            Math.min(20, zoomRef.current / scaleFactor)
-          );
-        }
-        lastDist = dist;
-      }
+    // Resize
+    const onResize = () => {
+      camera.aspect = mount.clientWidth / mount.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(mount.clientWidth, mount.clientHeight);
     };
-    renderer.domElement.addEventListener("touchmove", onTouchMove, {
-      passive: false,
-    });
+    window.addEventListener("resize", onResize);
 
-    // ---------------- Render Loop ----------------
+    // Animate
     const animate = () => {
       requestAnimationFrame(animate);
-      applyControlToggles();
 
-      // Combine scale prop and internal zoomRef
-      const zoom = (scale ?? 1) * zoomRef.current;
-      const targetZ = BASE_Z / Math.max(0.05, Math.min(20, zoom));
-      camera.position.z = THREE.MathUtils.clamp(targetZ, MIN_Z, MAX_Z);
+      // Live recolor
+      for (const m of meshesRef.current) {
+        const key = (m as any).ringKey;
+        const color = paintRef.current.get(key) || params.ringColor;
+        (m.material as THREE.MeshStandardMaterial).color.set(color);
+      }
 
-      controls.update();
+      const z = BASE_Z / zoomRef.current;
+      camera.position.z = THREE.MathUtils.clamp(z, MIN_Z, MAX_Z);
+
+      if (controlsRef.current) {
+        const c = controlsRef.current;
+        c.enablePan = panningRef.current || rotateRef.current;
+        c.enableRotate = rotateRef.current;
+        c.mouseButtons = {
+          LEFT: rotateRef.current
+            ? THREE.MOUSE.ROTATE
+            : panningRef.current
+            ? THREE.MOUSE.PAN
+            : THREE.MOUSE.DOLLY,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: panningRef.current ? THREE.MOUSE.PAN : THREE.MOUSE.DOLLY,
+        };
+        c.update();
+      }
+
       renderer.render(scene, camera);
     };
     animate();
 
-    // ---------------- Cleanup ----------------
     return () => {
+      window.removeEventListener("resize", onResize);
       mount.removeChild(renderer.domElement);
-      renderer.domElement.removeEventListener("click", handleClick);
-      renderer.domElement.removeEventListener("wheel", onWheel);
-      renderer.domElement.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("resize", () => {});
       controls.dispose();
       ringGeo.dispose();
     };
-  }, [
-    rings,
-    params,
-    paint,
-    paintMode,
-    eraseMode,
-    activeColor,
-    rotationEnabled,
-    panningEnabled,
-    scale,
-    setPaint,
-  ]);
+  }, []);
 
-  // ---------------- UI ----------------
+  // ---- UI ----
   return (
     <div style={{ position: "relative", width: "70vw", height: "70vh" }}>
       <div ref={mountRef} style={{ width: "100%", height: "100%" }} />
 
-      {/* Pan toggle */}
+      {/* Mode buttons */}
       <div
         style={{
           position: "absolute",
           top: 8,
           right: 8,
+          zIndex: 10,
           display: "flex",
           gap: 8,
-          zIndex: 10,
         }}
       >
         <button
           onClick={() => setPanningEnabled((p) => !p)}
-          title="Toggle panning (drag to move the scene)"
           style={{
-            background: panningEnabled ? "#555" : "#222",
+            background: panningEnabled ? "#3b82f6" : "#222",
             color: "#fff",
             border: "1px solid #444",
             borderRadius: 6,
             padding: "4px 8px",
             cursor: "pointer",
+            boxShadow: panningEnabled ? "0 0 6px #3b82f6" : "none",
           }}
         >
-          {panningEnabled ? "Lock Pan" : "Pan"}
+          {panningEnabled ? "Pan Mode" : "Paint Mode"}
+        </button>
+
+        <button
+          onClick={() => setRotateEnabled((r) => !r)}
+          style={{
+            background: rotateEnabled ? "#f6b23b" : "#222",
+            color: "#fff",
+            border: "1px solid #444",
+            borderRadius: 6,
+            padding: "4px 8px",
+            cursor: "pointer",
+            boxShadow: rotateEnabled ? "0 0 6px #f6b23b" : "none",
+          }}
+        >
+          {rotateEnabled ? "Rotate/Pan" : "Lock Rotation"}
         </button>
       </div>
 
-      {/* Zoom controls */}
+      {/* Zoom buttons */}
       <div
         style={{
           position: "absolute",
@@ -282,45 +300,14 @@ export default function RingRenderer({
         }}
       >
         <button
-          onClick={() => {
-            zoomRef.current = Math.max(0.05, Math.min(20, zoomRef.current * 0.9)); // zoom in
-          }}
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: "50%",
-            background: "#222",
-            color: "#fff",
-            border: "1px solid #444",
-            cursor: "pointer",
-            fontSize: 18,
-            boxShadow: "0 2px 6px rgba(0,0,0,0.5)",
-            transition: "transform 0.15s ease",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.15)")}
-          onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1.0)")}
+          onClick={() => (zoomRef.current = Math.min(zoomRef.current * 1.1, 20))}
+          style={zoomBtn}
         >
           +
         </button>
-
         <button
-          onClick={() => {
-            zoomRef.current = Math.max(0.05, Math.min(20, zoomRef.current * 1.1)); // zoom out
-          }}
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: "50%",
-            background: "#222",
-            color: "#fff",
-            border: "1px solid #444",
-            cursor: "pointer",
-            fontSize: 18,
-            boxShadow: "0 2px 6px rgba(0,0,0,0.5)",
-            transition: "transform 0.15s ease",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.15)")}
-          onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1.0)")}
+          onClick={() => (zoomRef.current = Math.max(zoomRef.current / 1.1, 0.05))}
+          style={zoomBtn}
         >
           –
         </button>
@@ -329,28 +316,39 @@ export default function RingRenderer({
   );
 }
 
-/** Geometry generator — unchanged */
-export function generateRings(params: {
+const zoomBtn: React.CSSProperties = {
+  width: 32,
+  height: 32,
+  borderRadius: "50%",
+  background: "#222",
+  color: "#fff",
+  border: "1px solid #444",
+  cursor: "pointer",
+  fontSize: 18,
+};
+
+// Geometry generator
+export function generateRings(p: {
   rows: number;
   cols: number;
   innerDiameter: number;
   wireDiameter: number;
 }): Ring[] {
   const rings: Ring[] = [];
-  const id = params.innerDiameter;
-  const wd = params.wireDiameter;
-
+  const id = p.innerDiameter;
+  const wd = p.wireDiameter;
   const pitchX = id * 0.87;
   const pitchY = id * 0.75;
-  const radius = (id + wd) / 2;
-
-  for (let r = 0; r < params.rows; r++) {
-    for (let c = 0; c < params.cols; c++) {
-      const offsetX = r % 2 === 0 ? 0 : pitchX / 2;
-      const x = c * pitchX + offsetX;
-      const y = r * pitchY;
-      rings.push({ row: r, col: c, x, y, radius });
+  for (let r = 0; r < p.rows; r++)
+    for (let c = 0; c < p.cols; c++) {
+      const off = r % 2 === 0 ? 0 : pitchX / 2;
+      rings.push({
+        row: r,
+        col: c,
+        x: c * pitchX + off,
+        y: r * pitchY,
+        radius: (id + wd) / 2,
+      });
     }
-  }
   return rings;
 }
