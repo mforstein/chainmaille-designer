@@ -52,10 +52,20 @@ export default function RingRenderer({
   const paintModeRef = useRef(localPaintMode);
   const eraseModeRef = useRef(localEraseMode);
   const lockRef = useRef(rotationLocked);
+  const activeColorRef = useRef(activeColor); // NEW FIX: track live active color
 
-  useEffect(() => { paintModeRef.current = localPaintMode; }, [localPaintMode]);
-  useEffect(() => { eraseModeRef.current = localEraseMode; }, [localEraseMode]);
-  useEffect(() => { lockRef.current = rotationLocked; }, [rotationLocked]);
+  useEffect(() => {
+    paintModeRef.current = localPaintMode;
+  }, [localPaintMode]);
+  useEffect(() => {
+    eraseModeRef.current = localEraseMode;
+  }, [localEraseMode]);
+  useEffect(() => {
+    lockRef.current = rotationLocked;
+  }, [rotationLocked]);
+  useEffect(() => {
+    activeColorRef.current = activeColor; // NEW FIX: keep updated
+  }, [activeColor]);
 
   // zoom model
   const zoomRef = useRef(1);
@@ -65,7 +75,9 @@ export default function RingRenderer({
 
   // paint map ref to avoid stale closure in animate
   const paintRef = useRef(paint);
-  useEffect(() => { paintRef.current = paint; }, [paint]);
+  useEffect(() => {
+    paintRef.current = paint;
+  }, [paint]);
 
   // initial (for reset)
   const initialZRef = useRef<number>(200);
@@ -172,7 +184,8 @@ export default function RingRenderer({
         const key = (hits[0].object as any).ringKey as string;
         setPaint((prev) => {
           const n = new Map(prev);
-          n.set(key, eraseModeRef.current ? null : activeColor);
+          // ✅ FIX: use the *current* active color ref, not stale state
+          n.set(key, eraseModeRef.current ? null : activeColorRef.current);
           return n;
         });
       }
@@ -263,9 +276,8 @@ export default function RingRenderer({
       // runtime controls flags (no re-init = no snap)
       if (controlsRef.current) {
         const locked = lockRef.current;
-        // When unlocked, allow native OrbitControls rotate/pan (3D look-around)
         controlsRef.current.enableRotate = !locked;
-        controlsRef.current.enablePan = !paintModeRef.current && !locked; // native pan only when unlocked & not painting
+        controlsRef.current.enablePan = !paintModeRef.current && !locked;
         controlsRef.current.update();
       }
 
@@ -323,7 +335,7 @@ export default function RingRenderer({
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onResetView={handleReset}
-        onClearPaint={() => setPaint(new Map())} 
+        onClearPaint={() => setPaint(new Map())}
       />
     </div>
   );

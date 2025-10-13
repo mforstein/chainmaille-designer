@@ -269,6 +269,7 @@ export default function App() {
         }}
       >
         <RingRenderer
+        key={`${params.rows}x${params.cols}`}
           rings={rings}
           params={params}
           paint={paint}
@@ -333,86 +334,65 @@ export default function App() {
     </div>
   </div>
 </DraggablePanel>
-      {/* === Controls Panel === */}
-      <DraggablePanel id="controls" title="Controls" defaultPosition={{ x: window.innerWidth - 260, y: 20 }}>
-        <div>
-          <div style={{ fontWeight: "bold", marginBottom: 4 }}>Grid Size</div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <input
-              type="number"
-              value={params.cols}
-              onChange={(e) => setParams({ ...params, cols: parseInt(e.target.value) })}
-              style={{ width: "50%" }}
-            />
-            <input
-              type="number"
-              value={params.rows}
-              onChange={(e) => setParams({ ...params, rows: parseInt(e.target.value) })}
-              style={{ width: "50%" }}
-            />
-          </div>
-        </div>
-      </DraggablePanel>
-        {/* === Pattern Info Panel === */}
-      <DraggablePanel id="info" title="Pattern Info" defaultPosition={{ x: window.innerWidth - 280, y: 320 }}>
-        <div style={{ display: "grid", gap: 6, color: "#ccc", fontSize: 13 }}>
-          <div>
-            <b>Colours Used</b>
-          </div>
-          <div style={{ display: "grid", gap: 4 }}>
-            {colourUsage.length === 0 && <div style={{ opacity: 0.6 }}>None</div>}
-            {colourUsage.map((u) => (
-              <div
-                key={u.hex}
-                style={{ display: "flex", alignItems: "center", gap: 8 }}
-              >
-                <span
-                  style={{
-                    width: 12,
-                    height: 12,
-                    background: u.hex,
-                    borderRadius: 2,
-                    border: "1px solid #444",
-                  }}
-                />
-                <span style={{ opacity: 0.8 }}>{u.hex}</span>
-                <span style={{ marginLeft: "auto" }}>{u.count}</span>
-              </div>
-            ))}
-          </div>
+{/* === Controls Panel === */}
+<DraggablePanel id="controls" title="Controls" defaultPosition={{ x: window.innerWidth - 260, y: 20 }}>
+  <div>
+    <div style={{ fontWeight: "bold", marginBottom: 4 }}>Grid Size</div>
+    <div style={{ display: "flex", gap: 6 }}>
+      <input
+        type="number"
+        value={params.cols}
+        min={1}
+        max={200}
+        onChange={(e) => {
+          let val = parseInt(e.target.value);
+          if (isNaN(val)) return;
 
-          <div style={{ height: 6 }} />
-          <div>
-            <b>Pattern Size</b>
-          </div>
-          <div>
-            {params.cols} × {params.rows} rings
-          </div>
+          if (val > 500) {
+            // 🚫 reject extreme crash values
+            alert("❌ 500x500 is too large and will crash your browser! Max is 200x200.");
+            val = 200;
+          } else if (val > 200) {
+            alert("⚠️ Grid size limit reached (200 × 200). Clamping to safe max.");
+            val = 200;
+          } else if (val > 50) {
+            alert("⚠️ Large grid sizes (>50) may cause performance lag.");
+          }
 
-          <div style={{ height: 6 }} />
-          <div style={{ fontWeight: "bold" }}>Ring Spec</div>
-          <div style={{ opacity: 0.9 }}>{params.ringSpec}</div>
+          const updated = { ...params, cols: val };
+          setParams(updated);
+          setRings(generateRings(updated));
+        }}
+        style={{ width: "50%" }}
+      />
+      <input
+        type="number"
+        value={params.rows}
+        min={1}
+        max={200}
+        onChange={(e) => {
+          let val = parseInt(e.target.value);
+          if (isNaN(val)) return;
 
-          <div style={{ height: 6 }} />
-          <div style={{ fontWeight: "bold" }}>Supplier</div>
-          <div style={{ opacity: 0.9 }}>{params.supplier.toUpperCase()}</div>
+          if (val > 500) {
+            alert("❌ 500x500 is too large and will crash your browser! Max is 200x200.");
+            val = 200;
+          } else if (val > 200) {
+            alert("⚠️ Grid size limit reached (200 × 200). Clamping to safe max.");
+            val = 200;
+          } else if (val > 50) {
+            alert("⚠️ Large grid sizes (>50) may cause performance lag.");
+          }
 
-          <button
-            onClick={() => printReport()}
-            style={{
-              marginTop: 8,
-              background: "#222",
-              color: "#fff",
-              border: "1px solid #444",
-              borderRadius: 4,
-              padding: "6px",
-              cursor: "pointer",
-            }}
-          >
-            🖨️ Print Report
-          </button>
-        </div>
-      </DraggablePanel>
+          const updated = { ...params, rows: val };
+          setParams(updated);
+          setRings(generateRings(updated));
+        }}
+        style={{ width: "50%" }}
+      />
+    </div>
+  </div>
+</DraggablePanel>
     </div>
   );
 }
