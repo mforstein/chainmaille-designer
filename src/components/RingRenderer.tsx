@@ -157,6 +157,15 @@ rendererRef.current = renderer;
     controls.screenSpacePanning = true;
     controls.enableRotate = false; // start locked to 2D
     controlsRef.current = controls;
+// --- Touch Zoom Fix ---
+controls.enableZoom = true;      // ensures pinch zoom is active
+controls.zoomSpeed = 1.2;        // feels good on touch devices
+controls.enablePan = true;       // allows two-finger drag if rotation locked
+// --- Touch Zoom Fix (TypeScript safe) ---
+(controls as any).touches = {
+  ONE: THREE.TOUCH.PAN,
+  TWO: THREE.TOUCH.DOLLY_PAN,
+};
 
     // Ring geometry
     const ringGeo = new THREE.TorusGeometry(
