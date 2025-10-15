@@ -11,7 +11,9 @@ import React, {
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 
+// ---------------- Types ----------------
 export type Ring = { row: number; col: number; x: number; y: number; radius: number };
+
 export interface RenderParams {
   rows: number;
   cols: number;
@@ -20,6 +22,7 @@ export interface RenderParams {
   ringColor: string;
   bgColor: string;
 }
+
 export type PaintMap = Map<string, string | null>;
 const keyAt = (r: number, c: number) => `${r},${c}`;
 
@@ -28,24 +31,15 @@ type Props = {
   params: RenderParams;
   paint: PaintMap;
   setPaint: React.Dispatch<React.SetStateAction<PaintMap>>;
-  initialPaintMode?: boolean;
-  initialEraseMode?: boolean;
-  initialRotationLocked?: boolean;
-  activeColor: string;
+  initialPaintMode?: boolean;        // keep: allows parent to set initial paint mode
+  initialEraseMode?: boolean;        // keep: allows parent to set initial erase mode
+  initialRotationLocked?: boolean;   // keep: start locked 2D or not
+  activeColor: string;               // keep: current color to paint
 };
 
-<<<<<<< HEAD
-export default function RingRenderer({
-  rings,
-  params,
-  paint,
-  setPaint,
-  paintMode,
-  eraseMode,
-  activeColor,
-  rotationEnabled, // not used in code path but kept in props
-}: Props) {
-=======
+// ============================================================
+// Imperative API so toolbars can control the renderer
+// ============================================================
 export type RingRendererHandle = {
   zoomIn: () => void;
   zoomOut: () => void;
@@ -63,6 +57,9 @@ export type RingRendererHandle = {
   };
 };
 
+// ============================================================
+// Main Renderer Component
+// ============================================================
 const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer(
   {
     rings,
@@ -76,15 +73,19 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
   }: Props,
   ref
 ) {
->>>>>>> restore-legacy-ui
+  // -----------------------------------------------
+  // Refs for scene, camera, controls, and meshes
+  // -----------------------------------------------
   const mountRef = useRef<HTMLDivElement>(null);
-
   const sceneRef = useRef<THREE.Scene>();
   const cameraRef = useRef<THREE.PerspectiveCamera>();
   const rendererRef = useRef<THREE.WebGLRenderer>();
   const controlsRef = useRef<OrbitControls>();
   const meshesRef = useRef<THREE.Mesh[]>([]);
 
+  // -----------------------------------------------
+  // Local states + synchronized refs for modes
+  // -----------------------------------------------
   const [localPaintMode, setLocalPaintMode] = useState<boolean>(initialPaintMode);
   const [localEraseMode, setLocalEraseMode] = useState<boolean>(initialEraseMode);
   const [rotationLocked, setRotationLocked] = useState<boolean>(initialRotationLocked);
@@ -93,60 +94,43 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
   const eraseModeRef = useRef(localEraseMode);
   const lockRef = useRef(rotationLocked);
   const activeColorRef = useRef(activeColor);
+  const paintRef = useRef(paint);
 
-<<<<<<< HEAD
-  useEffect(() => {
-    paintModeRef.current = localPaintMode;
-  }, [localPaintMode]);
-  useEffect(() => {
-    eraseModeRef.current = localEraseMode;
-  }, [localEraseMode]);
-  useEffect(() => {
-    lockRef.current = rotationLocked;
-  }, [rotationLocked]);
-  useEffect(() => {
-    activeColorRef.current = activeColor;
-  }, [activeColor]);
-=======
   useEffect(() => { paintModeRef.current = localPaintMode; }, [localPaintMode]);
   useEffect(() => { eraseModeRef.current = localEraseMode; }, [localEraseMode]);
   useEffect(() => { lockRef.current = rotationLocked; }, [rotationLocked]);
   useEffect(() => { activeColorRef.current = activeColor; }, [activeColor]);
->>>>>>> restore-legacy-ui
+  useEffect(() => { paintRef.current = paint; }, [paint]);
 
+  // -----------------------------------------------
+  // Zoom model & camera state
+  // -----------------------------------------------
   const zoomRef = useRef(1);
   const BASE_Z = 80;
   const MIN_Z = 6;
   const MAX_Z = 1200;
 
-  const paintRef = useRef(paint);
-  useEffect(() => { paintRef.current = paint; }, [paint]);
-
   const initialZRef = useRef<number>(200);
   const initialTargetRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0, 0));
 
+  // -----------------------------------------------
+  // Scene initialization
+  // -----------------------------------------------
   useEffect(() => {
     if (!mountRef.current) return;
     const mount = mountRef.current;
 
+    // Scene
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(params.bgColor || "#0F1115");
     sceneRef.current = scene;
 
-<<<<<<< HEAD
     // Camera
-    const camera = new THREE.PerspectiveCamera(
-      45,
-      mount.clientWidth / mount.clientHeight,
-      0.1,
-      5000
-    );
-=======
     const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.1, 2000);
     camera.position.set(0, 0, BASE_Z * 3);
->>>>>>> restore-legacy-ui
     cameraRef.current = camera;
 
+    // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -154,21 +138,20 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     mount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
+    // Lights
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
     const dir = new THREE.DirectionalLight(0xffffff, 1.2);
     dir.position.set(3, 5, 10);
     scene.add(dir);
 
+    // Controls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.screenSpacePanning = true;
-<<<<<<< HEAD
-    controls.enableRotate = false;
-=======
-    controls.enableRotate = false; // locked by default (2D)
->>>>>>> restore-legacy-ui
+    controls.enableRotate = false; // start locked to 2D
     controlsRef.current = controls;
 
+    // Ring geometry
     const ringGeo = new THREE.TorusGeometry(
       params.innerDiameter / 2,
       params.wireDiameter / 4,
@@ -178,6 +161,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     const group = new THREE.Group();
     const meshes: THREE.Mesh[] = [];
 
+    // Create meshes
     rings.forEach((r) => {
       const mesh = new THREE.Mesh(
         ringGeo,
@@ -194,48 +178,36 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
       group.add(mesh);
     });
     meshesRef.current = meshes;
-
-    // --- Robust centering & fit (fix) ---
     scene.add(group);
-    group.updateWorldMatrix(true, true);
 
+    // Center & fit
+    group.updateWorldMatrix(true, true);
     const box = new THREE.Box3().setFromObject(group);
     const center = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
-
-    // Move model center to world origin
     group.position.sub(center);
 
-    // Fit camera Z to object size with small padding
     const maxDim = Math.max(size.x, size.y, size.z);
     const fov = (camera.fov * Math.PI) / 180;
     const fitZ = (maxDim / 2) / Math.tan(fov / 2) * 1.1; // 10% padding
-
-<<<<<<< HEAD
-=======
-    const fitZ = Math.max(BASE_Z, Math.max(boundsX, boundsY));
->>>>>>> restore-legacy-ui
     camera.position.set(0, 0, fitZ);
     controls.target.set(0, 0, 0);
     controls.update();
 
-    // Sync zoom model + reset state
+    // Set initial zoom model & state
     zoomRef.current = BASE_Z / fitZ;
     initialZRef.current = fitZ;
     initialTargetRef.current = new THREE.Vector3(0, 0, 0);
 
-    // Single resize handler (window size)
+    // Resize handler
     const onResize = () => {
-      if (!rendererRef.current || !cameraRef.current) return;
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      rendererRef.current.setSize(w, h);
-      cameraRef.current.aspect = w / h;
-      cameraRef.current.updateProjectionMatrix();
+      camera.aspect = mount.clientWidth / mount.clientHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(mount.clientWidth, mount.clientHeight);
     };
     window.addEventListener("resize", onResize);
-    onResize(); // start fullscreen
 
+    // Painting
     const raycaster = new THREE.Raycaster();
     const ndc = new THREE.Vector2();
     let painting = false;
@@ -248,24 +220,19 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
       ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
       ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(ndc, camera);
-
       const hits = raycaster.intersectObjects(meshesRef.current, false);
       if (hits.length > 0) {
         const key = (hits[0].object as any).ringKey as string;
         setPaint((prev) => {
           const n = new Map(prev);
-<<<<<<< HEAD
-          n.set(key, eraseModeRef.current ? null : activeColorRef.current);
-=======
-          // Erase paints base ring color (light grey)
           const colorToApply = eraseModeRef.current ? params.ringColor : activeColorRef.current;
           n.set(key, colorToApply);
->>>>>>> restore-legacy-ui
           return n;
         });
       }
     };
 
+    // Pointer events
     const onDown = (e: PointerEvent) => {
       if (paintModeRef.current) {
         painting = true;
@@ -287,10 +254,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
           const dy = e.clientY - last.y;
           last = { x: e.clientX, y: e.clientY };
 
-<<<<<<< HEAD
-          // Keep pan speed consistent at any Z
-=======
->>>>>>> restore-legacy-ui
+          // consistent pan speed regardless of Z
           const fovRad = (cam.fov * Math.PI) / 180;
           const halfHWorld = Math.tan(fovRad / 2) * cam.position.z;
           const halfWWorld = halfHWorld * cam.aspect;
@@ -299,10 +263,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
 
           const moveX = -dx * perPixelX;
           const moveY = dy * perPixelY;
-<<<<<<< HEAD
 
-=======
->>>>>>> restore-legacy-ui
           cam.position.x += moveX;
           cam.position.y += moveY;
           ctr.target.x += moveX;
@@ -312,15 +273,13 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
       }
     };
 
-    const onUp = () => {
-      painting = false;
-      panning = false;
-    };
+    const onUp = () => { painting = false; panning = false; };
 
     renderer.domElement.addEventListener("pointerdown", onDown);
     renderer.domElement.addEventListener("pointermove", onMove);
     renderer.domElement.addEventListener("pointerup", onUp);
 
+    // Wheel zoom
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.1 : 0.9;
@@ -328,37 +287,22 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     };
     renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
 
-<<<<<<< HEAD
     // Animate
     const animate = () => {
       requestAnimationFrame(animate);
 
-      // live recolor
-=======
-    const onResize = () => {
-      camera.aspect = mount.clientWidth / mount.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(mount.clientWidth, mount.clientHeight);
-    };
-    window.addEventListener("resize", onResize);
-
-    const animate = () => {
-      requestAnimationFrame(animate);
-
->>>>>>> restore-legacy-ui
+      // live recolor from paint map
       for (const m of meshesRef.current) {
         const key = (m as any).ringKey as string;
         const color = paintRef.current.get(key) || params.ringColor;
         (m.material as THREE.MeshStandardMaterial).color.set(color);
       }
 
+      // zoom model -> camera z
       const z = BASE_Z / zoomRef.current;
       camera.position.z = THREE.MathUtils.clamp(z, MIN_Z, MAX_Z);
 
-<<<<<<< HEAD
-      // runtime controls flags
-=======
->>>>>>> restore-legacy-ui
+      // controls flags at runtime
       if (controlsRef.current) {
         const locked = lockRef.current;
         controlsRef.current.enableRotate = !locked;
@@ -380,89 +324,12 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
       controls.dispose();
       ringGeo.dispose();
     };
-<<<<<<< HEAD
-    // init exactly once
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // --- Mode Control Logic ---
-  const handleTogglePaint = () => {
-    setLocalPaintMode((prev) => {
-      const newVal = !prev;
-      if (newVal) setLocalEraseMode(false);
-      return newVal;
-    });
-  };
-
-  const handleToggleErase = () => {
-    setLocalEraseMode((prev) => !prev);
-    setLocalPaintMode(true);
-  };
-
-  const handleToggleLock = () => {
-    setRotationLocked((prev) => {
-      const newVal = !prev;
-      if (!newVal) {
-        setLocalPaintMode(false);
-        setLocalEraseMode(false);
-      }
-      return newVal;
-    });
-  };
-
-  const handleZoomIn = () => {
-    zoomRef.current = Math.min(zoomRef.current * 1.1, 20);
-  };
-  const handleZoomOut = () => {
-    zoomRef.current = Math.max(zoomRef.current / 1.1, 0.05);
-  };
-
-  const handleReset = () => {
-    const cam = cameraRef.current;
-    const ctr = controlsRef.current;
-    if (!cam || !ctr) return;
-    cam.position.set(0, 0, initialZRef.current);
-    ctr.target.copy(initialTargetRef.current);
-    ctr.update();
-    zoomRef.current = BASE_Z / initialZRef.current;
-  };
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        width: "100vw",
-        height: "100vh",
-        overflow: "hidden",
-        zIndex: 0,
-      }}
-    >
-      <div
-        ref={mountRef}
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "block",
-        }}
-      />
-      <FloatingPanel
-        paintMode={localPaintMode}
-        eraseMode={localEraseMode}
-        rotationLocked={rotationLocked}
-        onTogglePaint={handleTogglePaint}
-        onToggleErase={handleToggleErase}
-        onToggleLock={handleToggleLock}
-        onZoomIn={handleZoomIn}
-        onZoomOut={handleZoomOut}
-        onResetView={handleReset}
-        onClearPaint={() => setPaint(new Map())}
-      />
-=======
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  // -----------------------------------------------
+  // Imperative API exposed to parent
+  // -----------------------------------------------
   useImperativeHandle(ref, (): RingRendererHandle => ({
     zoomIn: () => { zoomRef.current = Math.min(zoomRef.current * 1.1, 20); },
     zoomOut: () => { zoomRef.current = Math.max(zoomRef.current / 1.1, 0.05); },
@@ -497,20 +364,21 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     }),
   }));
 
+  // -----------------------------------------------
+  // Render container
+  // -----------------------------------------------
   return (
     <div style={{ position: "relative", width: "70vw", height: "70vh" }}>
       <div ref={mountRef} style={{ width: "100%", height: "100%" }} />
->>>>>>> restore-legacy-ui
     </div>
   );
 });
 
 export default RingRenderer;
 
-<<<<<<< HEAD
-// ---------------- Geometry generator ----------------
-=======
->>>>>>> restore-legacy-ui
+// ============================================================
+// Geometry generator (used by App.tsx to build the grid)
+// ============================================================
 export function generateRings(p: {
   rows: number;
   cols: number;
@@ -522,6 +390,7 @@ export function generateRings(p: {
   const wd = p.wireDiameter;
   const pitchX = id * 0.87;
   const pitchY = id * 0.75;
+
   for (let r = 0; r < p.rows; r++) {
     for (let c = 0; c < p.cols; c++) {
       const off = r % 2 === 0 ? 0 : pitchX / 2;

@@ -1,23 +1,13 @@
-
-
-
 // ===============
 // src/App.tsx
 // ===============
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import "./index.css";
 import "./ui/ui-grid.css";
-<<<<<<< HEAD
-import RingRenderer, { generateRings } from "./components/RingRenderer";
-
-// =========================
-/** Types */
-// =========================
-=======
 import RingRenderer, { generateRings, RingRendererHandle } from "./components/RingRenderer";
->>>>>>> restore-legacy-ui
-export type SupplierId = "cmj" | "trl" | "mdz";
 
+// ---------------- Types ----------------
+export type SupplierId = "cmj" | "trl" | "mdz";
 type ColorMode = "solid" | "checker";
 type Unit = "mm" | "in";
 
@@ -39,17 +29,12 @@ interface Params {
 
 type PaintMap = Map<string, string | null>;
 
-<<<<<<< HEAD
-// =========================
-/** Helpers */
-// =========================
+// ---------------- Helpers ----------------
 const keyAt = (r: number, c: number) => `${r},${c}`;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const mmToIn = (mm: number) => mm / 25.4;
 
-// =========================
-/** Draggable Panel Component */
-// =========================
+// ---------------- Draggable Panel (HEAD UI) ----------------
 function DraggablePanel({
   id,
   title,
@@ -70,7 +55,7 @@ function DraggablePanel({
   const offset = useRef({ x: 0, y: 0 });
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // === Touch + Mouse Drag Support ===
+  // Touch + Mouse Drag
   const startDrag = (clientX: number, clientY: number) => {
     setDragging(true);
     offset.current = { x: clientX - pos.x, y: clientY - pos.y };
@@ -87,7 +72,7 @@ function DraggablePanel({
   const handleMove = (clientX: number, clientY: number) => {
     if (!dragging) return;
     setPos({
-      x: clientX - offset.current.x, // why: keep natural drag offset
+      x: clientX - offset.current.x,
       y: clientY - offset.current.y,
     });
   };
@@ -97,12 +82,11 @@ function DraggablePanel({
     handleMove(t.clientX, t.clientY);
   };
 
-  // Save position persistently
   useEffect(() => {
     localStorage.setItem(`panel-pos-${id}`, JSON.stringify(pos));
   }, [id, pos]);
 
-  // Ensure panels snap back into view if off-screen
+  // Snap back in view on resize
   useEffect(() => {
     const snapBack = () => {
       const panel = panelRef.current;
@@ -120,12 +104,70 @@ function DraggablePanel({
     snapBack();
     window.addEventListener("resize", snapBack);
     return () => window.removeEventListener("resize", snapBack);
-  }, []); // why: run once to correct initial & on resize
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div
       ref={panelRef}
-=======
+      style={{
+        position: "fixed",
+        left: pos.x,
+        top: pos.y,
+        zIndex: 40,
+        padding: 10,
+        background: "rgba(17,24,39,.95)",
+        borderRadius: 12,
+        color: "#ddd",
+        border: "1px solid rgba(0,0,0,.6)",
+        boxShadow: "0 8px 30px rgba(0,0,0,.35)",
+        minWidth: 240,
+        userSelect: "none",
+      }}
+      onMouseMove={handleMouseMove}
+      onMouseUp={stopDrag}
+      onMouseLeave={stopDrag}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={stopDrag}
+    >
+      <div
+        onMouseDown={handleMouseDown}
+        onTouchStart={handleTouchStart}
+        style={{
+          cursor: "grab",
+          fontWeight: 700,
+          marginBottom: 8,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+        }}
+      >
+        <span>{title}</span>
+        <button
+          onClick={() => setCollapsed((v) => !v)}
+          style={{
+            width: 28,
+            height: 28,
+            borderRadius: 8,
+            background: "#1f2937",
+            color: "#d1d5db",
+            border: "1px solid #111827",
+            cursor: "pointer",
+          }}
+          aria-label="Collapse panel"
+          title="Collapse"
+        >
+          {collapsed ? "▢" : "—"}
+        </button>
+      </div>
+
+      {!collapsed && <div>{children}</div>}
+    </div>
+  );
+}
+
+// ---------------- Icon Button (restore-legacy-ui UI) ----------------
 const IconBtn: React.FC<
   React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean; tooltip?: string }
 > = ({ active, tooltip, children, ...rest }) => (
@@ -142,7 +184,6 @@ const IconBtn: React.FC<
   >
     <button
       {...rest}
->>>>>>> restore-legacy-ui
       style={{
         width: 36,
         height: 36,
@@ -167,16 +208,7 @@ const IconBtn: React.FC<
   </div>
 );
 
-<<<<<<< HEAD
-      {!collapsed && <div>{children}</div>}
-    </div>
-  );
-}
-// =========================
-/** Main App */
-// =========================
-=======
->>>>>>> restore-legacy-ui
+// ---------------- Main App ----------------
 export default function App() {
   const [params, setParams] = useState<Params>(() => {
     const saved = localStorage.getItem("cmd.params");
@@ -213,6 +245,7 @@ export default function App() {
 
   const rendererRef = useRef<RingRendererHandle | null>(null);
 
+  // Persist params & paint
   useEffect(() => {
     localStorage.setItem("cmd.params", JSON.stringify(params));
   }, [params]);
@@ -220,35 +253,24 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("cmd.paint", JSON.stringify(Array.from(paint.entries())));
   }, [paint]);
-  
-// We intentionally limit this effect to geometry-changing params only.
- 
-useEffect(() => {
-  setRings(generateRings(params));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [params.rows, params.cols, params.innerDiameter, params.wireDiameter]);
 
-<<<<<<< HEAD
-  // Regenerate weave grid on parameter changes affecting geometry
-=======
->>>>>>> restore-legacy-ui
+  // Rebuild rings on geometry-changing params only
+  useEffect(() => {
+    setRings(generateRings(params));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.rows, params.cols, params.innerDiameter, params.wireDiameter]);
+
+  // Keep RingRenderer paint mode in sync
   useEffect(() => {
     rendererRef.current?.setPaintMode(paintMode);
   }, [paintMode]);
 
-<<<<<<< HEAD
-  // Reset tools (kept separate as requested)
-  const resetGrid = () => setPaint(new Map());
-  const resetColours = () => setPaint(new Map());
-
-  // Keyboard shortcut (space = toggle rotation)
-=======
-  // If paint turns off, also turn off eraser so resume is "paint", not "erase".
->>>>>>> restore-legacy-ui
+  // If paint turns off, also turn off eraser so resume is "paint"
   useEffect(() => {
     if (!paintMode && eraseMode) setEraseMode(false);
   }, [paintMode, eraseMode]);
 
+  // Color usage memo
   const _colourUsage = useMemo(() => {
     const map = new Map<string, number>();
     for (const [, v] of paint.entries()) {
@@ -260,12 +282,12 @@ useEffect(() => {
       .sort((a, b) => b.count - a.count);
   }, [paint]);
 
-  // ---- Deterministic lock setter (fixes reversed behavior) ----
+  // Deterministic lock setter
   const setLock = (locked: boolean) => {
     rendererRef.current?.forceLockRotation?.(locked);
     setRotationLocked(locked);
     if (!locked) {
-      // Unlocking to 3D -> turn off paint mode (requested)
+      // Switching to 3D: turn off paint mode
       setPaintMode(false);
     }
   };
@@ -292,12 +314,7 @@ useEffect(() => {
           "radial-gradient(#2A2C34 1px, transparent 1px) 0 0 / 22px 22px, radial-gradient(#1B1D22 1px, transparent 1px) 11px 11px / 22px 22px, #0E0F12",
       }}
     >
-<<<<<<< HEAD
-      {/* === Canvas Fullscreen === */}
-      <div style={{ position: "absolute", inset: 0, zIndex: 0 }}>
-        <RingRenderer
-=======
-      {/* Canvas */}
+      {/* Canvas (centered container works well for both UIs) */}
       <div
         style={{
           position: "absolute",
@@ -309,46 +326,11 @@ useEffect(() => {
       >
         <RingRenderer
           ref={rendererRef}
->>>>>>> restore-legacy-ui
           key={`${params.rows}x${params.cols}`}
           rings={rings}
           params={params}
           paint={paint}
           setPaint={setPaint}
-<<<<<<< HEAD
-          paintMode={paintMode}
-          eraseMode={eraseMode}
-          activeColor={activeColor}
-          /** fix: use defined state, not a missing lockRotation */
-          rotationEnabled={rotationEnabled}
-        />
-      </div>
-
-      {/* === Tools Panel === */}
-      <DraggablePanel
-        id="tools"
-        title="Color Palette"
-        defaultPosition={{ x: 20, y: window.innerHeight - 240 }}
-      >
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            color: "#ddd",
-            fontSize: 14,
-          }}
-        >
-          <div style={{ fontWeight: "bold", marginBottom: 6 }}>Select Ring Color</div>
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(8, 1fr)",
-              gap: 6,
-            }}
-          >
-=======
           initialPaintMode={paintMode}
           initialEraseMode={eraseMode}
           initialRotationLocked={rotationLocked}
@@ -356,7 +338,7 @@ useEffect(() => {
         />
       </div>
 
-      {/* Left toolbar (camera + triangle) */}
+      {/* === restore-legacy-ui: Left toolbar (📷 ▶) === */}
       <div
         style={{
           position: "absolute",
@@ -405,8 +387,8 @@ useEffect(() => {
                 const next = !paintMode;
                 setPaintMode(next);
                 if (next) {
-                  // Do NOT close palette and DO NOT recenter
-                  setLock(true); // lock to 2D, keep camera where it is
+                  // Lock to 2D but keep current camera position
+                  setLock(true);
                 }
               }}
             >
@@ -421,7 +403,6 @@ useEffect(() => {
             <IconBtn tooltip="Zoom Out" onClick={doZoomOut}>－</IconBtn>
             <IconBtn tooltip="Reset View" onClick={doReset}>↺</IconBtn>
 
-            {/* Correct emoji + tooltip semantics */}
             <IconBtn
               tooltip={rotationLocked ? "Unlock 3D Rotation" : "Lock to Flat 2D"}
               onClick={() => setLock(!rotationLocked)}
@@ -433,7 +414,7 @@ useEffect(() => {
           </div>
         )}
 
-        {/* Controls subpanel (triangle) */}
+        {/* Controls subpanel */}
         {activeMenu === "controls" && (
           <div
             style={{
@@ -487,123 +468,65 @@ useEffect(() => {
         )}
       </div>
 
-      {/* Color palette (only when painting; no text) */}
-      {paintMode && (
-        <div
-          style={{
-            position: "fixed",
-            left: 20,
-            bottom: 20,
-            zIndex: 25,
-            background: "rgba(18,20,26,0.95)",
-            borderRadius: 12,
-            padding: 10,
-            width: 260,
-            boxShadow: "0 6px 24px rgba(0,0,0,.35)",
-            border: "1px solid rgba(0,0,0,.6)",
-          }}
-        >
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 6 }}>
->>>>>>> restore-legacy-ui
-            {[
-              "#F2F2F2", "#BFBFBF", "#7A7A7A", "#0C0C0C",
-              "#FFD700", "#E38B29", "#C93F00",
-              "#4593FF", "#1E5AEF", "#28A745", "#007F5F",
-              "#B069FF", "#8F00FF", "#FF3B81",
-            ].map((hex) => (
-              <div
-                key={hex}
-                onClick={() => setActiveColor(hex)}
-                style={{
-                  background: hex,
-                  width: 26,
-                  height: 26,
-                  borderRadius: 6,
-                  border: activeColor === hex ? "2px solid white" : "1px solid #333",
-                  cursor: "pointer",
-<<<<<<< HEAD
-                  transition: "transform 0.1s ease, border 0.2s ease",
-                  transform: activeColor === hex ? "scale(1.15)" : "scale(1.0)",
-                }}
-              />
-            ))}
-          </div>
+      {/* === HEAD UI: Draggable Color Palette Panel === */}
+ {paintMode && (
+  <DraggablePanel
+    id=""
+    title=""
+    defaultPosition={{ x: 20, y: window.innerHeight - 240 }}
+  >
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        color: "#ddd",
+        fontSize: 14,
+      }}
+    >
 
-          <div style={{ marginTop: 6, fontSize: 12, opacity: 0.7 }}>
-            Tap or click a color to set active paint color.
-          </div>
-        </div>
-      </DraggablePanel>
-      {/* === Controls Panel === */}
-      {/* === Controls Panel === */}
-      <DraggablePanel
-        id="controls"
-        title="Controls"
-        defaultPosition={{ x: window.innerWidth - 260, y: 20 }}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(8, 1fr)",
+          gap: 6,
+        }}
       >
-        <div>
-          <div style={{ fontWeight: "bold", marginBottom: 4 }}>Grid Size</div>
-          <div style={{ display: "flex", gap: 6 }}>
-            <input
-              type="number"
-              value={params.cols}
-              min={1}
-              max={200}
-              onChange={(e) => {
-                let val = parseInt(e.target.value);
-                if (isNaN(val)) return;
+        {[
+          "#F2F2F2", "#BFBFBF", "#7A7A7A", "#0C0C0C",
+          "#FFD700", "#E38B29", "#C93F00",
+          "#4593FF", "#1E5AEF", "#28A745", "#007F5F",
+          "#B069FF", "#8F00FF", "#FF3B81",
+        ].map((hex) => (
+          <div
+            key={hex}
+            onClick={() => setActiveColor(hex)}
+            style={{
+              background: hex,
+              width: 26,
+              height: 26,
+              borderRadius: 6,
+              border: activeColor === hex ? "2px solid white" : "1px solid #333",
+              cursor: "pointer",
+              transition: "transform 0.1s ease, border 0.2s ease",
+              transform: activeColor === hex ? "scale(1.15)" : "scale(1.0)",
+            }}
+            title={hex}
+          />
+        ))}
+      </div>
 
-                if (val > 500) {
-                  // 🚫 reject extreme crash values
-                  alert("❌ 500x500 is too large and will crash your browser! Max is 200x200.");
-                  val = 200;
-                } else if (val > 200) {
-                  alert("⚠️ Grid size limit reached (200 × 200). Clamping to safe max.");
-                  val = 200;
-                } else if (val > 50) {
-                  alert("⚠️ Large grid sizes (>50) may cause performance lag.");
-                }
 
-                const updated = { ...params, cols: val };
-                setParams(updated);
-                setRings(generateRings(updated));
-              }}
-              style={{ width: "50%" }}
-            />
-            <input
-              type="number"
-              value={params.rows}
-              min={1}
-              max={200}
-              onChange={(e) => {
-                let val = parseInt(e.target.value);
-                if (isNaN(val)) return;
+    </div>
+  </DraggablePanel>
+)}
 
-                if (val > 500) {
-                  alert("❌ 500x500 is too large and will crash your browser! Max is 200x200.");
-                  val = 200;
-                } else if (val > 200) {
-                  alert("⚠️ Grid size limit reached (200 × 200). Clamping to safe max.");
-                  val = 200;
-                } else if (val > 50) {
-                  alert("⚠️ Large grid sizes (>50) may cause performance lag.");
-                }
-
-                const updated = { ...params, rows: val };
-                setParams(updated);
-                setRings(generateRings(updated));
-              }}
-              style={{ width: "50%" }}
-            />
-          </div>
-        </div>
-      </DraggablePanel>
     </div>
   );
 }
 
 // =========================
-/** Print / Report Function */
+// Print / Report Function
 // =========================
 function printReport() {
   // Load stored parameters
@@ -634,7 +557,7 @@ function printReport() {
     )
     .join("");
 
-  const totalRings = params.rows * params.cols;
+  const totalRings = (params.rows || 0) * (params.cols || 0);
 
   // Create printable popup
   const popup = window.open("", "_blank");
@@ -644,7 +567,7 @@ function printReport() {
     <head><title>Chainmaille Pattern Report</title></head>
     <body style="font-family:system-ui;padding:20px;color:#111;">
       <h2>Chainmaille Pattern Report</h2>
-      <p><b>Grid:</b> ${params.cols} × ${params.rows}</p>
+      <p><b>Grid:</b> ${params.cols ?? "—"} × ${params.rows ?? "—"}</p>
       <p><b>Supplier:</b> ${params.supplier || "—"}</p>
       <p><b>Ring Spec:</b> ${params.ringSpec || "—"}</p>
       <p><b>Total Rings:</b> ${totalRings}</p>
@@ -656,17 +579,4 @@ function printReport() {
   popup.document.close();
   popup.focus();
   popup.print();
-=======
-                  transform: activeColor === hex ? "scale(1.15)" : "scale(1.0)",
-                  transition: "transform 0.1s ease, border 0.2s ease",
-                }}
-                title={hex}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
->>>>>>> restore-legacy-ui
 }
