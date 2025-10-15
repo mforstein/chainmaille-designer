@@ -134,9 +134,16 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    (renderer.domElement.style as any).touchAction = "none";
+    (renderer.domElement.style as any).touchAction = "pan-x pan-y pinch-zoom";
     mount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
+// ✅ Enable pinch-zoom & allow Safari touch gestures properly
+(renderer.domElement.style as any).touchAction = "pan-x pan-y pinch-zoom";
+renderer.domElement.style.webkitUserSelect = "none"; // iOS Safari safeguard
+renderer.domElement.style.userSelect = "none";        // general safeguard
+
+mount.appendChild(renderer.domElement);
+rendererRef.current = renderer;
 
     // Lights
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
@@ -368,7 +375,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
   // Render container
   // -----------------------------------------------
   return (
-    <div style={{ position: "relative", width: "70vw", height: "70vh" }}>
+    <div style={{ position: "relative", width: "100vw", height: "100vh" }}>
       <div ref={mountRef} style={{ width: "100%", height: "100%" }} />
     </div>
   );
