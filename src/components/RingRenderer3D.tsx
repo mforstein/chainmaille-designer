@@ -1,5 +1,5 @@
 // src/components/RingRenderer3D.tsx
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 
@@ -113,15 +113,15 @@ export default function RingRenderer3D({
     scene.add(dir1, dir2);
 
     // controls: pan + zoom only (no rotation)
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.1;
-controls.enableRotate = true; // ✅ allow orbit
-controls.minDistance = 50;
-controls.maxDistance = 3000;
-controls.zoomSpeed = 1.0;
-controls.panSpeed = 0.8;
-controlsRef.current = controls;
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.1;
+    controls.enableRotate = true; // ✅ allow orbit
+    controls.minDistance = 50;
+    controls.maxDistance = 3000;
+    controls.zoomSpeed = 1.0;
+    controls.panSpeed = 0.8;
+    controlsRef.current = controls;
 
     // resize
     const onResize = () => {
@@ -156,7 +156,7 @@ controlsRef.current = controls;
       meshByKey.current.clear();
       scene.clear();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // background color update
@@ -201,19 +201,20 @@ controlsRef.current = controls;
       // place rings: Eu 4in1 look — subtle Z staggering and tilt
       // Rows alternate slight tilt; columns get tiny Z offsets so the "over/under" reads.
 
-const rowShift = (r.row % 2) * (params.innerDiameter * 0.5);
-const colShift = (r.col % 2) * (params.innerDiameter * 0.25);
-mesh.position.set(
-  r.x * mmToScene + rowShift,
-  -r.y * mmToScene,
-  colShift
-);
-// alternating tilts to create interlinking illusion
-mesh.rotation.x = (r.row % 2 === 0 ? Math.PI / 8 : -Math.PI / 8);
-mesh.rotation.z = (r.col % 2 === 0 ? Math.PI / 2 : 0);
+      const rowShift = (r.row % 2) * (params.innerDiameter * 0.5);
+      const colShift = (r.col % 2) * (params.innerDiameter * 0.25);
+      mesh.position.set(
+        r.x * mmToScene + rowShift,
+        -r.y * mmToScene,
+        colShift
+      );
+      // alternating tilts to create interlinking illusion
+      mesh.rotation.x = (r.row % 2 === 0 ? Math.PI / 8 : -Math.PI / 8);
+      mesh.rotation.z = (r.col % 2 === 0 ? Math.PI / 2 : 0);
       scene.add(mesh);
       meshByKey.current.set(key, mesh);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rings, params.innerDiameter, params.wireDiameter, paint, params.colorMode, params.ringColor, params.altColor]);
 
   // recolor on paint or theme change (without rebuilding meshes)
@@ -225,15 +226,16 @@ mesh.rotation.z = (r.col % 2 === 0 ? Math.PI / 2 : 0);
       const hex = paint.get(key) ?? defaultColorFor(r, c);
       (mesh.material as THREE.MeshStandardMaterial).color.set(hex);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paint, params.colorMode, params.ringColor, params.altColor]);
 
   // ----- picking / painting -----
   useEffect(() => {
     const renderer = rendererRef.current!;
     const dom = renderer.domElement;
-    const onMove = (ev: PointerEvent) => {
-      pointer.x = (ev.offsetX / dom.clientWidth) * 2 - 1;
-      pointer.y = -(ev.offsetY / dom.clientHeight) * 2 + 1;
+    const onMove = (_ev: PointerEvent) => {
+      pointer.x = (_ev.offsetX / dom.clientWidth) * 2 - 1;
+      pointer.y = -(_ev.offsetY / dom.clientHeight) * 2 + 1;
 
       raycaster.setFromCamera(pointer, cameraRef.current!);
       const hits = raycaster.intersectObjects([...meshByKey.current.values()], false);
@@ -263,7 +265,7 @@ mesh.rotation.z = (r.col % 2 === 0 ? Math.PI / 2 : 0);
       });
     };
 
-    const onDown = (ev: PointerEvent) => {
+    const onDown = (_ev: PointerEvent) => {
       if (!paintMode) return; // let OrbitControls pan/zoom
       raycaster.setFromCamera(pointer, cameraRef.current!);
       const hits = raycaster.intersectObjects([...meshByKey.current.values()], false);
@@ -272,7 +274,7 @@ mesh.rotation.z = (r.col % 2 === 0 ? Math.PI / 2 : 0);
         paintTarget(hits[0].object);
       }
     };
-    const onDrag = (ev: PointerEvent) => {
+    const onDrag = (_ev: PointerEvent) => {
       if (!isPainting) return;
       raycaster.setFromCamera(pointer, cameraRef.current!);
       const hits = raycaster.intersectObjects([...meshByKey.current.values()], false);
@@ -292,6 +294,7 @@ mesh.rotation.z = (r.col % 2 === 0 ? Math.PI / 2 : 0);
       dom.removeEventListener("pointerup", onUp);
       dom.removeEventListener("pointerleave", onUp);
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paintMode, eraseMode, activeColor, setPaint, setHoverRC]);
 
   return <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />;

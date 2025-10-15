@@ -1,8 +1,15 @@
+// ==============================
 // src/components/RingRenderer.tsx
-import React, { useEffect, useRef, useState } from "react";
+// ==============================
+import React, {
+  useEffect,
+  useRef,
+  useState,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
-import FloatingPanel from "./FloatingPanel";
 
 export type Ring = { row: number; col: number; x: number; y: number; radius: number };
 export interface RenderParams {
@@ -21,22 +28,42 @@ type Props = {
   params: RenderParams;
   paint: PaintMap;
   setPaint: React.Dispatch<React.SetStateAction<PaintMap>>;
-  paintMode: boolean;
-  eraseMode: boolean;
+  initialPaintMode?: boolean;
+  initialEraseMode?: boolean;
+  initialRotationLocked?: boolean;
   activeColor: string;
-  rotationEnabled: boolean;
 };
 
-export default function RingRenderer({
-  rings,
-  params,
-  paint,
-  setPaint,
-  paintMode,
-  eraseMode,
-  activeColor,
-  rotationEnabled,
-}: Props) {
+export type RingRendererHandle = {
+  zoomIn: () => void;
+  zoomOut: () => void;
+  resetView: () => void;
+  toggleLock: () => void;
+  setPaintMode: (on: boolean) => void;
+  toggleErase: () => void;
+  clearPaint: () => void;
+  lock2DView: () => void;
+  forceLockRotation: (locked: boolean) => void;
+  getState: () => {
+    paintMode: boolean;
+    eraseMode: boolean;
+    rotationLocked: boolean;
+  };
+};
+
+const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer(
+  {
+    rings,
+    params,
+    paint,
+    setPaint,
+    initialPaintMode = true,
+    initialEraseMode = false,
+    initialRotationLocked = true,
+    activeColor,
+  }: Props,
+  ref
+) {
   const mountRef = useRef<HTMLDivElement>(null);
 
   const sceneRef = useRef<THREE.Scene>();
@@ -45,65 +72,43 @@ export default function RingRenderer({
   const controlsRef = useRef<OrbitControls>();
   const meshesRef = useRef<THREE.Mesh[]>([]);
 
-  // runtime flags – use state for UI, mirror to refs for animate loop
-  const [localPaintMode, setLocalPaintMode] = useState(paintMode);
-  const [localEraseMode, setLocalEraseMode] = useState(eraseMode);
-  const [rotationLocked, setRotationLocked] = useState(true); // lock = 2D mode
+  const [localPaintMode, setLocalPaintMode] = useState<boolean>(initialPaintMode);
+  const [localEraseMode, setLocalEraseMode] = useState<boolean>(initialEraseMode);
+  const [rotationLocked, setRotationLocked] = useState<boolean>(initialRotationLocked);
+
   const paintModeRef = useRef(localPaintMode);
   const eraseModeRef = useRef(localEraseMode);
   const lockRef = useRef(rotationLocked);
-  const activeColorRef = useRef(activeColor); // NEW FIX: track live active color
+  const activeColorRef = useRef(activeColor);
 
-  useEffect(() => {
-    paintModeRef.current = localPaintMode;
-  }, [localPaintMode]);
-  useEffect(() => {
-    eraseModeRef.current = localEraseMode;
-  }, [localEraseMode]);
-  useEffect(() => {
-    lockRef.current = rotationLocked;
-  }, [rotationLocked]);
-  useEffect(() => {
-    activeColorRef.current = activeColor; // NEW FIX: keep updated
-  }, [activeColor]);
+  useEffect(() => { paintModeRef.current = localPaintMode; }, [localPaintMode]);
+  useEffect(() => { eraseModeRef.current = localEraseMode; }, [localEraseMode]);
+  useEffect(() => { lockRef.current = rotationLocked; }, [rotationLocked]);
+  useEffect(() => { activeColorRef.current = activeColor; }, [activeColor]);
 
-  // zoom model
   const zoomRef = useRef(1);
   const BASE_Z = 80;
   const MIN_Z = 6;
   const MAX_Z = 1200;
 
-  // paint map ref to avoid stale closure in animate
   const paintRef = useRef(paint);
-  useEffect(() => {
-    paintRef.current = paint;
-  }, [paint]);
+  useEffect(() => { paintRef.current = paint; }, [paint]);
 
-  // initial (for reset)
   const initialZRef = useRef<number>(200);
   const initialTargetRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0, 0));
 
-  // one-time init
   useEffect(() => {
     if (!mountRef.current) return;
     const mount = mountRef.current;
 
-    // Scene
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(params.bgColor || "#0F1115");
     sceneRef.current = scene;
 
-    // Camera
-    const camera = new THREE.PerspectiveCamera(
-      45,
-      mount.clientWidth / mount.clientHeight,
-      0.1,
-      2000
-    );
+    const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.1, 2000);
     camera.position.set(0, 0, BASE_Z * 3);
     cameraRef.current = camera;
 
-    // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -111,20 +116,17 @@ export default function RingRenderer({
     mount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // Lights
     scene.add(new THREE.AmbientLight(0xffffff, 0.8));
     const dir = new THREE.DirectionalLight(0xffffff, 1.2);
     dir.position.set(3, 5, 10);
     scene.add(dir);
 
-    // Controls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.screenSpacePanning = true;
-    controls.enableRotate = false; // we’ll flip this at runtime if unlocked
+    controls.enableRotate = false; // locked by default (2D)
     controlsRef.current = controls;
 
-    // Geometry (perfect rings)
     const ringGeo = new THREE.TorusGeometry(
       params.innerDiameter / 2,
       params.wireDiameter / 4,
@@ -156,7 +158,6 @@ export default function RingRenderer({
     group.position.set(-boundsX / 2, boundsY / 2, 0);
     scene.add(group);
 
-    // Fit once, and freeze as "initial"
     const fitZ = Math.max(BASE_Z, Math.max(boundsX, boundsY));
     camera.position.set(0, 0, fitZ);
     controls.target.set(0, 0, 0);
@@ -165,7 +166,6 @@ export default function RingRenderer({
     initialZRef.current = fitZ;
     initialTargetRef.current = controls.target.clone();
 
-    // Painting helpers
     const raycaster = new THREE.Raycaster();
     const ndc = new THREE.Vector2();
     let painting = false;
@@ -184,8 +184,9 @@ export default function RingRenderer({
         const key = (hits[0].object as any).ringKey as string;
         setPaint((prev) => {
           const n = new Map(prev);
-          // ✅ FIX: use the *current* active color ref, not stale state
-          n.set(key, eraseModeRef.current ? null : activeColorRef.current);
+          // Erase paints base ring color (light grey)
+          const colorToApply = eraseModeRef.current ? params.ringColor : activeColorRef.current;
+          n.set(key, colorToApply);
           return n;
         });
       }
@@ -205,7 +206,6 @@ export default function RingRenderer({
       if (painting && paintModeRef.current) {
         paintAt(e.clientX, e.clientY);
       } else if (panning && !paintModeRef.current) {
-        // 2D PAN when locked; when unlocked use OrbitControls’ native rotate/pan
         if (lockRef.current && cameraRef.current && controlsRef.current && rendererRef.current) {
           const cam = cameraRef.current;
           const ctr = controlsRef.current;
@@ -213,17 +213,14 @@ export default function RingRenderer({
           const dy = e.clientY - last.y;
           last = { x: e.clientX, y: e.clientY };
 
-          // world units per pixel at current depth
           const fovRad = (cam.fov * Math.PI) / 180;
           const halfHWorld = Math.tan(fovRad / 2) * cam.position.z;
           const halfWWorld = halfHWorld * cam.aspect;
           const perPixelX = (halfWWorld * 2) / renderer.domElement.clientWidth;
           const perPixelY = (halfHWorld * 2) / renderer.domElement.clientHeight;
 
-          // Drag left -> content follows (so camera/target move opposite)
           const moveX = -dx * perPixelX;
-          const moveY = dy * perPixelY; // screen y grows down, world y grows up
-
+          const moveY = dy * perPixelY;
           cam.position.x += moveX;
           cam.position.y += moveY;
           ctr.target.x += moveX;
@@ -242,7 +239,6 @@ export default function RingRenderer({
     renderer.domElement.addEventListener("pointermove", onMove);
     renderer.domElement.addEventListener("pointerup", onUp);
 
-    // Zoom (wheel)
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const factor = e.deltaY < 0 ? 1.1 : 0.9;
@@ -250,7 +246,6 @@ export default function RingRenderer({
     };
     renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
 
-    // Resize
     const onResize = () => {
       camera.aspect = mount.clientWidth / mount.clientHeight;
       camera.updateProjectionMatrix();
@@ -258,22 +253,18 @@ export default function RingRenderer({
     };
     window.addEventListener("resize", onResize);
 
-    // Animate
     const animate = () => {
       requestAnimationFrame(animate);
 
-      // live recolor from paintRef
       for (const m of meshesRef.current) {
         const key = (m as any).ringKey as string;
         const color = paintRef.current.get(key) || params.ringColor;
         (m.material as THREE.MeshStandardMaterial).color.set(color);
       }
 
-      // camera Z from zoom model
       const z = BASE_Z / zoomRef.current;
       camera.position.z = THREE.MathUtils.clamp(z, MIN_Z, MAX_Z);
 
-      // runtime controls flags (no re-init = no snap)
       if (controlsRef.current) {
         const locked = lockRef.current;
         controlsRef.current.enableRotate = !locked;
@@ -285,7 +276,6 @@ export default function RingRenderer({
     };
     animate();
 
-    // Cleanup
     return () => {
       window.removeEventListener("resize", onResize);
       renderer.domElement.removeEventListener("pointerdown", onDown);
@@ -296,52 +286,52 @@ export default function RingRenderer({
       controls.dispose();
       ringGeo.dispose();
     };
-    // IMPORTANT: init exactly once (no deps that cause rebuilds)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Panel callbacks (update state + refs correctly)
-  const handleTogglePaint = () => setLocalPaintMode((v) => !v);
-  const handleToggleErase = () => setLocalEraseMode((v) => !v);
-  const handleToggleLock = () => setRotationLocked((v) => !v);
-
-  const handleZoomIn = () => {
-    zoomRef.current = Math.min(zoomRef.current * 1.1, 20);
-  };
-  const handleZoomOut = () => {
-    zoomRef.current = Math.max(zoomRef.current / 1.1, 0.05);
-  };
-
-  const handleReset = () => {
-    const cam = cameraRef.current;
-    const ctr = controlsRef.current;
-    if (!cam || !ctr) return;
-    cam.position.set(0, 0, initialZRef.current);
-    ctr.target.copy(initialTargetRef.current);
-    ctr.update();
-    zoomRef.current = BASE_Z / initialZRef.current;
-  };
+  useImperativeHandle(ref, (): RingRendererHandle => ({
+    zoomIn: () => { zoomRef.current = Math.min(zoomRef.current * 1.1, 20); },
+    zoomOut: () => { zoomRef.current = Math.max(zoomRef.current / 1.1, 0.05); },
+    resetView: () => {
+      const cam = cameraRef.current;
+      const ctr = controlsRef.current;
+      if (!cam || !ctr) return;
+      cam.position.set(0, 0, initialZRef.current);
+      ctr.target.copy(initialTargetRef.current);
+      ctr.update();
+      zoomRef.current = BASE_Z / initialZRef.current;
+    },
+    toggleLock: () => setRotationLocked((v) => !v),
+    setPaintMode: (on: boolean) => setLocalPaintMode(on),
+    toggleErase: () => setLocalEraseMode((v) => !v),
+    clearPaint: () => setPaint(new Map()),
+    lock2DView: () => {
+      setRotationLocked(true);
+      const cam = cameraRef.current;
+      const ctr = controlsRef.current;
+      if (cam && ctr) {
+        cam.position.set(0, 0, initialZRef.current);
+        ctr.target.copy(initialTargetRef.current);
+        ctr.update();
+      }
+    },
+    forceLockRotation: (locked: boolean) => setRotationLocked(locked),
+    getState: () => ({
+      paintMode: paintModeRef.current,
+      eraseMode: eraseModeRef.current,
+      rotationLocked: lockRef.current,
+    }),
+  }));
 
   return (
     <div style={{ position: "relative", width: "70vw", height: "70vh" }}>
       <div ref={mountRef} style={{ width: "100%", height: "100%" }} />
-      <FloatingPanel
-        paintMode={localPaintMode}
-        eraseMode={localEraseMode}
-        rotationLocked={rotationLocked}
-        onTogglePaint={handleTogglePaint}
-        onToggleErase={handleToggleErase}
-        onToggleLock={handleToggleLock}
-        onZoomIn={handleZoomIn}
-        onZoomOut={handleZoomOut}
-        onResetView={handleReset}
-        onClearPaint={() => setPaint(new Map())}
-      />
     </div>
   );
-}
+});
 
-// ---------------- Geometry generator (unchanged “perfect rings”) ----------------
+export default RingRenderer;
+
 export function generateRings(p: {
   rows: number;
   cols: number;
@@ -367,3 +357,5 @@ export function generateRings(p: {
   }
   return rings;
 }
+
+// ================== END RingRenderer.tsx ==================

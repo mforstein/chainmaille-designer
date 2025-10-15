@@ -1,15 +1,22 @@
 export const suppliers = {
-  "Chainmail Joe": {
-    "16 SWG": [
-      { display: '1/4"', id_mm: 6.35, wire_mm: 1.6 },
-      { display: '5/16"', id_mm: 7.94, wire_mm: 1.6 },
-      { display: '3/8"', id_mm: 9.53, wire_mm: 1.6 },
-    ],
-    "18 SWG": [
-      { display: '3/16"', id_mm: 4.76, wire_mm: 1.2 },
-      { display: '1/4"', id_mm: 6.35, wire_mm: 1.2 },
-      { display: '5/16"', id_mm: 7.94, wire_mm: 1.2 },
-    ],
-    // add more gauges as per your reference image
-  },
+  "Chainmail Joe": [
+    {
+      "name": "6mm Green Anodized",
+      "color": "Anodized Green"
+    },
+    {
+      "name": "6mm Purple Anodized",
+      "color": "Anodized Purple"
+    }
+  ],
+  "The Ring Lord": [
+    {
+      "name": "6mm Bright Aluminum",
+      "color": "Natural"
+    },
+    {
+      "name": "6mm Blue Anodized",
+      "color": "Anodized Blue"
+    }
+  ]
 };
