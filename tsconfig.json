@@ -13,5 +13,11 @@
     "strict": true,
     "types": ["three", "./src/types/three-extended"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": [
+    "src/scraper.ts",
+    "scripts",
+    "build-scripts",
+    "node_modules"
+  ]
 }
