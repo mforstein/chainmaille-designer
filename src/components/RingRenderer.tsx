@@ -116,233 +116,223 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
   // -----------------------------------------------
   // Scene initialization
   // -----------------------------------------------
-  useEffect(() => {
-    if (!mountRef.current) return;
-    const mount = mountRef.current;
+useEffect(() => {
+  if (!mountRef.current) return;
+  const mount = mountRef.current;
 
-    // Scene
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(params.bgColor || "#0F1115");
-    sceneRef.current = scene;
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(params.bgColor || "#0F1115");
+  sceneRef.current = scene;
 
-    // Camera
-    const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.1, 2000);
-    camera.position.set(0, 0, BASE_Z * 3);
-    cameraRef.current = camera;
+  // --- Camera ---
+  const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.1, 2000);
+  camera.position.set(0, 0, BASE_Z * 3);
+  cameraRef.current = camera;
 
-    // Renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(mount.clientWidth, mount.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    (renderer.domElement.style as any).touchAction = "pan-x pan-y pinch-zoom";
-    mount.appendChild(renderer.domElement);
-    rendererRef.current = renderer;
-// ✅ Enable pinch-zoom & allow Safari touch gestures properly
-(renderer.domElement.style as any).touchAction = "pan-x pan-y pinch-zoom";
-renderer.domElement.style.webkitUserSelect = "none"; // iOS Safari safeguard
-renderer.domElement.style.userSelect = "none";        // general safeguard
+  // --- Renderer ---
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(mount.clientWidth, mount.clientHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-mount.appendChild(renderer.domElement);
-rendererRef.current = renderer;
+  // ✅ Touch Gesture Fix for iPhone/iPad (before mounting)
+  renderer.domElement.style.touchAction = "none";
+  renderer.domElement.style.userSelect = "none";
+  (renderer.domElement.style as any).webkitUserSelect = "none";      // Safari iOS
+  (renderer.domElement.style as any).webkitTouchCallout = "none";    // Disable long-press
 
-    // Lights
-    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-    const dir = new THREE.DirectionalLight(0xffffff, 1.2);
-    dir.position.set(3, 5, 10);
-    scene.add(dir);
+  mount.appendChild(renderer.domElement);
+  rendererRef.current = renderer;
 
-    // Controls
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.screenSpacePanning = true;
-    controls.enableRotate = false; // start locked to 2D
-    controlsRef.current = controls;
-// --- Touch Zoom Fix ---
-controls.enableZoom = true;      // ensures pinch zoom is active
-controls.zoomSpeed = 1.2;        // feels good on touch devices
-controls.enablePan = true;       // allows two-finger drag if rotation locked
-// --- Touch Zoom Fix (TypeScript safe) ---
-(controls as any).touches = {
-  ONE: THREE.TOUCH.PAN,
-  TWO: THREE.TOUCH.DOLLY_PAN,
-};
+  // --- Lighting ---
+  scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+  const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+  dir.position.set(3, 5, 10);
+  scene.add(dir);
 
-    // Ring geometry
-    const ringGeo = new THREE.TorusGeometry(
-      params.innerDiameter / 2,
-      params.wireDiameter / 4,
-      16,
-      100
+  // --- OrbitControls ---
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.screenSpacePanning = true;
+  controls.enableRotate = false; // keep flat 2D
+  controls.enableZoom = true;
+  controls.zoomSpeed = 1.2;
+  controls.enablePan = true;
+
+  // ✅ Enable two-finger pinch zoom & pan (TS-safe)
+  (controls as any).touches = {
+    ONE: THREE.TOUCH.PAN,        // one finger pans
+    TWO: THREE.TOUCH.DOLLY_PAN,  // two fingers pinch zoom + pan
+  };
+
+  controlsRef.current = controls;
+
+  // --- Ring Geometry ---
+  const ringGeo = new THREE.TorusGeometry(params.innerDiameter / 2, params.wireDiameter / 4, 16, 100);
+  const group = new THREE.Group();
+  const meshes: THREE.Mesh[] = [];
+
+  rings.forEach((r) => {
+    const mesh = new THREE.Mesh(
+      ringGeo,
+      new THREE.MeshStandardMaterial({
+        color: params.ringColor,
+        metalness: 0.85,
+        roughness: 0.25,
+      })
     );
-    const group = new THREE.Group();
-    const meshes: THREE.Mesh[] = [];
+    mesh.position.set(r.x, -r.y, 0);
+    mesh.rotation.y = r.row % 2 === 0 ? 0.25 : -0.25;
+    (mesh as any).ringKey = `${r.row},${r.col}`;
+    meshes.push(mesh);
+    group.add(mesh);
+  });
 
-    // Create meshes
-    rings.forEach((r) => {
-      const mesh = new THREE.Mesh(
-        ringGeo,
-        new THREE.MeshStandardMaterial({
-          color: params.ringColor,
-          metalness: 0.85,
-          roughness: 0.25,
-        })
-      );
-      mesh.position.set(r.x, -r.y, 0);
-      mesh.rotation.y = r.row % 2 === 0 ? 0.25 : -0.25;
-      (mesh as any).ringKey = keyAt(r.row, r.col);
-      meshes.push(mesh);
-      group.add(mesh);
-    });
-    meshesRef.current = meshes;
-    scene.add(group);
+  meshesRef.current = meshes;
+  scene.add(group);
 
-    // Center & fit
-    group.updateWorldMatrix(true, true);
-    const box = new THREE.Box3().setFromObject(group);
-    const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
-    group.position.sub(center);
+  // --- Fit Camera ---
+  const box = new THREE.Box3().setFromObject(group);
+  const size = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  const fov = (camera.fov * Math.PI) / 180;
+  const fitZ = (maxDim / 2) / Math.tan(fov / 2) * 1.1;
+  camera.position.set(0, 0, fitZ);
+  controls.target.set(0, 0, 0);
+  controls.update();
 
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const fov = (camera.fov * Math.PI) / 180;
-    const fitZ = (maxDim / 2) / Math.tan(fov / 2) * 1.1; // 10% padding
-    camera.position.set(0, 0, fitZ);
-    controls.target.set(0, 0, 0);
-    controls.update();
+  zoomRef.current = BASE_Z / fitZ;
+  initialZRef.current = fitZ;
+  initialTargetRef.current = new THREE.Vector3(0, 0, 0);
 
-    // Set initial zoom model & state
-    zoomRef.current = BASE_Z / fitZ;
-    initialZRef.current = fitZ;
-    initialTargetRef.current = new THREE.Vector3(0, 0, 0);
+  // --- Resize Handling ---
+  const onResize = () => {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  };
+  window.addEventListener("resize", onResize);
+  onResize();
 
-    // Resize handler
-    const onResize = () => {
-      camera.aspect = mount.clientWidth / mount.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(mount.clientWidth, mount.clientHeight);
-    };
-    window.addEventListener("resize", onResize);
+  // --- Painting + Panning Logic ---
+  const raycaster = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  let painting = false;
+  let panning = false;
+  let last = { x: 0, y: 0 };
 
-    // Painting
-    const raycaster = new THREE.Raycaster();
-    const ndc = new THREE.Vector2();
-    let painting = false;
-    let panning = false;
-    let last = { x: 0, y: 0 };
+  const paintAt = (clientX: number, clientY: number) => {
+    if (!rendererRef.current || !cameraRef.current) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+    ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(ndc, camera);
 
-    const paintAt = (clientX: number, clientY: number) => {
-      if (!rendererRef.current || !cameraRef.current) return;
-      const rect = renderer.domElement.getBoundingClientRect();
-      ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-      ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-      raycaster.setFromCamera(ndc, camera);
-      const hits = raycaster.intersectObjects(meshesRef.current, false);
-      if (hits.length > 0) {
-        const key = (hits[0].object as any).ringKey as string;
-        setPaint((prev) => {
-          const n = new Map(prev);
-          const colorToApply = eraseModeRef.current ? params.ringColor : activeColorRef.current;
-          n.set(key, colorToApply);
-          return n;
-        });
-      }
-    };
+    const hits = raycaster.intersectObjects(meshesRef.current, false);
+    if (hits.length > 0) {
+      const key = (hits[0].object as any).ringKey as string;
+      setPaint((prev) => {
+        const n = new Map(prev);
+        const colorToApply = eraseModeRef.current ? params.ringColor : activeColorRef.current;
+        n.set(key, colorToApply);
+        return n;
+      });
+    }
+  };
 
-    // Pointer events
-    const onDown = (e: PointerEvent) => {
-      if (paintModeRef.current) {
-        painting = true;
-        paintAt(e.clientX, e.clientY);
-      } else {
-        panning = true;
+  const onDown = (e: PointerEvent) => {
+    e.preventDefault(); // ⛔️ Prevent page scroll/zoom
+    if (paintModeRef.current) {
+      painting = true;
+      paintAt(e.clientX, e.clientY);
+    } else {
+      panning = true;
+      last = { x: e.clientX, y: e.clientY };
+    }
+  };
+
+  const onMove = (e: PointerEvent) => {
+    e.preventDefault(); // ⛔️ Prevent scroll during paint
+    if (painting && paintModeRef.current) {
+      paintAt(e.clientX, e.clientY);
+    } else if (panning && !paintModeRef.current) {
+      if (lockRef.current && cameraRef.current && controlsRef.current && rendererRef.current) {
+        const cam = cameraRef.current;
+        const ctr = controlsRef.current;
+        const dx = e.clientX - last.x;
+        const dy = e.clientY - last.y;
         last = { x: e.clientX, y: e.clientY };
+
+        const fovRad = (cam.fov * Math.PI) / 180;
+        const halfHWorld = Math.tan(fovRad / 2) * cam.position.z;
+        const halfWWorld = halfHWorld * cam.aspect;
+        const perPixelX = (halfWWorld * 2) / renderer.domElement.clientWidth;
+        const perPixelY = (halfHWorld * 2) / renderer.domElement.clientHeight;
+
+        const moveX = -dx * perPixelX;
+        const moveY = dy * perPixelY;
+
+        cam.position.x += moveX;
+        cam.position.y += moveY;
+        ctr.target.x += moveX;
+        ctr.target.y += moveY;
+        ctr.update();
       }
-    };
+    }
+  };
 
-    const onMove = (e: PointerEvent) => {
-      if (painting && paintModeRef.current) {
-        paintAt(e.clientX, e.clientY);
-      } else if (panning && !paintModeRef.current) {
-        if (lockRef.current && cameraRef.current && controlsRef.current && rendererRef.current) {
-          const cam = cameraRef.current;
-          const ctr = controlsRef.current;
-          const dx = e.clientX - last.x;
-          const dy = e.clientY - last.y;
-          last = { x: e.clientX, y: e.clientY };
+  const onUp = () => { painting = false; panning = false; };
 
-          // consistent pan speed regardless of Z
-          const fovRad = (cam.fov * Math.PI) / 180;
-          const halfHWorld = Math.tan(fovRad / 2) * cam.position.z;
-          const halfWWorld = halfHWorld * cam.aspect;
-          const perPixelX = (halfWWorld * 2) / renderer.domElement.clientWidth;
-          const perPixelY = (halfHWorld * 2) / renderer.domElement.clientHeight;
+  // --- Add Event Listeners ---
+  renderer.domElement.addEventListener("pointerdown", onDown);
+  renderer.domElement.addEventListener("pointermove", onMove);
+  renderer.domElement.addEventListener("pointerup", onUp);
 
-          const moveX = -dx * perPixelX;
-          const moveY = dy * perPixelY;
+  // --- Wheel Zoom (Desktop) ---
+  const onWheel = (e: WheelEvent) => {
+    e.preventDefault();
+    const factor = e.deltaY < 0 ? 1.1 : 0.9;
+    zoomRef.current = THREE.MathUtils.clamp(zoomRef.current * factor, 0.05, 20);
+  };
+  renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
 
-          cam.position.x += moveX;
-          cam.position.y += moveY;
-          ctr.target.x += moveX;
-          ctr.target.y += moveY;
-          ctr.update();
-        }
-      }
-    };
+  // --- Animation Loop ---
+  const animate = () => {
+    requestAnimationFrame(animate);
+    for (const m of meshesRef.current) {
+      const key = (m as any).ringKey as string;
+      const color = paintRef.current.get(key) || params.ringColor;
+      (m.material as THREE.MeshStandardMaterial).color.set(color);
+    }
 
-    const onUp = () => { painting = false; panning = false; };
+    const z = BASE_Z / zoomRef.current;
+    camera.position.z = THREE.MathUtils.clamp(z, MIN_Z, MAX_Z);
 
-    renderer.domElement.addEventListener("pointerdown", onDown);
-    renderer.domElement.addEventListener("pointermove", onMove);
-    renderer.domElement.addEventListener("pointerup", onUp);
+    if (controlsRef.current) {
+      const locked = lockRef.current;
+      controlsRef.current.enableRotate = !locked;
+      controlsRef.current.enablePan = !paintModeRef.current && !locked;
+      controlsRef.current.update();
+    }
 
-    // Wheel zoom
-    const onWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const factor = e.deltaY < 0 ? 1.1 : 0.9;
-      zoomRef.current = THREE.MathUtils.clamp(zoomRef.current * factor, 0.05, 20);
-    };
-    renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
+    renderer.render(scene, camera);
+  };
+  animate();
 
-    // Animate
-    const animate = () => {
-      requestAnimationFrame(animate);
-
-      // live recolor from paint map
-      for (const m of meshesRef.current) {
-        const key = (m as any).ringKey as string;
-        const color = paintRef.current.get(key) || params.ringColor;
-        (m.material as THREE.MeshStandardMaterial).color.set(color);
-      }
-
-      // zoom model -> camera z
-      const z = BASE_Z / zoomRef.current;
-      camera.position.z = THREE.MathUtils.clamp(z, MIN_Z, MAX_Z);
-
-      // controls flags at runtime
-      if (controlsRef.current) {
-        const locked = lockRef.current;
-        controlsRef.current.enableRotate = !locked;
-        controlsRef.current.enablePan = !paintModeRef.current && !locked;
-        controlsRef.current.update();
-      }
-
-      renderer.render(scene, camera);
-    };
-    animate();
-
-    return () => {
-      window.removeEventListener("resize", onResize);
-      renderer.domElement.removeEventListener("pointerdown", onDown);
-      renderer.domElement.removeEventListener("pointermove", onMove);
-      renderer.domElement.removeEventListener("pointerup", onUp);
-      renderer.domElement.removeEventListener("wheel", onWheel);
-      mount.removeChild(renderer.domElement);
-      controls.dispose();
-      ringGeo.dispose();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  // --- Cleanup ---
+  return () => {
+    window.removeEventListener("resize", onResize);
+    renderer.domElement.removeEventListener("pointerdown", onDown);
+    renderer.domElement.removeEventListener("pointermove", onMove);
+    renderer.domElement.removeEventListener("pointerup", onUp);
+    renderer.domElement.removeEventListener("wheel", onWheel);
+    mount.removeChild(renderer.domElement);
+    controls.dispose();
+    ringGeo.dispose();
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, []);
   // -----------------------------------------------
   // Imperative API exposed to parent
   // -----------------------------------------------
