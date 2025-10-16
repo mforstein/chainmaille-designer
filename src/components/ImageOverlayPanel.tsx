@@ -2,7 +2,7 @@
 // File: src/components/ImageOverlayPanel.tsx
 // =====================================
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { nearestPaletteHex, rgbToHex } from "../utils/color";
+import { nearestPaletteHex, rgbToHex } from "../utils/colors";
 import { clamp } from "../types";
 
 type SampleMode = "nearest" | "average";
