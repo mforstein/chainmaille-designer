@@ -5,6 +5,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import "./index.css";
 import "./ui/ui-grid.css";
 import RingRenderer, { generateRings, RingRendererHandle } from "./components/RingRenderer";
+import { UNIVERSAL_COLORS, MATERIALS } from "./utils/colors";
 
 // ---------------- Types ----------------
 export type SupplierId = "cmj" | "trl" | "mdz";
@@ -32,9 +33,8 @@ type PaintMap = Map<string, string | null>;
 // ---------------- Helpers ----------------
 const keyAt = (r: number, c: number) => `${r},${c}`;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-const mmToIn = (mm: number) => mm / 25.4;
 
-// ---------------- Draggable Panel (HEAD UI) ----------------
+// ---------------- Draggable Panel ----------------
 function DraggablePanel({
   id,
   title,
@@ -55,7 +55,6 @@ function DraggablePanel({
   const offset = useRef({ x: 0, y: 0 });
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Touch + Mouse Drag
   const startDrag = (clientX: number, clientY: number) => {
     setDragging(true);
     offset.current = { x: clientX - pos.x, y: clientY - pos.y };
@@ -76,6 +75,7 @@ function DraggablePanel({
       y: clientY - offset.current.y,
     });
   };
+
   const handleMouseMove = (e: React.MouseEvent) => handleMove(e.clientX, e.clientY);
   const handleTouchMove = (e: React.TouchEvent) => {
     const t = e.touches[0];
@@ -85,27 +85,6 @@ function DraggablePanel({
   useEffect(() => {
     localStorage.setItem(`panel-pos-${id}`, JSON.stringify(pos));
   }, [id, pos]);
-
-  // Snap back in view on resize
-  useEffect(() => {
-    const snapBack = () => {
-      const panel = panelRef.current;
-      if (!panel) return;
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-      const w = panel.offsetWidth;
-      const h = panel.offsetHeight;
-      const next = {
-        x: clamp(pos.x, 10 - w / 2, vw - w / 2 - 10),
-        y: clamp(pos.y, 10, vh - h - 10),
-      };
-      setPos(next);
-    };
-    snapBack();
-    window.addEventListener("resize", snapBack);
-    return () => window.removeEventListener("resize", snapBack);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   return (
     <div
@@ -140,7 +119,6 @@ function DraggablePanel({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: 8,
         }}
       >
         <span>{title}</span>
@@ -156,7 +134,6 @@ function DraggablePanel({
             cursor: "pointer",
           }}
           aria-label="Collapse panel"
-          title="Collapse"
         >
           {collapsed ? "▢" : "—"}
         </button>
@@ -167,21 +144,11 @@ function DraggablePanel({
   );
 }
 
-// ---------------- Icon Button (restore-legacy-ui UI) ----------------
+// ---------------- Icon Button ----------------
 const IconBtn: React.FC<
   React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean; tooltip?: string }
 > = ({ active, tooltip, children, ...rest }) => (
-  <div
-    className="tooltip-parent"
-    style={{
-      position: "relative",
-      display: "flex",
-      justifyContent: "center",
-      alignItems: "center",
-      width: 40,
-      height: 40,
-    }}
-  >
+  <div style={{ position: "relative", width: 40, height: 40 }}>
     <button
       {...rest}
       style={{
@@ -198,9 +165,7 @@ const IconBtn: React.FC<
         cursor: "pointer",
         userSelect: "none",
         padding: 0,
-        boxSizing: "border-box",
       }}
-      aria-label={tooltip}
       title={tooltip}
     >
       {children}
@@ -221,7 +186,7 @@ export default function App() {
         overlapX: 0.3,
         overlapY: 0.3,
         colorMode: "solid",
-        ringColor: "#C9C9C9",
+        ringColor: MATERIALS.find((m) => m.name === "Aluminum")?.hex || "#C0C0C0",
         altColor: "#B2B2B2",
         bgColor: "#0F1115",
         supplier: "cmj",
@@ -242,10 +207,10 @@ export default function App() {
   const [rotationLocked, setRotationLocked] = useState(true);
   const [activeColor, setActiveColor] = useState("#8F00FF");
   const [activeMenu, setActiveMenu] = useState<"camera" | "controls" | null>(null);
+  const [showMaterialPalette, setShowMaterialPalette] = useState(false);
 
   const rendererRef = useRef<RingRendererHandle | null>(null);
 
-  // Persist params & paint
   useEffect(() => {
     localStorage.setItem("cmd.params", JSON.stringify(params));
   }, [params]);
@@ -254,42 +219,28 @@ export default function App() {
     localStorage.setItem("cmd.paint", JSON.stringify(Array.from(paint.entries())));
   }, [paint]);
 
-  // Rebuild rings on geometry-changing params only
-  useEffect(() => {
-    setRings(generateRings(params));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.rows, params.cols, params.innerDiameter, params.wireDiameter]);
+useEffect(() => {
+  setRings(generateRings(params));
+}, [
+  params.rows,
+  params.cols,
+  params.innerDiameter,
+  params.wireDiameter,
+  params.ringColor, // ✅ re-render when base material changes
+]);
 
-  // Keep RingRenderer paint mode in sync
   useEffect(() => {
     rendererRef.current?.setPaintMode(paintMode);
   }, [paintMode]);
 
-  // If paint turns off, also turn off eraser so resume is "paint"
   useEffect(() => {
     if (!paintMode && eraseMode) setEraseMode(false);
   }, [paintMode, eraseMode]);
 
-  // Color usage memo
-  const _colourUsage = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const [, v] of paint.entries()) {
-      if (!v) continue;
-      map.set(v, (map.get(v) || 0) + 1);
-    }
-    return [...map.entries()]
-      .map(([hex, count]) => ({ hex, count }))
-      .sort((a, b) => b.count - a.count);
-  }, [paint]);
-
-  // Deterministic lock setter
   const setLock = (locked: boolean) => {
     rendererRef.current?.forceLockRotation?.(locked);
     setRotationLocked(locked);
-    if (!locked) {
-      // Switching to 3D: turn off paint mode
-      setPaintMode(false);
-    }
+    if (!locked) setPaintMode(false);
   };
 
   const toggleExclusive = (menu: "camera" | "controls") =>
@@ -298,11 +249,11 @@ export default function App() {
   const doZoomIn = () => rendererRef.current?.zoomIn();
   const doZoomOut = () => rendererRef.current?.zoomOut();
   const doReset = () => rendererRef.current?.resetView();
-  const doClearPaint = () => rendererRef.current?.clearPaint();
-
-  // Eraser binds to base ring color
+const doClearPaint = () => {
+  rendererRef.current?.clearPaint();
+  setPaint(new Map());
+};
   const effectiveColor = eraseMode ? params.ringColor : activeColor;
-
   return (
     <div
       style={{
@@ -314,7 +265,7 @@ export default function App() {
           "radial-gradient(#2A2C34 1px, transparent 1px) 0 0 / 22px 22px, radial-gradient(#1B1D22 1px, transparent 1px) 11px 11px / 22px 22px, #0E0F12",
       }}
     >
-      {/* Canvas (centered container works well for both UIs) */}
+      {/* === Canvas === */}
       <div
         style={{
           position: "absolute",
@@ -326,7 +277,7 @@ export default function App() {
       >
         <RingRenderer
           ref={rendererRef}
-          key={`${params.rows}x${params.cols}`}
+          key={`${params.rows}x${params.cols}-${params.ringColor}`}
           rings={rings}
           params={params}
           paint={paint}
@@ -338,7 +289,7 @@ export default function App() {
         />
       </div>
 
-      {/* === restore-legacy-ui: Left toolbar (📷 ▶) === */}
+      {/* === Left Toolbar (📷 ▶) === */}
       <div
         style={{
           position: "absolute",
@@ -356,15 +307,23 @@ export default function App() {
           padding: 10,
         }}
       >
-        <IconBtn tooltip="Camera Tools" active={activeMenu === "camera"} onClick={() => toggleExclusive("camera")}>
+        <IconBtn
+          tooltip="Camera Tools"
+          active={activeMenu === "camera"}
+          onClick={() => toggleExclusive("camera")}
+        >
           📷
         </IconBtn>
 
-        <IconBtn tooltip="Controls Menu" active={activeMenu === "controls"} onClick={() => toggleExclusive("controls")}>
+        <IconBtn
+          tooltip="Controls Menu"
+          active={activeMenu === "controls"}
+          onClick={() => toggleExclusive("controls")}
+        >
           ▶
         </IconBtn>
 
-        {/* Camera subpanel */}
+        {/* === Camera Subpanel === */}
         {activeMenu === "camera" && (
           <div
             style={{
@@ -378,6 +337,7 @@ export default function App() {
               borderRadius: 12,
               width: 52,
               alignItems: "center",
+              position: "relative",
             }}
           >
             <IconBtn
@@ -386,16 +346,17 @@ export default function App() {
               onClick={() => {
                 const next = !paintMode;
                 setPaintMode(next);
-                if (next) {
-                  // Lock to 2D but keep current camera position
-                  setLock(true);
-                }
+                if (next) setLock(true);
               }}
             >
               🎨
             </IconBtn>
 
-            <IconBtn tooltip="Erase Mode" active={eraseMode} onClick={() => setEraseMode((v) => !v)}>
+            <IconBtn
+              tooltip="Erase Mode"
+              active={eraseMode}
+              onClick={() => setEraseMode((v) => !v)}
+            >
               🧽
             </IconBtn>
 
@@ -411,10 +372,94 @@ export default function App() {
             </IconBtn>
 
             <IconBtn tooltip="Clear Paint" onClick={doClearPaint}>🧹</IconBtn>
+
+            {/* === Base Material Selector === */}
+            <IconBtn
+              tooltip="Select Base Material"
+              onClick={() => setShowMaterialPalette((v) => !v)}
+            >
+              🧲
+            </IconBtn>
+
+            <div
+              style={{
+                fontSize: 11,
+                color: "#ccc",
+                marginTop: -4,
+                marginBottom: 4,
+                textAlign: "center",
+                userSelect: "none",
+              }}
+            >
+              Base: {MATERIALS.find((m) => m.hex === params.ringColor)?.name || "Custom"}
+            </div>
+
+            {showMaterialPalette && (
+              <div
+                style={{
+                  position: "absolute",
+                  left: "70px",
+                  top: "0",
+                  zIndex: 9999,
+                  background: "rgba(17,24,39,0.95)",
+                  border: "1px solid rgba(0,0,0,0.6)",
+                  borderRadius: 12,
+                  padding: 10,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                  boxShadow: "0 8px 20px rgba(0,0,0,.4)",
+                }}
+              >
+                <div
+                  style={{ fontWeight: "bold", fontSize: 13, color: "#ddd" }}
+                >
+                  Base Material
+                </div>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, 1fr)",
+                    gap: 6,
+                  }}
+                >
+                  {MATERIALS.map((mat) => (
+                    <div
+                      key={mat.name}
+                      onClick={() => {
+                        setParams((prev) => ({ ...prev, ringColor: mat.hex }));
+                        setShowMaterialPalette(false);
+                      }}
+                      title={mat.name}
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 6,
+                        background:
+                          mat.hex === "transparent" ? "none" : mat.hex,
+                        border:
+                          params.ringColor === mat.hex
+                            ? "2px solid white"
+                            : "1px solid #444",
+                        cursor: "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#fff",
+                        fontSize: 11,
+                        textShadow: "0 1px 2px rgba(0,0,0,0.5)",
+                      }}
+                    >
+                      {mat.hex === "transparent" ? "×" : ""}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Controls subpanel */}
+        {/* === Controls Subpanel === */}
         {activeMenu === "controls" && (
           <div
             style={{
@@ -468,59 +513,54 @@ export default function App() {
         )}
       </div>
 
-      {/* === HEAD UI: Draggable Color Palette Panel === */}
- {paintMode && (
-  <DraggablePanel
-    id=""
-    title=""
-    defaultPosition={{ x: 20, y: window.innerHeight - 240 }}
-  >
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: 8,
-        color: "#ddd",
-        fontSize: 14,
-      }}
-    >
-
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(8, 1fr)",
-          gap: 6,
-        }}
-      >
-        {[
-          "#F2F2F2", "#BFBFBF", "#7A7A7A", "#0C0C0C",
-          "#FFD700", "#E38B29", "#C93F00",
-          "#4593FF", "#1E5AEF", "#28A745", "#007F5F",
-          "#B069FF", "#8F00FF", "#FF3B81",
-        ].map((hex) => (
+      {/* === Draggable Color Palette === */}
+      {paintMode && (
+        <DraggablePanel
+          id="color-palette"
+          title=""
+          defaultPosition={{ x: 20, y: window.innerHeight - 240 }}
+        >
           <div
-            key={hex}
-            onClick={() => setActiveColor(hex)}
             style={{
-              background: hex,
-              width: 26,
-              height: 26,
-              borderRadius: 6,
-              border: activeColor === hex ? "2px solid white" : "1px solid #333",
-              cursor: "pointer",
-              transition: "transform 0.1s ease, border 0.2s ease",
-              transform: activeColor === hex ? "scale(1.15)" : "scale(1.0)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              color: "#ddd",
+              fontSize: 14,
             }}
-            title={hex}
-          />
-        ))}
-      </div>
-
-
-    </div>
-  </DraggablePanel>
-)}
-
+          >
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(8, 1fr)",
+                gap: 6,
+              }}
+            >
+              {UNIVERSAL_COLORS.map((hex) => (
+                <div
+                  key={hex}
+                  onClick={() => setActiveColor(hex)}
+                  style={{
+                    background: hex,
+                    width: 26,
+                    height: 26,
+                    borderRadius: 6,
+                    border:
+                      activeColor === hex
+                        ? "2px solid white"
+                        : "1px solid #333",
+                    cursor: "pointer",
+                    transition: "transform 0.1s ease, border 0.2s ease",
+                    transform:
+                      activeColor === hex ? "scale(1.15)" : "scale(1.0)",
+                  }}
+                  title={hex}
+                />
+              ))}
+            </div>
+          </div>
+        </DraggablePanel>
+      )}
     </div>
   );
 }
@@ -529,23 +569,15 @@ export default function App() {
 // Print / Report Function
 // =========================
 function printReport() {
-  // Load stored parameters
   const params = JSON.parse(localStorage.getItem("cmd.params") || "{}");
-
-  // Explicitly type the paint map so TypeScript knows its contents
   const paint = new Map<string, string | null>(
     JSON.parse(localStorage.getItem("cmd.paint") || "[]")
   );
-
-  // Track how many times each color is used
   const colorUsage: Record<string, number> = {};
-
   for (const [, color] of paint.entries()) {
     if (!color) continue;
     colorUsage[color] = (colorUsage[color] || 0) + 1;
   }
-
-  // Generate the HTML for the color usage table
   const usageHTML = Object.entries(colorUsage)
     .map(
       ([hex, count]) => `
@@ -556,10 +588,7 @@ function printReport() {
       </div>`
     )
     .join("");
-
   const totalRings = (params.rows || 0) * (params.cols || 0);
-
-  // Create printable popup
   const popup = window.open("", "_blank");
   if (!popup) return;
   popup.document.write(`
