@@ -128,18 +128,16 @@ useEffect(() => {
   const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.1, 2000);
   camera.position.set(0, 0, BASE_Z * 3);
   cameraRef.current = camera;
-
   // --- Renderer ---
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(mount.clientWidth, mount.clientHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-  // ✅ Touch Gesture Fix for iPhone/iPad (before mounting)
-  renderer.domElement.style.touchAction = "none";
+  // ✅ Touch Gesture Fix for iPhone/iPad
+  renderer.domElement.style.touchAction = "none"; // prevent browser gestures
   renderer.domElement.style.userSelect = "none";
-  (renderer.domElement.style as any).webkitUserSelect = "none";      // Safari iOS
-  (renderer.domElement.style as any).webkitTouchCallout = "none";    // Disable long-press
-
+  (renderer.domElement.style as any).webkitUserSelect = "none";
+  (renderer.domElement.style as any).webkitTouchCallout = "none";
   mount.appendChild(renderer.domElement);
   rendererRef.current = renderer;
 
@@ -153,20 +151,20 @@ useEffect(() => {
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.screenSpacePanning = true;
-  controls.enableRotate = false; // keep flat 2D
+  controls.enableRotate = false; // locked 2D by default
   controls.enableZoom = true;
   controls.zoomSpeed = 1.2;
   controls.enablePan = true;
 
-  // ✅ Enable two-finger pinch zoom & pan (TS-safe)
+  // ✅ Two-finger pinch zoom and pan gestures (for iPhone/iPad)
   (controls as any).touches = {
-    ONE: THREE.TOUCH.PAN,        // one finger pans
-    TWO: THREE.TOUCH.DOLLY_PAN,  // two fingers pinch zoom + pan
+    ONE: THREE.TOUCH.PAN,
+    TWO: THREE.TOUCH.DOLLY_PAN,
   };
 
   controlsRef.current = controls;
 
-  // --- Ring Geometry ---
+  // --- Create ring meshes ---
   const ringGeo = new THREE.TorusGeometry(params.innerDiameter / 2, params.wireDiameter / 4, 16, 100);
   const group = new THREE.Group();
   const meshes: THREE.Mesh[] = [];
@@ -190,21 +188,28 @@ useEffect(() => {
   meshesRef.current = meshes;
   scene.add(group);
 
-  // --- Fit Camera ---
+  // --- ✅ Center the model and fit camera properly ---
   const box = new THREE.Box3().setFromObject(group);
+  const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
+
+  // Move group so that it’s centered in world space
+  group.position.sub(center);
+
   const maxDim = Math.max(size.x, size.y, size.z);
   const fov = (camera.fov * Math.PI) / 180;
   const fitZ = (maxDim / 2) / Math.tan(fov / 2) * 1.1;
+
+  // ✅ Center camera directly in front of model
   camera.position.set(0, 0, fitZ);
-  controls.target.set(0, 0, 0);
+  controls.target.copy(new THREE.Vector3(0, 0, 0));
   controls.update();
 
   zoomRef.current = BASE_Z / fitZ;
   initialZRef.current = fitZ;
   initialTargetRef.current = new THREE.Vector3(0, 0, 0);
 
-  // --- Resize Handling ---
+  // --- Resize handling ---
   const onResize = () => {
     const w = window.innerWidth;
     const h = window.innerHeight;
@@ -215,7 +220,7 @@ useEffect(() => {
   window.addEventListener("resize", onResize);
   onResize();
 
-  // --- Painting + Panning Logic ---
+  // --- Painting & panning ---
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   let painting = false;
@@ -242,7 +247,7 @@ useEffect(() => {
   };
 
   const onDown = (e: PointerEvent) => {
-    e.preventDefault(); // ⛔️ Prevent page scroll/zoom
+    e.preventDefault();
     if (paintModeRef.current) {
       painting = true;
       paintAt(e.clientX, e.clientY);
@@ -253,7 +258,7 @@ useEffect(() => {
   };
 
   const onMove = (e: PointerEvent) => {
-    e.preventDefault(); // ⛔️ Prevent scroll during paint
+    e.preventDefault();
     if (painting && paintModeRef.current) {
       paintAt(e.clientX, e.clientY);
     } else if (panning && !paintModeRef.current) {
@@ -284,12 +289,11 @@ useEffect(() => {
 
   const onUp = () => { painting = false; panning = false; };
 
-  // --- Add Event Listeners ---
   renderer.domElement.addEventListener("pointerdown", onDown);
   renderer.domElement.addEventListener("pointermove", onMove);
   renderer.domElement.addEventListener("pointerup", onUp);
 
-  // --- Wheel Zoom (Desktop) ---
+  // --- Wheel zoom (desktop) ---
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.1 : 0.9;
@@ -297,7 +301,7 @@ useEffect(() => {
   };
   renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
 
-  // --- Animation Loop ---
+  // --- Animate loop ---
   const animate = () => {
     requestAnimationFrame(animate);
     for (const m of meshesRef.current) {
@@ -331,8 +335,8 @@ useEffect(() => {
     controls.dispose();
     ringGeo.dispose();
   };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
+
   // -----------------------------------------------
   // Imperative API exposed to parent
   // -----------------------------------------------
