@@ -101,13 +101,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
   useEffect(() => { activeColorRef.current = activeColor; }, [activeColor]);
   useEffect(() => { paintRef.current = paint; }, [paint]);
 
-  // -----------------------------------------------
-  // Zoom model & camera state
-  // -----------------------------------------------
-  const zoomRef = useRef(1);
-  const BASE_Z = 80;
-  const MIN_Z = 6;
-  const MAX_Z = 1200;
+  // Saved initial camera state for reset/lock2D
   const initialZRef = useRef<number>(200);
   const initialTargetRef = useRef<THREE.Vector3>(new THREE.Vector3(0, 0, 0));
 
@@ -123,14 +117,20 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     sceneRef.current = scene;
 
     // --- Camera ---
-    const camera = new THREE.PerspectiveCamera(45, mount.clientWidth / mount.clientHeight, 0.1, 2000);
-    camera.position.set(0, 0, BASE_Z * 3);
+    const camera = new THREE.PerspectiveCamera(
+      45,
+      mount.clientWidth / mount.clientHeight,
+      0.1,
+      2000
+    );
+    camera.position.set(0, 0, 240);
     cameraRef.current = camera;
 
     // --- Renderer ---
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(mount.clientWidth, mount.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Important for touch gesture routing (OrbitControls + our guards)
     renderer.domElement.style.touchAction = "none";
     renderer.domElement.style.userSelect = "none";
     (renderer.domElement.style as any).webkitUserSelect = "none";
@@ -147,26 +147,35 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     // --- OrbitControls ---
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
     controls.screenSpacePanning = true;
-    controls.enableRotate = !initialRotationLocked;
-    controls.enableZoom = true;
+    controls.enableZoom = true;         // ✅ all zoom goes through OrbitControls
     controls.enablePan = true;
-    controls.zoomSpeed = 1.2;
-    (controls as any).touches = {
-      ONE: THREE.TOUCH.PAN,
-      TWO: THREE.TOUCH.DOLLY_PAN,
-    };
-    controlsRef.current = controls;
+    controls.enableRotate = !initialRotationLocked;
+    controls.zoomSpeed = 1.1;
 
-    // --- Prevent native pinch-zoom on iOS ---
+    // ✅ Proper native pinch zoom
+    controls.touches = {
+      ONE: THREE.TOUCH.PAN,        // one-finger pan
+      TWO: THREE.TOUCH.DOLLY_PAN,  // two-finger pinch zoom (and pan)
+    };
+
+    // ✅ Prevent browser/page pinch-zoom (iOS/Android)
     const preventTouchZoom = (e: TouchEvent) => {
       if (e.touches.length > 1) e.preventDefault();
     };
     renderer.domElement.addEventListener("touchstart", preventTouchZoom, { passive: false });
     renderer.domElement.addEventListener("touchmove", preventTouchZoom, { passive: false });
 
+    controlsRef.current = controls;
+
     // --- Mesh creation ---
-    const ringGeo = new THREE.TorusGeometry(params.innerDiameter / 2, params.wireDiameter / 4, 16, 100);
+    const ringGeo = new THREE.TorusGeometry(
+      params.innerDiameter / 2,
+      params.wireDiameter / 4,
+      16,
+      100
+    );
     const group = new THREE.Group();
     const meshes: THREE.Mesh[] = [];
 
@@ -198,11 +207,18 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     const fov = (camera.fov * Math.PI) / 180;
     const fitZ = (maxDim / 2) / Math.tan(fov / 2) * 1.1;
     camera.position.set(0, 0, fitZ);
-    controls.target.copy(new THREE.Vector3(0, 0, 0));
+    controls.target.set(0, 0, 0);
     controls.update();
-    zoomRef.current = BASE_Z / fitZ;
+
+    // Save initial for reset/lock2D
     initialZRef.current = fitZ;
-    initialTargetRef.current = new THREE.Vector3(0, 0, 0);
+    initialTargetRef.current.set(0, 0, 0);
+    // Let OrbitControls remember the state for reset()
+    // (saveState is called internally on construction, but call once after fit)
+    // @ts-ignore - saveState exists
+    if (typeof (controls as any).saveState === "function") {
+      (controls as any).saveState();
+    }
 
     // --- Resize ---
     const onResize = () => {
@@ -215,15 +231,15 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     window.addEventListener("resize", onResize);
     onResize();
 
-    // --- Paint + Pan ---
+    // --- Paint + Pan (custom painting; OrbitControls still handles pan/zoom) ---
     const raycaster = new THREE.Raycaster();
     const ndc = new THREE.Vector2();
     let painting = false;
     let panning = false;
     let last = { x: 0, y: 0 };
+    const activePointers = new Set<number>();
 
     const paintAt = (clientX: number, clientY: number) => {
-      if (!rendererRef.current || !cameraRef.current) return;
       const rect = renderer.domElement.getBoundingClientRect();
       ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
       ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
@@ -233,7 +249,9 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
         const key = (hits[0].object as any).ringKey as string;
         setPaint((prev) => {
           const n = new Map(prev);
-          const colorToApply = eraseModeRef.current ? params.ringColor : activeColorRef.current;
+          const colorToApply = eraseModeRef.current
+            ? params.ringColor
+            : activeColorRef.current;
           n.set(key, colorToApply);
           return n;
         });
@@ -242,6 +260,11 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
 
     const onDown = (e: PointerEvent) => {
       e.preventDefault();
+      activePointers.add(e.pointerId);
+
+      // 👉 If two pointers (pinch), let OrbitControls handle zoom; don't paint/pan
+      if (activePointers.size > 1) return;
+
       if (paintModeRef.current) {
         painting = true;
         paintAt(e.clientX, e.clientY);
@@ -252,11 +275,15 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     };
 
     const onMove = (e: PointerEvent) => {
+      // 👉 If two fingers are down, we’re pinch-zooming — skip painting/panning
+      if (activePointers.size > 1) return;
       e.preventDefault();
+
       if (painting && paintModeRef.current) {
         paintAt(e.clientX, e.clientY);
       } else if (panning && !paintModeRef.current) {
-        if (lockRef.current && cameraRef.current && controlsRef.current && rendererRef.current) {
+        // Manual in-plane pan when rotation is locked
+        if (lockRef.current && cameraRef.current && controlsRef.current) {
           const cam = cameraRef.current;
           const ctr = controlsRef.current;
           const dx = e.clientX - last.x;
@@ -278,35 +305,50 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
       }
     };
 
-    const onUp = () => { painting = false; panning = false; };
+    const onUp = (e: PointerEvent) => {
+      activePointers.delete(e.pointerId);
+      if (activePointers.size === 0) {
+        painting = false;
+        panning = false;
+      }
+    };
+
     renderer.domElement.addEventListener("pointerdown", onDown);
     renderer.domElement.addEventListener("pointermove", onMove);
     renderer.domElement.addEventListener("pointerup", onUp);
 
-    // --- Wheel zoom ---
+    // --- Wheel zoom (via OrbitControls) ---
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const factor = e.deltaY < 0 ? 1.1 : 0.9;
-      zoomRef.current = THREE.MathUtils.clamp(zoomRef.current * factor, 0.05, 20);
+      if (!controlsRef.current) return;
+      if (e.deltaY < 0) controlsRef.current.dollyIn(1.1);
+      else controlsRef.current.dollyOut(1.1);
+      controlsRef.current.update();
     };
     renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
 
     // --- Animate loop ---
     const animate = () => {
       requestAnimationFrame(animate);
+
+      // Apply paint colors
       for (const m of meshesRef.current) {
         const key = (m as any).ringKey as string;
         const color = paintRef.current.get(key) || params.ringColor;
         (m.material as THREE.MeshStandardMaterial).color.set(color);
       }
-      const z = BASE_Z / zoomRef.current;
-      camera.position.z = THREE.MathUtils.clamp(z, MIN_Z, MAX_Z);
+
+      // Keep controls in sync with lock/paint states
       if (controlsRef.current) {
         const locked = lockRef.current;
         controlsRef.current.enableRotate = !locked;
-        controlsRef.current.enablePan = !paintModeRef.current && !locked;
+        // Disable pan while painting (to avoid competing with paint gesture)
+        controlsRef.current.enablePan = !paintModeRef.current || !locked
+          ? true
+          : false;
         controlsRef.current.update();
       }
+
       renderer.render(scene, camera);
     };
     animate();
@@ -327,7 +369,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
   }, []);
 
   // ============================================================
-  // Dynamic Gesture Mapping (fixes nested useEffect problem)
+  // Dynamic Gesture Mapping (if rotation lock changes)
   // ============================================================
   useEffect(() => {
     const ctr = controlsRef.current;
@@ -342,67 +384,87 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     }
   }, [rotationLocked]);
 
-  // ============================================================
-  // Imperative API exposed to parent
-  // ============================================================
-  useImperativeHandle(ref, (): RingRendererHandle => ({
-    zoomIn: () => { zoomRef.current = Math.min(zoomRef.current * 1.1, 20); },
-    zoomOut: () => { zoomRef.current = Math.max(zoomRef.current / 1.1, 0.05); },
-    resetView: () => {
-      const cam = cameraRef.current;
-      const ctr = controlsRef.current;
-      if (!cam || !ctr) return;
-      cam.position.set(0, 0, initialZRef.current);
-      ctr.target.copy(initialTargetRef.current);
-      ctr.update();
-      zoomRef.current = BASE_Z / initialZRef.current;
-    },
-    toggleLock: () => {
-      setRotationLocked((v) => {
-        const newVal = !v;
-        lockRef.current = newVal;
-        const ctr = controlsRef.current;
-        if (ctr) {
-          ctr.enableRotate = !newVal;
-          (ctr as any).touches = newVal
-            ? { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN }
-            : { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
-        }
-        return newVal;
-      });
-    },
-    setPaintMode: (on: boolean) => setLocalPaintMode(on),
-    toggleErase: () => setLocalEraseMode((v) => !v),
-    clearPaint: () => setPaint(new Map()),
-    lock2DView: () => {
-      setRotationLocked(true);
-      const cam = cameraRef.current;
-      const ctr = controlsRef.current;
-      if (cam && ctr) {
-        cam.position.set(0, 0, initialZRef.current);
-        ctr.target.copy(initialTargetRef.current);
-        ctr.enableRotate = false;
-        (ctr as any).touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
-        ctr.update();
-      }
-    },
-    forceLockRotation: (locked: boolean) => {
-      setRotationLocked(locked);
-      lockRef.current = locked;
+useImperativeHandle(ref, (): RingRendererHandle => ({
+zoomIn: () => {
+  const cam = cameraRef.current;
+  const ctr = controlsRef.current;
+  if (!cam || !ctr) return;
+
+  // Move camera toward target
+  const dir = new THREE.Vector3();
+  dir.subVectors(ctr.target, cam.position).normalize();
+  cam.position.addScaledVector(dir, 0.1 * cam.position.distanceTo(ctr.target));
+  ctr.update();
+},
+
+zoomOut: () => {
+  const cam = cameraRef.current;
+  const ctr = controlsRef.current;
+  if (!cam || !ctr) return;
+
+  // Move camera away from target
+  const dir = new THREE.Vector3();
+  dir.subVectors(cam.position, ctr.target).normalize();
+  cam.position.addScaledVector(dir, 0.1 * cam.position.distanceTo(ctr.target));
+  ctr.update();
+},
+  resetView: () => {
+    const ctr = controlsRef.current;
+    const cam = cameraRef.current;
+    if (!ctr || !cam) return;
+
+    if (typeof (ctr as any).reset === "function") (ctr as any).reset();
+    ctr.update();
+    rendererRef.current?.render(sceneRef.current!, cam);
+  },
+  toggleLock: () => {
+    setRotationLocked((v) => {
+      const newVal = !v;
+      lockRef.current = newVal;
       const ctr = controlsRef.current;
       if (ctr) {
-        ctr.enableRotate = !locked;
-        (ctr as any).touches = locked
+        ctr.enableRotate = !newVal;
+        (ctr as any).touches = newVal
           ? { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN }
           : { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
       }
-    },
-    getState: () => ({
-      paintMode: paintModeRef.current,
-      eraseMode: eraseModeRef.current,
-      rotationLocked: lockRef.current,
-    }),
-  }));
+      return newVal;
+    });
+  },
+  setPaintMode: (on: boolean) => setLocalPaintMode(on),
+  toggleErase: () => setLocalEraseMode((v) => !v),
+  clearPaint: () => setPaint(new Map()),
+  lock2DView: () => {
+    setRotationLocked(true);
+    const cam = cameraRef.current;
+    const ctr = controlsRef.current;
+    if (cam && ctr) {
+      cam.position.set(0, 0, initialZRef.current);
+      ctr.target.copy(initialTargetRef.current);
+      ctr.enableRotate = false;
+      (ctr as any).touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN };
+      ctr.update();
+      rendererRef.current?.render(sceneRef.current!, cam);
+    }
+  },
+  forceLockRotation: (locked: boolean) => {
+    setRotationLocked(locked);
+    lockRef.current = locked;
+    const ctr = controlsRef.current;
+    if (ctr) {
+      ctr.enableRotate = !locked;
+      (ctr as any).touches = locked
+        ? { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN }
+        : { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+      ctr.update();
+    }
+  },
+  getState: () => ({
+    paintMode: paintModeRef.current,
+    eraseMode: eraseModeRef.current,
+    rotationLocked: lockRef.current,
+  }),
+}));
 
   // ============================================================
   // Render container
