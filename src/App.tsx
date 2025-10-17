@@ -34,6 +34,68 @@ type PaintMap = Map<string, string | null>;
 const keyAt = (r: number, c: number) => `${r},${c}`;
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
+// ---------- Minimal Draggable Pill (no header, no minus/square) ----------
+function DraggablePill({
+  id,
+  defaultPosition = { x: 20, y: 20 },
+  children,
+}: {
+  id: string;
+  defaultPosition?: { x: number; y: number };
+  children: React.ReactNode;
+}) {
+  const [pos, setPos] = React.useState<{ x: number; y: number }>(() => {
+    const saved = localStorage.getItem(`pill-pos-${id}`);
+    return saved ? JSON.parse(saved) : defaultPosition;
+  });
+  const draggingRef = React.useRef(false);
+  const offsetRef = React.useRef({ x: 0, y: 0 });
+
+  const start = (clientX: number, clientY: number) => {
+    draggingRef.current = true;
+    offsetRef.current = { x: clientX - pos.x, y: clientY - pos.y };
+  };
+  const move = (clientX: number, clientY: number) => {
+    if (!draggingRef.current) return;
+    setPos({ x: clientX - offsetRef.current.x, y: clientY - offsetRef.current.y });
+  };
+  const stop = () => { draggingRef.current = false; };
+
+  React.useEffect(() => {
+    localStorage.setItem(`pill-pos-${id}`, JSON.stringify(pos));
+  }, [id, pos]);
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        left: pos.x,
+        top: pos.y,
+        zIndex: 30,
+        // outer pill container look (matches “second/third image”)
+        background: "rgba(17,24,39,.92)",
+        border: "1px solid rgba(0,0,0,.6)",
+        boxShadow: "0 12px 40px rgba(0,0,0,.45)",
+        borderRadius: 24,
+        padding: 12,
+        userSelect: "none",
+      }}
+      onMouseDown={(e) => start(e.clientX, e.clientY)}
+      onMouseMove={(e) => move(e.clientX, e.clientY)}
+      onMouseUp={stop}
+      onMouseLeave={stop}
+      onTouchStart={(e) => {
+        const t = e.touches[0]; start(t.clientX, t.clientY);
+      }}
+      onTouchMove={(e) => {
+        const t = e.touches[0]; move(t.clientX, t.clientY);
+      }}
+      onTouchEnd={stop}
+    >
+      {children}
+    </div>
+  );
+}
 // ---------------- Draggable Panel ----------------
 function DraggablePanel({
   id,
@@ -289,278 +351,282 @@ const doClearPaint = () => {
         />
       </div>
 
-      {/* === Left Toolbar (📷 ▶) === */}
-      <div
-        style={{
-          position: "absolute",
-          left: 20,
-          top: 20,
-          zIndex: 30,
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          alignItems: "center",
-          background: "rgba(17,24,39,.9)",
-          border: "1px solid rgba(0,0,0,.6)",
-          boxShadow: "0 8px 30px rgba(0,0,0,.35)",
-          borderRadius: 14,
-          padding: 10,
+{/* === Left Toolbar (compact pill ➜ expands to tall column) === */}
+<DraggablePill id="camera-pill" defaultPosition={{ x: 20, y: 20 }}>
+  {/* Compact pill (always visible) */}
+  <div
+    style={{
+      display: "flex",
+      flexDirection: "column",
+      gap: 14,
+      alignItems: "center",
+      width: 76,
+      padding: 10,
+      background: "#0f172a",
+      border: "1px solid #0b1020",
+      borderRadius: 20,
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+    }}
+  >
+    <IconBtn
+      tooltip="Camera Tools"
+      active={activeMenu === "camera"}
+      onClick={(e) => { e.stopPropagation(); toggleExclusive("camera"); }}
+    >
+      📷
+    </IconBtn>
+
+    <IconBtn
+      tooltip="Controls Menu"
+      active={activeMenu === "controls"}
+      onClick={(e) => { e.stopPropagation(); toggleExclusive("controls"); }}
+    >
+      ▶
+    </IconBtn>
+  </div>
+
+  {/* --- Camera Tools Menu --- */}
+  {activeMenu === "camera" && (
+    <div
+      style={{
+        marginTop: 12,
+        display: "flex",
+        flexDirection: "column",
+        gap: 16,
+        alignItems: "center",
+        width: 76,
+        padding: 14,
+        background: "#0b1324",
+        border: "1px solid #0b1020",
+        borderRadius: 20,
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+    >
+      <IconBtn tooltip="Paint Mode" active={paintMode}
+        onClick={() => {
+          const next = !paintMode;
+          setPaintMode(next);
+          if (next) setLock(true);
         }}
       >
-        <IconBtn
-          tooltip="Camera Tools"
-          active={activeMenu === "camera"}
-          onClick={() => toggleExclusive("camera")}
-        >
-          📷
-        </IconBtn>
+        🎨
+      </IconBtn>
 
-        <IconBtn
-          tooltip="Controls Menu"
-          active={activeMenu === "controls"}
-          onClick={() => toggleExclusive("controls")}
-        >
-          ▶
-        </IconBtn>
+      <IconBtn tooltip="Erase Mode" active={eraseMode}
+        onClick={() => setEraseMode((v) => !v)}
+      >
+        🧽
+      </IconBtn>
 
-        {/* === Camera Subpanel === */}
-        {activeMenu === "camera" && (
-          <div
-            style={{
-              marginTop: 6,
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              background: "#0f172a",
-              border: "1px solid #0b1020",
-              padding: 8,
-              borderRadius: 12,
-              width: 52,
-              alignItems: "center",
-              position: "relative",
-            }}
-          >
-            <IconBtn
-              tooltip="Paint Mode"
-              active={paintMode}
-              onClick={() => {
-                const next = !paintMode;
-                setPaintMode(next);
-                if (next) setLock(true);
-              }}
-            >
-              🎨
-            </IconBtn>
+      <IconBtn tooltip="Zoom In" onClick={doZoomIn}>＋</IconBtn>
+      <IconBtn tooltip="Zoom Out" onClick={doZoomOut}>－</IconBtn>
+      <IconBtn tooltip="Reset View" onClick={doReset}>↺</IconBtn>
 
-            <IconBtn
-              tooltip="Erase Mode"
-              active={eraseMode}
-              onClick={() => setEraseMode((v) => !v)}
-            >
-              🧽
-            </IconBtn>
+      <IconBtn
+        tooltip={rotationLocked ? "Unlock 3D Rotation" : "Lock to Flat 2D"}
+        onClick={() => setLock(!rotationLocked)}
+      >
+        {rotationLocked ? "🔒" : "🔓"}
+      </IconBtn>
 
-            <IconBtn tooltip="Zoom In" onClick={doZoomIn}>＋</IconBtn>
-            <IconBtn tooltip="Zoom Out" onClick={doZoomOut}>－</IconBtn>
-            <IconBtn tooltip="Reset View" onClick={doReset}>↺</IconBtn>
+      <IconBtn tooltip="Clear Paint" onClick={doClearPaint}>🧹</IconBtn>
 
-            <IconBtn
-              tooltip={rotationLocked ? "Unlock 3D Rotation" : "Lock to Flat 2D"}
-              onClick={() => setLock(!rotationLocked)}
-            >
-              {rotationLocked ? "🔒" : "🔓"}
-            </IconBtn>
+      <IconBtn
+        tooltip="Select Base Material"
+        onClick={() => setShowMaterialPalette((v) => !v)}
+      >
+        🧲
+      </IconBtn>
 
-            <IconBtn tooltip="Clear Paint" onClick={doClearPaint}>🧹</IconBtn>
-
-            {/* === Base Material Selector === */}
-            <IconBtn
-              tooltip="Select Base Material"
-              onClick={() => setShowMaterialPalette((v) => !v)}
-            >
-              🧲
-            </IconBtn>
-
-            <div
-              style={{
-                fontSize: 11,
-                color: "#ccc",
-                marginTop: -4,
-                marginBottom: 4,
-                textAlign: "center",
-                userSelect: "none",
-              }}
-            >
-              Base: {MATERIALS.find((m) => m.hex === params.ringColor)?.name || "Custom"}
-            </div>
-
-            {showMaterialPalette && (
-              <div
-                style={{
-                  position: "absolute",
-                  left: "70px",
-                  top: "0",
-                  zIndex: 9999,
-                  background: "rgba(17,24,39,0.95)",
-                  border: "1px solid rgba(0,0,0,0.6)",
-                  borderRadius: 12,
-                  padding: 10,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 8,
-                  boxShadow: "0 8px 20px rgba(0,0,0,.4)",
-                }}
-              >
-                <div
-                  style={{ fontWeight: "bold", fontSize: 13, color: "#ddd" }}
-                >
-                  Base Material
-                </div>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(3, 1fr)",
-                    gap: 6,
-                  }}
-                >
-                  {MATERIALS.map((mat) => (
-                    <div
-                      key={mat.name}
-                      onClick={() => {
-                        setParams((prev) => ({ ...prev, ringColor: mat.hex }));
-                        setShowMaterialPalette(false);
-                      }}
-                      title={mat.name}
-                      style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 6,
-                        background:
-                          mat.hex === "transparent" ? "none" : mat.hex,
-                        border:
-                          params.ringColor === mat.hex
-                            ? "2px solid white"
-                            : "1px solid #444",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: "#fff",
-                        fontSize: 11,
-                        textShadow: "0 1px 2px rgba(0,0,0,0.5)",
-                      }}
-                    >
-                      {mat.hex === "transparent" ? "×" : ""}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* === Controls Subpanel === */}
-        {activeMenu === "controls" && (
-          <div
-            style={{
-              marginTop: 6,
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              background: "#0f172a",
-              border: "1px solid #0b1020",
-              padding: 10,
-              borderRadius: 12,
-              width: 180,
-              color: "#ddd",
-              fontSize: 13,
-            }}
-          >
-            <div style={{ fontWeight: "bold" }}>Grid Size</div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <input
-                type="number"
-                value={params.cols}
-                min={1}
-                max={200}
-                onChange={(e) => {
-                  let val = parseInt(e.target.value);
-                  if (isNaN(val)) return;
-                  if (val > 200) val = 200;
-                  const updated = { ...params, cols: val };
-                  setParams(updated);
-                  setRings(generateRings(updated));
-                }}
-                style={{ width: "50%" }}
-              />
-              <input
-                type="number"
-                value={params.rows}
-                min={1}
-                max={200}
-                onChange={(e) => {
-                  let val = parseInt(e.target.value);
-                  if (isNaN(val)) return;
-                  if (val > 200) val = 200;
-                  const updated = { ...params, rows: val };
-                  setParams(updated);
-                  setRings(generateRings(updated));
-                }}
-                style={{ width: "50%" }}
-              />
-            </div>
-          </div>
-        )}
+      <div
+        style={{
+          fontSize: 12,
+          color: "#d8dee9",
+          marginTop: 6,
+          textAlign: "center",
+          width: "100%",
+          userSelect: "none",
+          lineHeight: 1.15,
+        }}
+      >
+        Base:
+        <br />
+        {MATERIALS.find((m) => m.hex === params.ringColor)?.name || "Custom"}
       </div>
+    </div>
+  )}
 
-      {/* === Draggable Color Palette === */}
-      {paintMode && (
-        <DraggablePanel
-          id="color-palette"
-          title=""
-          defaultPosition={{ x: 20, y: window.innerHeight - 240 }}
-        >
+  {/* --- Controls Menu --- */}
+  {activeMenu === "controls" && (
+    <div
+      style={{
+        marginTop: 12,
+        display: "flex",
+        flexDirection: "column",
+        gap: 10,
+        width: 200,
+        background: "#0b1324",
+        border: "1px solid #0b1020",
+        borderRadius: 16,
+        padding: 12,
+        color: "#ddd",
+        fontSize: 13,
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+    >
+      <div style={{ fontWeight: 700 }}>Grid Size</div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          type="number"
+          value={params.cols}
+          min={1}
+          max={200}
+          onChange={(e) => {
+            let val = parseInt(e.target.value);
+            if (isNaN(val)) return;
+            if (val > 200) val = 200;
+            const updated = { ...params, cols: val };
+            setParams(updated);
+            setRings(generateRings(updated));
+          }}
+          style={{ width: "50%" }}
+        />
+        <input
+          type="number"
+          value={params.rows}
+          min={1}
+          max={200}
+          onChange={(e) => {
+            let val = parseInt(e.target.value);
+            if (isNaN(val)) return;
+            if (val > 200) val = 200;
+            const updated = { ...params, rows: val };
+            setParams(updated);
+            setRings(generateRings(updated));
+          }}
+          style={{ width: "50%" }}
+        />
+      </div>
+    </div>
+  )}
+</DraggablePill>
+{/* === Draggable Color Palette (no title bar, compact) === */}
+{paintMode && (
+  <DraggablePill
+    id="color-palette"
+    defaultPosition={{ x: 20, y: window.innerHeight - 260 }}
+  >
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        alignItems: "center",
+        background: "rgba(17,24,39,0.96)",
+        border: "1px solid rgba(0,0,0,0.6)",
+        borderRadius: 14,
+        padding: 8,
+        boxShadow: "0 6px 18px rgba(0,0,0,0.45)",
+        userSelect: "none",
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+    >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(8, 1fr)",
+          gap: 5,
+        }}
+      >
+        {UNIVERSAL_COLORS.map((hex) => (
           <div
+            key={hex}
+            onClick={() => setActiveColor(hex)}
             style={{
+              background: hex,
+              width: 22, // 30% smaller than 32px
+              height: 22,
+              borderRadius: 5,
+              border:
+                activeColor === hex ? "2px solid white" : "1px solid #333",
+              cursor: "pointer",
+              transition: "transform 0.1s ease, border 0.2s ease",
+              transform: activeColor === hex ? "scale(1.15)" : "scale(1.0)",
+            }}
+            title={hex}
+          />
+        ))}
+      </div>
+    </div>
+  </DraggablePill>
+)}
+
+{/* --- Material Palette --- */}
+{showMaterialPalette && (
+  <DraggablePill id="material-selector" defaultPosition={{ x: 120, y: 80 }}>
+    <div
+      style={{
+        background: "rgba(17,24,39,0.96)",
+        border: "1px solid rgba(0,0,0,0.6)",
+        borderRadius: 14,
+        padding: 10,
+        display: "flex",
+        flexDirection: "column",
+        gap: 8,
+        boxShadow: "0 8px 22px rgba(0,0,0,.45)",
+        userSelect: "none",
+        minWidth: 120,
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+    >
+      <div style={{ fontWeight: 700, fontSize: 13, color: "#ddd" }}>
+        Base Material
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(3, 1fr)",
+          gap: 6,
+        }}
+      >
+        {MATERIALS.map((mat) => (
+          <div
+            key={mat.name}
+            onClick={() => {
+              setParams((prev) => ({ ...prev, ringColor: mat.hex }));
+              setShowMaterialPalette(false);
+            }}
+            title={mat.name}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 6,
+              background: mat.hex === "transparent" ? "none" : mat.hex,
+              border:
+                params.ringColor === mat.hex
+                  ? "2px solid white"
+                  : "1px solid #444",
+              cursor: "pointer",
               display: "flex",
-              flexDirection: "column",
-              gap: 8,
-              color: "#ddd",
-              fontSize: 14,
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#fff",
+              fontSize: 11,
+              textShadow: "0 1px 2px rgba(0,0,0,0.5)",
             }}
           >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(8, 1fr)",
-                gap: 6,
-              }}
-            >
-              {UNIVERSAL_COLORS.map((hex) => (
-                <div
-                  key={hex}
-                  onClick={() => setActiveColor(hex)}
-                  style={{
-                    background: hex,
-                    width: 26,
-                    height: 26,
-                    borderRadius: 6,
-                    border:
-                      activeColor === hex
-                        ? "2px solid white"
-                        : "1px solid #333",
-                    cursor: "pointer",
-                    transition: "transform 0.1s ease, border 0.2s ease",
-                    transform:
-                      activeColor === hex ? "scale(1.15)" : "scale(1.0)",
-                  }}
-                  title={hex}
-                />
-              ))}
-            </div>
+            {mat.hex === "transparent" ? "×" : ""}
           </div>
-        </DraggablePanel>
-      )}
+        ))}
+      </div>
+    </div>
+  </DraggablePill>
+)}
     </div>
   );
 }
