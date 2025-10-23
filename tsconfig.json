@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "types": ["node", "vite/client", "three", "./src/types/three-extended"],
     "target": "ES2020",
     "useDefineForClassFields": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
@@ -10,14 +11,14 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "strict": true,
-    "types": ["three", "./src/types/three-extended"]
+    "strict": true
   },
   "include": ["src"],
   "exclude": [
     "src/scraper.ts",
     "scripts",
     "build-scripts",
-    "node_modules"
+    "node_modules",
+    "src/pages/ChainmailWeaveMatrix.old.tsx"
   ]
 }
