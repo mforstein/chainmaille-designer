@@ -82,7 +82,7 @@ export type Ring = {
   rotationY?: number;
   rotationZ?: number;
   tiltRad?: number;
-  _chartLabel?: SpriteText; // optional SpriteText
+  _chartLabel?: SpriteText;
 };
 
 export interface RenderParams {
@@ -92,7 +92,7 @@ export interface RenderParams {
   wireDiameter: number;
   ringColor: string;
   bgColor: string;
-  centerSpacing?: number; // optional, inferred per ring if absent
+  centerSpacing?: number;
 }
 
 export type PaintMap = Map<string, string | null>;
@@ -126,14 +126,14 @@ export type RingRendererHandle = {
 };
 
 // ============================================================
-/** Utility: move camera along view direction like OrbitControls dolly */
+// === Utility: Camera Dolly =================================
+// ============================================================
 function dollyCamera(
   camera: THREE.PerspectiveCamera,
   controls: OrbitControls | undefined,
   factor: number
 ) {
   if (controls && typeof (controls as any).dollyIn === "function") {
-    // Use OrbitControls' internal dolly if present
     if (factor > 1) (controls as any).dollyIn(factor);
     else (controls as any).dollyOut(1 / factor);
     controls.update();
@@ -145,8 +145,7 @@ function dollyCamera(
     .multiplyScalar(factor);
   camera.position.copy(target).add(dir);
   camera.updateProjectionMatrix();
-}
-
+  }
 // ============================================================
 // === Main Component ========================================
 // ============================================================
@@ -171,12 +170,12 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
   const meshesRef = useRef<THREE.Mesh[]>([]);
   const groupRef = useRef<THREE.Group>();
 
-  // local state mirrors (for UI toggles controlled externally)
+  // Local UI states
   const [localPaintMode, setLocalPaintMode] = useState(initialPaintMode);
   const [localEraseMode, setLocalEraseMode] = useState(initialEraseMode);
   const [rotationLocked, setRotationLocked] = useState(initialRotationLocked);
 
-  // live refs for animation/event loops
+  // Refs to mirror real-time states
   const paintModeRef = useRef(localPaintMode);
   const eraseModeRef = useRef(localEraseMode);
   const lockRef = useRef(rotationLocked);
@@ -184,24 +183,13 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
   const paintRef = useRef(paint);
   const paramsRef = useRef(params);
 
-  useEffect(() => {
-    paintModeRef.current = localPaintMode;
-  }, [localPaintMode]);
-  useEffect(() => {
-    eraseModeRef.current = localEraseMode;
-  }, [localEraseMode]);
-  useEffect(() => {
-    lockRef.current = rotationLocked;
-  }, [rotationLocked]);
-  useEffect(() => {
-    activeColorRef.current = activeColor;
-  }, [activeColor]);
-  useEffect(() => {
-    paintRef.current = paint;
-  }, [paint]);
-  useEffect(() => {
-    paramsRef.current = params;
-  }, [params]);
+  // Sync effects
+  useEffect(() => { paintModeRef.current = localPaintMode; }, [localPaintMode]);
+  useEffect(() => { eraseModeRef.current = localEraseMode; }, [localEraseMode]);
+  useEffect(() => { lockRef.current = rotationLocked; }, [rotationLocked]);
+  useEffect(() => { activeColorRef.current = activeColor; }, [activeColor]);
+  useEffect(() => { paintRef.current = paint; }, [paint]);
+  useEffect(() => { paramsRef.current = params; }, [params]);
 
   const initialZRef = useRef(240);
   const initialTargetRef = useRef(new THREE.Vector3(0, 0, 0));
@@ -213,6 +201,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     if (!mountRef.current) return;
     const mount = mountRef.current;
 
+    // Cleanup old renderer if any
     if (rendererRef.current) {
       try {
         rendererRef.current.dispose();
@@ -264,21 +253,16 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_PAN } as any;
     controlsRef.current = controls;
 
-    // Prevent two-finger browser zoom
+    // Prevent two-finger zoom
     const preventTouchZoom = (e: TouchEvent) => {
       if (e.touches.length > 1) e.preventDefault();
     };
-    renderer.domElement.addEventListener("touchstart", preventTouchZoom, {
-      passive: false,
-    });
-    renderer.domElement.addEventListener("touchmove", preventTouchZoom, {
-      passive: false,
-    });
+    renderer.domElement.addEventListener("touchstart", preventTouchZoom, { passive: false });
+    renderer.domElement.addEventListener("touchmove", preventTouchZoom, { passive: false });
 
     // Resize
     const onResize = () => {
-      const w = window.innerWidth,
-        h = window.innerHeight;
+      const w = window.innerWidth, h = window.innerHeight;
       renderer.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
@@ -286,7 +270,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     window.addEventListener("resize", onResize);
     onResize();
 
-    // Painting
+    // Painting system
     const raycaster = new THREE.Raycaster();
     const ndc = new THREE.Vector2();
     let painting = false;
@@ -302,7 +286,6 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
         const key = (hits[0].object as any).ringKey as string;
         setPaint((prev) => {
           const n = new Map(prev);
-          // erase -> null (so ring uses current params.ringColor)
           const colorToApply = eraseModeRef.current ? null : activeColorRef.current;
           n.set(key, colorToApply);
           return n;
@@ -313,7 +296,6 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     const onDown = (e: PointerEvent) => {
       e.preventDefault();
       activePointers.add(e.pointerId);
-      // no painting if multiple pointers (pinch/rotate), or paint mode off
       if (activePointers.size > 1) return;
       if (paintModeRef.current && lockRef.current) {
         painting = true;
@@ -336,11 +318,11 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     renderer.domElement.addEventListener("pointermove", onMove);
     renderer.domElement.addEventListener("pointerup", onUp);
 
-    // Animate
+    // Animation Loop
     const animate = () => {
       requestAnimationFrame(animate);
 
-      // live recolor to reflect paint OR current material color
+      // live recolor
       const baseColor = paramsRef.current.ringColor;
       for (const m of meshesRef.current) {
         const key = (m as any).ringKey as string;
@@ -348,53 +330,48 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
         (m.material as THREE.MeshStandardMaterial).color.set(color);
       }
 
-      // update controls capabilities based on modes (pan when paint OFF)
-if (controlsRef.current) {
-  const c = controlsRef.current;
-  const locked = lockRef.current;
-  const painting = paintModeRef.current;
+      // Controls dynamic behavior
+      if (controlsRef.current) {
+        const c = controlsRef.current;
+        const locked = lockRef.current;
+        const paintingActive = paintModeRef.current;
 
-  // Rotation enabled only when unlocked
-  c.enableRotate = !locked;
+        c.enableRotate = !locked;
+        c.enablePan = !paintingActive;
 
-  // Pan enabled whenever not painting
-  c.enablePan = !painting;
+        if (paintingActive) {
+          c.mouseButtons = {
+            LEFT: THREE.MOUSE.ROTATE,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.PAN,
+          };
+        } else if (locked) {
+          c.mouseButtons = {
+            LEFT: THREE.MOUSE.PAN,
+            MIDDLE: THREE.MOUSE.PAN,
+            RIGHT: THREE.MOUSE.PAN,
+          };
+          c.enableRotate = false;
+          c.enableZoom = true;
+        } else {
+          c.mouseButtons = {
+            LEFT: THREE.MOUSE.ROTATE,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.PAN,
+          };
+          c.enableRotate = true;
+          c.enableZoom = true;
+        }
 
-  // Correct mouse bindings for intuitive use
-  if (painting) {
-    // Paint mode → disable all control actions
-    c.mouseButtons = {
-      LEFT: THREE.MOUSE.NONE,
-      MIDDLE: THREE.MOUSE.NONE,
-      RIGHT: THREE.MOUSE.NONE,
-    };
-  } else if (locked) {
-    // Locked flat 2D view: left button pans (for easy navigation)
-    c.mouseButtons = {
-      LEFT: THREE.MOUSE.PAN,
-      MIDDLE: THREE.MOUSE.PAN,
-      RIGHT: THREE.MOUSE.NONE,
-    };
-  } else {
-    // 3D rotation unlocked: left rotates, right pans (classic)
-    c.mouseButtons = {
-      LEFT: THREE.MOUSE.ROTATE,
-      MIDDLE: THREE.MOUSE.PAN,
-      RIGHT: THREE.MOUSE.PAN,
-    };
-  }
+        c.update();
+      }
 
-  c.update();
-}
-controls.mouseButtons = {
-  LEFT: THREE.MOUSE.PAN,
-  MIDDLE: THREE.MOUSE.PAN,
-  RIGHT: THREE.MOUSE.NONE,
-};
       renderer.render(scene, camera);
     };
+
     animate();
 
+    // Cleanup
     return () => {
       window.removeEventListener("resize", onResize);
       renderer.domElement.removeEventListener("pointerdown", onDown);
@@ -407,7 +384,8 @@ controls.mouseButtons = {
         sceneRef.current.traverse((obj: any) => {
           if (obj.geometry) obj.geometry.dispose();
           if (obj.material) {
-            if (Array.isArray(obj.material)) obj.material.forEach((m) => m.dispose());
+            if (Array.isArray(obj.material))
+              obj.material.forEach((m: any) => m.dispose());
             else obj.material.dispose();
           }
         });
@@ -425,7 +403,6 @@ controls.mouseButtons = {
       sceneRef.current = undefined;
     };
   }, [params.bgColor, setPaint]);
-
   // ============================================================
   // Geometry Build (safe) + Chart Labels support
   // ============================================================
@@ -453,13 +430,17 @@ controls.mouseButtons = {
     }
 
     rings.forEach((r, i) => {
-      // sanitize
+      // Sanitize values
       if (!Number.isFinite(r.innerDiameter) || r.innerDiameter! <= 0)
         r.innerDiameter = 5;
       if (!Number.isFinite(r.wireDiameter) || r.wireDiameter! <= 0)
         r.wireDiameter = 1;
-      if (!Number.isFinite(r.centerSpacing) || r.centerSpacing! <= 0 || r.centerSpacing! > 100)
+
+      // ✅ Normalize and validate centerSpacing safely
+      const spacing = r.centerSpacing ?? 7.5;
+      if (!Number.isFinite(spacing) || spacing <= 0 || spacing > 100) {
         r.centerSpacing = 7.5;
+      }
 
       if (!Number.isFinite(r.x)) r.x = i * r.centerSpacing!;
       if (!Number.isFinite(r.y)) r.y = 0;
@@ -504,85 +485,17 @@ controls.mouseButtons = {
       }
     });
 
-    // center the group
+    // Center the group
     const box = new THREE.Box3().setFromObject(group);
     const center = box.getCenter(new THREE.Vector3());
     group.position.sub(center);
     scene.add(group);
     meshesRef.current = meshes;
 
-    console.log(`✅ Geometry built: ${rings.length} rings`);
+
   }, [rings, params.ringColor, params.innerDiameter, params.wireDiameter]);
 
-  // ============================================================
-  // Debug Overlay (optional)
-  // ============================================================
-  useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene) return;
 
-    const existing = scene.getObjectByName("infoGroup");
-    if (existing) scene.remove(existing);
-
-    const infoGroup = new THREE.Group();
-    infoGroup.name = "infoGroup";
-
-    const safeNum = (n: any, d = 3) =>
-      typeof n === "number" && isFinite(n) ? n.toFixed(d) : "—";
-
-    const firstRing = Array.isArray(rings) && rings.length > 0 ? rings[0] : undefined;
-    const idVal = params?.innerDiameter;
-    const wdVal = params?.wireDiameter;
-    const rInner = firstRing?.innerDiameter;
-    const rWire = firstRing?.wireDiameter;
-
-    let spacingVal: number | undefined =
-      firstRing?.centerSpacing ?? params?.centerSpacing ?? undefined;
-
-    if (spacingVal === undefined || !isFinite(spacingVal)) {
-      console.warn("❌ Missing 'centerSpacing' in JSON or parameters!");
-      spacingVal = NaN;
-    }
-
-    const genInfo = (window as any).__ringDebug || {};
-
-    const infoText: string[] = [
-      "=== Debug Info ===",
-      `Dialog/Params → ID: ${safeNum(idVal)}  WD: ${safeNum(wdVal)}  SP: ${safeNum(
-        params?.centerSpacing,
-        2
-      )} mm`,
-      `Ring[0] → ID: ${safeNum(rInner)}  WD: ${safeNum(rWire)}  SP: ${safeNum(
-        spacingVal,
-        2
-      )} mm`,
-      `Conversion Guard: ${
-        genInfo.fromGenerator ? "✅ Generated in mm" : "⚠️ Unknown conversion"
-      }`,
-    ];
-
-    infoText.forEach((text, i) => {
-      const label = new SpriteText(text);
-      label.color = i === 0 ? "#AAAAAA" : "#00FFFF";
-      label.textHeight = 6;
-      label.material.depthTest = false;
-      label.material.depthWrite = false;
-      label.renderOrder = 1000;
-      label.position.set(0, -i * 10, 0);
-      infoGroup.add(label);
-    });
-
-    infoGroup.position.set(0, 60, 0);
-    scene.add(infoGroup);
-
-    return () => {
-      scene.remove(infoGroup);
-      infoGroup.traverse((obj: any) => {
-        if (obj.material) obj.material.dispose?.();
-        if (obj.geometry) obj.geometry.dispose?.();
-      });
-    };
-  }, [params.innerDiameter, params.wireDiameter, rings]);
 
   // ============================================================
   // Imperative Handle (for toolbar buttons in App)
@@ -631,14 +544,16 @@ controls.mouseButtons = {
     }),
   }));
 
-  // Keep refs synced with local state (for the animation loop)
+  // ============================================================
+  // Sync state for loop consistency
+  // ============================================================
   useEffect(() => {
-    // When we lock rotation, also ensure paint mode rules apply
     paintModeRef.current = localPaintMode;
     eraseModeRef.current = localEraseMode;
     lockRef.current = rotationLocked;
   }, [localPaintMode, localEraseMode, rotationLocked]);
 
+  // Render DOM
   return <div ref={mountRef} style={{ width: "100vw", height: "100vh" }} />;
 });
 
@@ -648,7 +563,7 @@ export default RingRenderer;
 // === Generators (shared across pages) =======================
 // ============================================================
 export function toIN(valueInMM: number): number {
-  return valueInMM / INCH_TO_MM;
+  return valueInMM / 25.4;
 }
 
 /** Shared low-level generator used by all modes */
@@ -696,11 +611,15 @@ function _generateRingsBase({
     OD_mm = ID_mm + 2 * WD_mm;
   }
 
-  if (!Number.isFinite(centerSpacing) || centerSpacing <= 0 || centerSpacing > 50) {
-    console.warn(`⚠️ Invalid or missing centerSpacing (${centerSpacing}) → defaulting to 7.5mm`);
-    centerSpacing = 7.5;
+  // ✅ Normalize center spacing safely
+  let spacing = centerSpacing ?? 7.5;
+  if (!Number.isFinite(spacing) || spacing <= 0 || spacing > 50) {
+    console.warn(
+      `⚠️ Invalid or missing centerSpacing (${centerSpacing}) → defaulting to 7.5mm`
+    );
+    spacing = 7.5;
   }
-
+  centerSpacing = spacing;
   if (!Array.isArray(layout)) layout = [];
 
   const rings: Ring[] = [];
@@ -747,16 +666,16 @@ function _generateRingsBase({
     }
   }
 
-  console.log(`🧩 Generated ${rings.length} safe rings @ spacing ${centerSpacing}mm`);
+
   return rings;
 }
 
-// === Chart: inches input → convert to mm (for charts) =======
+// === Chart Mode =============================================
 export function generateRingsChart({
   rows,
   cols,
-  innerDiameter, // in inches
-  wireDiameter, // in mm
+  innerDiameter,
+  wireDiameter,
   centerSpacing,
   angleIn = 25,
   angleOut = -25,
@@ -794,7 +713,7 @@ export function generateRingsChart({
     layout,
   });
 
-  // chart labels
+  // Add chart labels
   rings.forEach((r) => {
     const wd = +(r.wireDiameter ?? WD_mm).toFixed(2);
     const id = +(r.innerDiameter ?? ID_mm).toFixed(2);
@@ -819,12 +738,12 @@ export function generateRingsChart({
   return rings;
 }
 
-// === Designer: accepts mm directly ==========================
+// === Designer Mode ==========================================
 export function generateRingsDesigner({
   rows,
   cols,
-  innerDiameter, // mm
-  wireDiameter, // mm
+  innerDiameter,
+  wireDiameter,
   centerSpacing,
   angleIn = 25,
   angleOut = -25,
@@ -866,7 +785,7 @@ export function generateRingsDesigner({
   return rings;
 }
 
-// === Tuner: mm input (optional debug) =======================
+// === Tuner Mode =============================================
 export function generateRingsTuner({
   rows,
   cols,
@@ -909,7 +828,7 @@ export function generateRingsTuner({
     mode: "tuner",
   };
 
-  if (process.env.NODE_ENV === "development") {
+  if (typeof window !== "undefined") {
     rings.forEach((r) => {
       const label = new SpriteText(`Row:${r.row},Col:${r.col}`);
       label.color = "#00FFFF";
@@ -922,5 +841,5 @@ export function generateRingsTuner({
   return rings;
 }
 
-// Backward-compat alias
+// Backward compatibility alias
 export const generateRings = generateRingsDesigner;
