@@ -1,20 +1,31 @@
 // ========================================
-// src/pages/ChainmailWeaveTuner.tsx (UPDATED & FIXED)
+// src/pages/ChainmailWeaveTuner.tsx (FINAL FIXED)
 // ========================================
 import React, { useMemo, useState } from "react";
 import * as THREE from "three";
 import RingRenderer, {
-  computeRingVarsFixedID,
-  generateRingsTuner,
+  computeRingVarsIndependent, // ✅ use new independent computation
 } from "../components/RingRenderer";
 import { DraggableCompassNav, DraggablePill } from "../App";
 
+// ========================================
+// CONSTANTS
+// ========================================
 const ID_OPTIONS = [
   "7/64", "1/8", "9/64", "5/32", "3/16", "1/4",
   "5/16", "3/8", "7/16", "1/2", "5/8",
 ];
 const WIRE_OPTIONS = [0.9, 1.2, 1.6, 2.0, 2.5, 3.0];
 
+// Helper: convert fractional inch string to mm
+function convertToMM(idValue: string): number {
+  const [num, den] = idValue.split("/").map(Number);
+  return den ? 25.4 * (num / den) : parseFloat(idValue);
+}
+
+// ========================================
+// MAIN COMPONENT
+// ========================================
 export default function ChainmailWeaveTuner() {
   const [id, setId] = useState("5/16");
   const [wire, setWire] = useState(1.6);
@@ -26,10 +37,10 @@ export default function ChainmailWeaveTuner() {
   const [version, setVersion] = useState(0); // 🔁 force rebuild key
 
   // ============================================================
-  // ✅ Generate rings whenever any geometry input changes
+  // Generate rings whenever any geometry input changes
   // ============================================================
   const rings = useMemo(() => {
-    const { ID_mm, WD_mm, OD_mm } = computeRingVarsFixedID(id, wire);
+    const { ID_mm, WD_mm, OD_mm } = computeRingVarsIndependent(id, wire);
     const spacing = centerSpacing;
     const rows = 6;
     const cols = 6;
@@ -59,10 +70,10 @@ export default function ChainmailWeaveTuner() {
   }, [id, wire, centerSpacing, angleIn, angleOut]);
 
   // ============================================================
-  // ✅ Build params object (reactive to ID/Wire/etc.)
+  // Build params object (reactive to ID/Wire/etc.)
   // ============================================================
   const params = useMemo(() => {
-    const { ID_mm, WD_mm } = computeRingVarsFixedID(id, wire);
+    const { ID_mm, WD_mm } = computeRingVarsIndependent(id, wire);
     return {
       rows: 6,
       cols: 6,
@@ -74,8 +85,11 @@ export default function ChainmailWeaveTuner() {
     };
   }, [id, wire, centerSpacing]);
 
+  // ============================================================
+  // Save configuration to localStorage
+  // ============================================================
   const handleSave = () => {
-    const { ID_mm, WD_mm } = computeRingVarsFixedID(id, wire);
+    const { ID_mm, WD_mm } = computeRingVarsIndependent(id, wire);
     const entry = {
       id: `${id}_${wire}mm`,
       innerDiameter: ID_mm,
@@ -84,6 +98,7 @@ export default function ChainmailWeaveTuner() {
       angleIn,
       angleOut,
       status,
+      aspectRatio: (ID_mm / WD_mm).toFixed(2),
       savedAt: new Date().toISOString(),
     };
 
@@ -93,6 +108,9 @@ export default function ChainmailWeaveTuner() {
     alert(`✅ Saved ${entry.id} (${status})`);
   };
 
+  // ============================================================
+  // Render
+  // ============================================================
   return (
     <div
       style={{
@@ -116,6 +134,7 @@ export default function ChainmailWeaveTuner() {
           border: "1px solid #0b1020",
           borderRadius: 10,
           display: "flex",
+          alignItems: "center",
           gap: 12,
           padding: "10px 12px",
           zIndex: 10,
@@ -128,7 +147,7 @@ export default function ChainmailWeaveTuner() {
             value={wire}
             onChange={(e) => {
               setWire(parseFloat(e.target.value));
-              setVersion((v) => v + 1); // 🔁 force geometry rebuild
+              setVersion((v) => v + 1);
             }}
             style={{ marginLeft: 6 }}
           >
@@ -146,7 +165,7 @@ export default function ChainmailWeaveTuner() {
             value={id}
             onChange={(e) => {
               setId(e.target.value);
-              setVersion((v) => v + 1); // 🔁 force geometry rebuild
+              setVersion((v) => v + 1);
             }}
             style={{ marginLeft: 6 }}
           >
@@ -219,6 +238,10 @@ export default function ChainmailWeaveTuner() {
           </select>
         </label>
 
+        <div style={{ marginLeft: 6, fontSize: 13 }}>
+          AR ≈ {(convertToMM(id) / wire).toFixed(2)}
+        </div>
+
         <button
           onClick={handleSave}
           style={{
@@ -228,6 +251,7 @@ export default function ChainmailWeaveTuner() {
             borderRadius: 8,
             border: "1px solid #334155",
             cursor: "pointer",
+            fontWeight: 600,
           }}
         >
           Save

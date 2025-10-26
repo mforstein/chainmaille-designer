@@ -239,33 +239,61 @@ const [debugMessage, setDebugMessage] = useState("");
     };
   }, []);
 const rings = useMemo(() => {
-  const spacingFromWeave =
-    lastWeave?.layout?.centerSpacing ??
-    (Array.isArray(lastWeave?.layout)
+  if (!lastWeave) {
+    // 🧱 fallback: use params only
+    return generateRings({
+      rows: params.rows,
+      cols: params.cols,
+      innerDiameter: params.innerDiameter,
+      wireDiameter: params.wireDiameter,
+      centerSpacing: params.centerSpacing ?? 7.5,
+      angleIn: 25,
+      angleOut: -25,
+    });
+  }
+
+  // ============================================================
+  // ✅ Use tuned weave's actual geometry (ID, WD, spacing, angles)
+  // ============================================================
+  const ID_mm =
+    Number.isFinite(lastWeave.innerDiameter) && lastWeave.innerDiameter > 0
+      ? lastWeave.innerDiameter
+      : params.innerDiameter;
+
+  const WD_mm =
+    Number.isFinite(lastWeave.wireDiameter) && lastWeave.wireDiameter > 0
+      ? lastWeave.wireDiameter
+      : params.wireDiameter;
+
+  const spacing =
+    lastWeave.centerSpacing ??
+    (Array.isArray(lastWeave.layout)
       ? lastWeave.layout[0]?.centerSpacing
       : undefined) ??
-    lastWeave?.centerSpacing ??
     params.centerSpacing ??
     7.5;
 
-  const geometry = {
-    centerSpacing: spacingFromWeave,
-    angleIn: Number.isFinite(lastWeave?.angleIn) ? lastWeave.angleIn : 25,
-    angleOut: Number.isFinite(lastWeave?.angleOut) ? lastWeave.angleOut : -25,
-  };
+  const angleIn = Number.isFinite(lastWeave.angleIn)
+    ? lastWeave.angleIn
+    : 25;
+  const angleOut = Number.isFinite(lastWeave.angleOut)
+    ? lastWeave.angleOut
+    : -25;
 
+  // ============================================================
+  // ✅ Generate correct geometry
+  // ============================================================
   return generateRings({
     rows: params.rows,
     cols: params.cols,
-    innerDiameter: params.innerDiameter,
-    wireDiameter: params.wireDiameter,
-    centerSpacing: geometry.centerSpacing,
-    angleIn: geometry.angleIn,
-    angleOut: geometry.angleOut,
-    layout: lastWeave?.layout ?? [],
+    innerDiameter: ID_mm,
+    wireDiameter: WD_mm,
+    centerSpacing: spacing,
+    angleIn,
+    angleOut,
+    layout: lastWeave.layout ?? [],
   });
-  // Only rebuild geometry when structural shape changes
-}, [params.rows, params.cols, params.innerDiameter, params.wireDiameter, lastWeave]);
+}, [params.rows, params.cols, lastWeave]);
   // --- derive safeParams ---
   const safeParams = {
     rows: params?.rows ?? 1,
@@ -771,12 +799,58 @@ const applyAtlas = (e: any) => {
               }}
             >
               <SupplierMenu
-onApplyPalette={(sel) => {
+onApplyPalette={(sel: any) => {
+  // 🧩 Handle Default Case — Apply real default values and force rebuild
+  const isDefault =
+    sel?.name === "Default" ||
+    sel?.id === "default" ||
+    sel?.color === "Default Colors" ||
+    sel?.material === "Default";
+
+  if (isDefault) {
+    const defaultWeave = {
+      id: "default",
+      name: "Default",
+      innerDiameter: 7.94,
+      wireDiameter: 1.6,
+      centerSpacing: 7.5,
+      angleIn: 25,
+      angleOut: -25,
+      layout: [],
+      status: "valid",
+    };
+
+    localStorage.setItem("chainmailSelected", JSON.stringify(defaultWeave));
+    localStorage.setItem(
+      "cmd.params",
+      JSON.stringify({
+        rows: 20,
+        cols: 20,
+        innerDiameter: 7.94,
+        wireDiameter: 1.6,
+        centerSpacing: 7.5,
+      })
+    );
+
+    setLastWeave(defaultWeave);
+    setParams((prev) => ({
+      ...prev,
+      innerDiameter: 7.94,
+      wireDiameter: 1.6,
+      centerSpacing: 7.5,
+    }));
+
+    window.dispatchEvent(new Event("weave-updated"));
+    console.log("✅ Default weave applied and geometry rebuilt");
+    return;
+  }
+
+  // 🧩 Otherwise, apply selected weave as before
   const colorHex =
     sel.color && sel.color !== "Default Colors"
-      ? (typeof sel.color === "string" && sel.color.startsWith("#")
-          ? sel.color
-          : params.ringColor)
+      ? typeof sel.color === "string" && sel.color.startsWith("#")
+        ? sel.color
+        : params.ringColor
       : params.ringColor;
 
   const parseNumber = (v: any) => {
@@ -789,49 +863,33 @@ onApplyPalette={(sel) => {
     return NaN;
   };
 
-  const parseFractionalInchesToMm = (s?: string): number | undefined => {
-    if (!s) return undefined;
-    const raw = s.trim();
-    const frac = raw.match(/^\s*(\d+)\s*\/\s*(\d+)\s*(in|")?\s*$/i);
-    if (frac) {
-      const num = parseFloat(frac[1]);
-      const den = parseFloat(frac[2]);
-      if (den !== 0) return (num / den) * 25.4;
-    }
-    const dec = raw.match(/-?\d+(\.\d+)?/);
-    if (dec) {
-      const inches = parseFloat(dec[0]);
-      return inches * 25.4;
-    }
-    return undefined;
+  // ✅ Defensive checks so undefined props don’t crash
+  const ID = parseNumber(sel?.innerDiameter ?? sel?.ringID);
+  const WD = parseNumber(sel?.wireDiameter ?? sel?.wireGauge);
+  const spacing = parseNumber(sel?.centerSpacing) || params.centerSpacing;
+
+  const weave = {
+    id: sel?.name ?? sel?.id ?? "unnamed",
+    name: sel?.name ?? sel?.material ?? "Unnamed",
+    innerDiameter: ID,
+    wireDiameter: WD,
+    centerSpacing: spacing,
+    angleIn: sel?.angleIn ?? 25,
+    angleOut: sel?.angleOut ?? -25,
+    layout: sel?.layout ?? [],
+    status: sel?.status ?? "valid",
   };
 
-  const maybeIdMm = parseFractionalInchesToMm(
-    typeof sel.ringID === "string" ? sel.ringID : undefined
-  );
-  const newInner = Number.isFinite(maybeIdMm as number)
-    ? (maybeIdMm as number)
-    : params.innerDiameter;
-
-  const maybeWire = parseNumber(sel.wireGauge);
-  const newWire = Number.isFinite(maybeWire)
-    ? (maybeWire as number)
-    : params.wireDiameter;
-
-  const newAR = newWire > 0 ? (newInner / newWire).toFixed(2) : "—";
-
-  // ✅ Preserve paint and overlay
+  localStorage.setItem("chainmailSelected", JSON.stringify(weave));
+  setLastWeave(weave);
   setParams((prev) => ({
     ...prev,
-    ringColor: colorHex,
-    innerDiameter: newInner,
-    wireDiameter: newWire,
-    ringSpec: `ID ${newInner.toFixed(2)} mm / WD ${newWire.toFixed(
-      2
-    )} mm (AR≈${newAR})`,
+    innerDiameter: ID,
+    wireDiameter: WD,
+    centerSpacing: spacing,
   }));
 
-  console.log("🎨 Material applied — paint & overlay preserved.");
+  window.dispatchEvent(new Event("weave-updated"));
 }}
               />
             </div>
