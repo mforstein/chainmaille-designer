@@ -873,7 +873,7 @@ onApplyPalette={(sel) => {
   onApply={async (overlay) => {
     // 1️⃣ Update overlay preview plane (as before)
     setOverlayState(overlay);
-    rendererRef.current?.applyOverlay?.(overlay);
+rendererRef.current?.applyOverlayToRings?.(overlay);
 
     // 2️⃣ NEW: Actually apply the overlay colors to the rings
     try {

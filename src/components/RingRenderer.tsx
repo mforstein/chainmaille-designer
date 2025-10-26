@@ -279,7 +279,7 @@ useEffect(() => {
       renderer.shadowMap.enabled = false;
       renderer.toneMapping = THREE.NoToneMapping;
       renderer.outputColorSpace = THREE.SRGBColorSpace;
-      renderer.useLegacyLights = true;
+      
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
       renderer.setClearColor(safeParams.bgColor, 1);
       renderer.setSize(mount.clientWidth, mount.clientHeight);
@@ -320,7 +320,7 @@ useEffect(() => {
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.listenToKeyEvents(window);
+    (controls as any).listenToKeyEvents?.(window);
     controls.target.set(0, 0, 0);
     camera.lookAt(controls.target);
     controlsRef.current = controls;
@@ -498,7 +498,7 @@ if (!rotationLocked) {
 }
 
     ctr.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
-    ctr.listenToKeyEvents(window);
+    (ctr as any).listenToKeyEvents?.(window);
     ctr.update();
   }, [localPaintMode, rotationLocked]);
 
@@ -523,7 +523,7 @@ useEffect(() => {
   if (groupRef.current) {
     groupRef.current.traverse((o: any) => {
       o.geometry?.dispose?.();
-      if (Array.isArray(o.material)) o.material.forEach((m) => m?.dispose?.());
+      if (Array.isArray(o.material)) o.material.forEach((m: any) => m?.dispose?.());
       else o.material?.dispose?.();
     });
     scene.remove(groupRef.current);
