@@ -1,227 +1,279 @@
-// =====================================
-// File: src/components/ImageOverlayPanel.tsx
-// =====================================
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { nearestPaletteHex, rgbToHex } from "../utils/colors";
-import { clamp } from "../types";
+import React, { useRef, useState } from "react";
 
-type SampleMode = "nearest" | "average";
-
-export interface OverlaySettings {
+export interface OverlayState {
+  dataUrl: string | null;
   scale: number;
+  rotation: number;
   offsetX: number;
   offsetY: number;
-  rotate: number;
-  sample: SampleMode;
-  paletteScope: "current" | "cmj" | "trl" | "mdz" | "all";
   opacity: number;
+  repeat?: "none" | "tile";
+  patternScale?: number; // percentage for tiling (e.g., 100 = original size)
 }
 
-export function ImageOverlayPanel({
-  stageRef,
-  rows,
-  cols,
-  palettes,
-  currentPalette,
-  onPreview,
-  onApply,
-  settings,
-  setSettings,
-}: {
-  stageRef: React.RefObject<HTMLDivElement>;
-  rows: number;
-  cols: number;
-  palettes: Record<string, string[]>;
-  currentPalette: string[];
-  onPreview: (ghost: HTMLCanvasElement | null) => void; // why: stage overlay ghost
-  onApply: (colors: string[][]) => void; // mapped to grid
-  settings: OverlaySettings;
-  setSettings: (s: OverlaySettings) => void;
-}) {
-  const fileRef = useRef<HTMLInputElement>(null);
+interface Props {
+  onApply: (overlay: OverlayState) => void;
+}
+
+// =========================
+// 🔧 Default State
+// =========================
+const defaultOverlay: OverlayState = {
+  dataUrl: null,
+  scale: 1,
+  rotation: 0,
+  offsetX: 0,
+  offsetY: 0,
+  opacity: 0.8,
+  repeat: "none",
+  patternScale: 100,
+};
+
+// =========================
+// 🖼️ Image Overlay Panel
+// =========================
+export const ImageOverlayPanel: React.FC<Props> = ({ onApply }) => {
+  const [overlay, setOverlay] = useState<OverlayState>(defaultOverlay);
   const imgRef = useRef<HTMLImageElement | null>(null);
-  const workCanvas = useRef<HTMLCanvasElement | null>(null);
-  const [loaded, setLoaded] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
 
-  useEffect(() => {
-    workCanvas.current = document.createElement("canvas");
-  }, []);
-
-  const paletteForScope = useMemo(() => {
-    switch (settings.paletteScope) {
-      case "current":
-        return currentPalette;
-      case "cmj":
-        return palettes["cmj"];
-      case "trl":
-        return palettes["trl"];
-      case "mdz":
-        return palettes["mdz"];
-      case "all":
-      default:
-        return Array.from(new Set([...palettes["cmj"], ...palettes["trl"], ...palettes["mdz"]]));
-    }
-  }, [settings.paletteScope, currentPalette, palettes]);
-
-  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const url = URL.createObjectURL(f);
-    const img = new Image();
-    img.onload = () => {
-      imgRef.current = img;
-      setLoaded(true);
-      URL.revokeObjectURL(url);
-      renderGhost();
+  // =========================
+  // 📁 File Upload Handling
+  // =========================
+  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const result = ev.target?.result as string;
+      setOverlay((o) => ({
+        ...o,
+        dataUrl: result,
+        scale: 1,
+        offsetX: 0,
+        offsetY: 0,
+      }));
     };
-    img.src = url;
-  }
+    reader.readAsDataURL(file);
+  };
 
-  function renderGhost() {
-    const img = imgRef.current;
-    const wc = workCanvas.current;
-    const stage = stageRef.current;
-    if (!img || !wc || !stage) return;
-
-    // Size the work canvas to stage for easier transform preview
-    const W = stage.clientWidth;
-    const H = stage.clientHeight;
-    wc.width = W;
-    wc.height = H;
-
-    const ctx = wc.getContext("2d")!;
-    ctx.clearRect(0, 0, W, H);
-
-    // Transform draw
-    ctx.save();
-    ctx.globalAlpha = clamp(settings.opacity, 0, 1);
-    ctx.translate(W / 2 + settings.offsetX, H / 2 + settings.offsetY);
-    ctx.rotate((settings.rotate * Math.PI) / 180);
-    const scale = Math.max(0.01, settings.scale);
-    const drawW = img.width * scale;
-    const drawH = img.height * scale;
-    ctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
-    ctx.restore();
-
-    onPreview(wc);
-  }
-
-  function sampleToGrid(): string[][] {
-    const img = imgRef.current;
-    const wc = workCanvas.current;
-    if (!img || !wc) return [];
-
-    // Build a tiny canvas of cols x rows to sample
-    const tiny = document.createElement("canvas");
-    tiny.width = cols;
-    tiny.height = rows;
-    const tctx = tiny.getContext("2d")!;
-
-    // Draw with same transform as ghost, but into tiny resolution
-    tctx.save();
-    tctx.clearRect(0, 0, cols, rows);
-    tctx.translate(cols / 2 + settings.offsetX / (wc.width / cols), rows / 2 + settings.offsetY / (wc.height / rows));
-    tctx.rotate((settings.rotate * Math.PI) / 180);
-    const scale = Math.max(0.01, settings.scale);
-    const drawW = (img.width * scale) / (wc.width / cols);
-    const drawH = (img.height * scale) / (wc.height / rows);
-    tctx.drawImage(img, -drawW / 2, -drawH / 2, drawW, drawH);
-    tctx.restore();
-
-    // Read colors
-    const id = tctx.getImageData(0, 0, cols, rows).data;
-    const grid: string[][] = Array.from({ length: rows }, () => Array(cols).fill("#000000"));
-
-    // Palette quantization
-    const pal = paletteForScope;
-
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const i = (r * cols + c) * 4;
-        const hex = rgbToHex(id[i], id[i + 1], id[i + 2]);
-        grid[r][c] = nearestPaletteHex(hex, pal);
-      }
-    }
-    return grid;
-  }
-
-  useEffect(() => {
-    if (loaded) renderGhost();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings.scale, settings.offsetX, settings.offsetY, settings.rotate, settings.opacity, settings.paletteScope]);
-
+  // =========================
+  // 🎨 UI Rendering
+  // =========================
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <label style={{ fontSize: 12, opacity: 0.8 }}>Image Overlay</label>
-
-      <label
-        htmlFor="overlay-file"
+    <div
+      style={{
+        width: 380,
+        background: "rgba(17,24,39,0.97)",
+        border: "1px solid #1f2937",
+        borderRadius: 18,
+        padding: 14,
+        color: "#f3f4f6",
+        boxShadow: "0 8px 25px rgba(0,0,0,.5)",
+        zIndex: 9999,
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <h3
         style={{
-          display: "inline-block",
-          padding: "8px 10px",
-          borderRadius: 6,
-          border: "1px solid #333",
-          cursor: "pointer",
-          textAlign: "center",
+          fontSize: 16,
+          fontWeight: 700,
+          marginBottom: 10,
+          color: "#e5e7eb",
         }}
       >
-        Choose Image
-      </label>
-      <input
-        id="overlay-file"
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        style={{ display: "none" }}
-        onChange={handleFile}
-      />
+        🖼️ Image Overlay
+      </h3>
 
-      <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: 6, alignItems: "center" }}>
-        <div>Scale</div>
-        <input type="range" min={0.01} max={5} step={0.01}
-               value={settings.scale}
-               onChange={(e) => setSettings({ ...settings, scale: parseFloat(e.target.value) })} />
-        <div>Offset X</div>
-        <input type="range" min={-500} max={500} step={1}
-               value={settings.offsetX}
-               onChange={(e) => setSettings({ ...settings, offsetX: parseInt(e.target.value) })} />
-        <div>Offset Y</div>
-        <input type="range" min={-500} max={500} step={1}
-               value={settings.offsetY}
-               onChange={(e) => setSettings({ ...settings, offsetY: parseInt(e.target.value) })} />
-        <div>Rotate</div>
-        <input type="range" min={-180} max={180} step={1}
-               value={settings.rotate}
-               onChange={(e) => setSettings({ ...settings, rotate: parseInt(e.target.value) })} />
-        <div>Opacity</div>
-        <input type="range" min={0} max={1} step={0.01}
-               value={settings.opacity}
-               onChange={(e) => setSettings({ ...settings, opacity: parseFloat(e.target.value) })} />
-        <div>Palette</div>
-        <select
-          value={settings.paletteScope}
-          onChange={(e) => setSettings({ ...settings, paletteScope: e.target.value as any })}
-        >
-          <option value="current">Current</option>
-          <option value="cmj">CMJ</option>
-          <option value="trl">TRL</option>
-          <option value="mdz">MDZ</option>
-          <option value="all">All</option>
-        </select>
+      {/* Upload Zone */}
+      <div
+        style={{
+          border: "2px dashed #374151",
+          borderRadius: 10,
+          padding: 12,
+          textAlign: "center",
+          marginBottom: 16,
+        }}
+      >
+        <input
+          type="file"
+          accept="image/*"
+          onChange={handleFile}
+          style={{ width: "100%", cursor: "pointer" }}
+        />
+        <p style={{ fontSize: 12, color: "#9ca3af" }}>
+          Select or drop an image to overlay
+        </p>
       </div>
 
-      <div style={{ display: "flex", gap: 8 }}>
-        <button onClick={renderGhost}>Preview</button>
-        <button onClick={() => onPreview(null)}>Hide</button>
-        <button
-          onClick={() => {
-            const grid = sampleToGrid();
-            if (grid.length) onApply(grid);
+      {/* Centered Image Preview with Pan + Zoom */}
+      {overlay.dataUrl && (
+        <div
+          style={{
+            position: "relative",
+            width: "100%",
+            height: 220,
+            borderRadius: 8,
+            overflow: "hidden",
+            background: "#000",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            boxShadow: "inset 0 0 12px rgba(0,0,0,0.4)",
+            marginBottom: 12,
+            cursor: dragging ? "grabbing" : "grab",
+          }}
+          onWheel={(e) => {
+            e.preventDefault();
+            const nextScale = overlay.scale * (e.deltaY < 0 ? 1.1 : 0.9);
+            setOverlay((s) => ({
+              ...s,
+              scale: Math.min(5, Math.max(0.1, nextScale)),
+            }));
+          }}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            setDragging(true);
+            setDragStart({ x: e.clientX, y: e.clientY });
+          }}
+          onMouseMove={(e) => {
+            if (!dragging || !dragStart) return;
+            const dx = e.clientX - dragStart.x;
+            const dy = e.clientY - dragStart.y;
+            setOverlay((s) => ({
+              ...s,
+              offsetX: s.offsetX + dx,
+              offsetY: s.offsetY + dy,
+            }));
+            setDragStart({ x: e.clientX, y: e.clientY });
+          }}
+          onMouseUp={() => setDragging(false)}
+          onMouseLeave={() => setDragging(false)}
+        >
+          <img
+            ref={imgRef}
+            src={overlay.dataUrl}
+            alt="Overlay Preview"
+            style={{
+              position: "absolute",
+              transform: `
+                translate(${overlay.offsetX}px, ${overlay.offsetY}px)
+                scale(${overlay.scale})
+                rotate(${overlay.rotation ?? 0}deg)
+              `,
+              transformOrigin: "center",
+              width: "100%",
+              height: "auto",
+              objectFit: overlay.repeat === "tile" ? "cover" : "contain",
+              opacity: overlay.opacity ?? 1,
+              transition: dragging ? "none" : "transform 0.2s ease",
+              backgroundImage:
+                overlay.repeat === "tile"
+                  ? `url(${overlay.dataUrl})`
+                  : undefined,
+              backgroundRepeat: "repeat",
+              backgroundSize:
+                overlay.repeat === "tile"
+                  ? `${overlay.patternScale ?? 100}% auto`
+                  : undefined,
+            }}
+          />
+        </div>
+      )}
+
+      {/* Repeat Mode */}
+      {overlay.dataUrl && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            fontSize: 13,
+            marginBottom: 8,
           }}
         >
-          Apply (paywalled outside)
-        </button>
-      </div>
+          <label style={{ display: "flex", justifyContent: "space-between" }}>
+            <span>Repeat Mode:</span>
+            <select
+              value={overlay.repeat ?? "none"}
+              onChange={(e) =>
+                setOverlay((s) => ({
+                  ...s,
+                  repeat: e.target.value as "none" | "tile",
+                }))
+              }
+              style={{
+                background: "#1f2937",
+                color: "#f3f4f6",
+                borderRadius: 6,
+                border: "1px solid #374151",
+                padding: "4px 8px",
+                cursor: "pointer",
+              }}
+            >
+              <option value="none">None</option>
+              <option value="tile">Tile</option>
+            </select>
+          </label>
+
+          {overlay.repeat === "tile" && (
+            <label style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>Pattern Scale (%):</span>
+              <input
+                type="number"
+                min={10}
+                max={400}
+                step={5}
+                value={overlay.patternScale ?? 100}
+                onChange={(e) =>
+                  setOverlay((s) => ({
+                    ...s,
+                    patternScale: parseFloat(e.target.value),
+                  }))
+                }
+                style={{
+                  width: 70,
+                  background: "#111827",
+                  color: "#f9fafb",
+                  border: "1px solid #374151",
+                  borderRadius: 6,
+                  textAlign: "right",
+                  padding: "3px 6px",
+                }}
+              />
+            </label>
+          )}
+        </div>
+      )}
+
+      {/* Transfer Button */}
+      {overlay.dataUrl && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            marginTop: 16,
+          }}
+        >
+          <button
+            onClick={() => onApply(overlay)}
+            style={{
+              background: "#10b981",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              padding: "10px 20px",
+              fontWeight: 600,
+              cursor: "pointer",
+              fontSize: 14,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+            }}
+          >
+            📤 Transfer to Rings
+          </button>
+        </div>
+      )}
     </div>
   );
-}
+};

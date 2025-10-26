@@ -1,138 +1,122 @@
 // ========================================
-// src/pages/RingSizeChart.tsx
+// src/pages/RingSizeChart.tsx (FINAL DOUBLE SCALE)
 // ========================================
-import React, { useMemo, useState, useRef, useEffect } from "react";
+import React, { useMemo, useState } from "react";
+import * as THREE from "three";
+import SpriteText from "three-spritetext";
 import RingRenderer, {
   computeRingVarsFixedID,
-  generateRingsChart,
 } from "../components/RingRenderer";
 import { DraggableCompassNav, DraggablePill } from "../App";
 
 // ========================================
-// === Constants ===
+// CONSTANTS
 // ========================================
 const ID_OPTIONS = [
-  "7/64", "1/8", "9/64", "5/32", "3/16",
-  "1/4", "5/16", "3/8", "7/16", "1/2",
+  "7/64", "1/8", "9/64", "5/32", "3/16", "1/4",
+  "5/16", "3/8", "7/16", "1/2", "5/8",
 ];
-const WIRE_OPTIONS = [0.9, 1.2, 1.6, 2.0, 2.5, 3.0]; // mm
-const INCH_MM = 25.4; // 1 inch = 25.4 mm
+const WIRE_OPTIONS = [0.9, 1.2, 1.6, 2.0, 2.5, 3.0];
 
 // ========================================
-// === Main Component ===
+// MAIN COMPONENT
 // ========================================
 export default function RingSizeChart() {
-  const [paint, setPaint] = useState(new Map());
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [scale, setScale] = useState(1);
   const [showCompass, setShowCompass] = useState(false);
 
-  // Responsive scaling
-  useEffect(() => {
-    const onResize = () => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      const scaleFactor = Math.min(w / 1200, h / 800);
-      setScale(scaleFactor);
-    };
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
+  // ============================================================
+  // Generate all ring combinations (each unique size)
+  // ============================================================
+  const rings = useMemo(() => {
+    const grid: any[] = [];
+    const rows = WIRE_OPTIONS.length;
+    const cols = ID_OPTIONS.length;
 
-  // ========================================
-  // === Generate chart ring data ===
-  // ========================================
-  const { layout, chartWidth, chartHeight } = useMemo(() => {
-    const rings: any[] = [];
-    const cellSize = INCH_MM;
-    const offsetX = -(ID_OPTIONS.length * cellSize) / 2 + cellSize / 2;
-    const offsetY = -(WIRE_OPTIONS.length * cellSize) / 2 + cellSize / 2;
+    // Global visual scaling constants
+    const spacing = 20; // a bit wider spacing
+    const SCALE_NORMALIZER = 0.30; // doubled ring size from 0.15 → 0.30
 
-    WIRE_OPTIONS.forEach((wd, row) => {
-      ID_OPTIONS.forEach((id, col) => {
-        const v = computeRingVarsFixedID(id, wd);
-        rings.push({
-          row,
-          col,
-          x: col * cellSize + offsetX,
-          y: row * cellSize + offsetY,
-          innerDiameter: v.ID_mm,
-          wireDiameter: v.WD_mm,
-          centerSpacing: cellSize,
+    WIRE_OPTIONS.forEach((wire, r) => {
+      ID_OPTIONS.forEach((id, c) => {
+        const { ID_mm, WD_mm, OD_mm } = computeRingVarsFixedID(id, wire);
+
+        const x = c * spacing;
+        const y = r * spacing * 1.1;
+
+        // Apply normalization to fit view and avoid giant rings
+        const scaledID = ID_mm * SCALE_NORMALIZER;
+        const scaledWD = WD_mm * SCALE_NORMALIZER;
+        const scaledOD = OD_mm * SCALE_NORMALIZER;
+
+        // ✅ Proper SpriteText label (consistent small text)
+        const label = new SpriteText(
+          `${WD_mm.toFixed(1)}mm / ${ID_mm.toFixed(2)}mm`
+        );
+        label.color = "#CCCCCC";
+        label.textHeight = 0.9; // fixed small text
+        label.position.set(x, -y - scaledOD * 0.75, 0); // just below the ring
+        label.center.set(0.5, 1.0);
+
+        grid.push({
+          row: r,
+          col: c,
+          x,
+          y,
+          innerDiameter: scaledID,
+          wireDiameter: scaledWD,
+          radius: scaledOD / 2,
+          tiltRad: 0,
+          _chartLabel: label,
         });
       });
     });
 
+    return grid;
+  }, []);
+
+  // ============================================================
+  // Build params dynamically for rendering
+  // ============================================================
+  const params = useMemo(() => {
     return {
-      layout: rings,
-      chartWidth: ID_OPTIONS.length * cellSize,
-      chartHeight: WIRE_OPTIONS.length * cellSize,
+      rows: WIRE_OPTIONS.length,
+      cols: ID_OPTIONS.length,
+      innerDiameter: 6,
+      wireDiameter: 1,
+      ringColor: "#C0C0C0",
+      bgColor: "#0E0F12",
+      centerSpacing: 20,
     };
   }, []);
 
-  // ========================================
-  // === Generate 3D Rings w/ SpriteText ===
-  // ========================================
-  const ringObjs = useMemo(() => {
-    return generateRingsChart({
-      rows: WIRE_OPTIONS.length,
-      cols: ID_OPTIONS.length,
-      innerDiameter: "1/4", // placeholder
-      wireDiameter: 1.2,    // placeholder
-      centerSpacing: INCH_MM,
-      layout,
-      angleIn: 0,   // ✅ Flat
-      angleOut: 0,  // ✅ Flat
-    });
-  }, [layout]);
-
-  // ========================================
-  // === Render Scene ===
-  // ========================================
+  // ============================================================
+  // Render Chart
+  // ============================================================
   return (
     <div
-      ref={containerRef}
       style={{
         width: "100vw",
         height: "100vh",
-        background: "#0F1115",
+        background: "#0E0F12",
+        color: "#dbe4ee",
         position: "relative",
-        overflow: "hidden",
-        color: "white",
       }}
     >
-      {/* === Centered Ring Size Chart === */}
-      <div
-        style={{
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: `translate(-50%, -50%) scale(${scale})`,
-          zIndex: 1,
-        }}
-      >
-        <RingRenderer
-          rings={ringObjs}
-          params={{
-            rows: WIRE_OPTIONS.length,
-            cols: ID_OPTIONS.length,
-            innerDiameter: 5,
-            wireDiameter: 1,
-            ringColor: "#BFBFBF",
-            bgColor: "#0F1115",
-            centerSpacing: INCH_MM,
-          }}
-          paint={paint}
-          setPaint={setPaint}
-          activeColor="#FFFFFF"
-          initialPaintMode={false}
-          initialRotationLocked={false}
-          initialEraseMode={false}
-        />
-      </div>
+      {/* ======================= */}
+      {/* Main 3D Renderer */}
+      {/* ======================= */}
+      <RingRenderer
+        rings={rings}
+        params={params}
+        paint={new Map()}
+        setPaint={() => {}}
+        activeColor="#FFFFFF"
+        initialRotationLocked={true}
+      />
 
-      {/* === Floating Compass Button === */}
+      {/* ======================= */}
+      {/* Floating Compass Control */}
+      {/* ======================= */}
       <DraggablePill id="chart-compass" defaultPosition={{ x: 20, y: 20 }}>
         <button
           onClick={() => setShowCompass((v) => !v)}
@@ -152,7 +136,9 @@ export default function RingSizeChart() {
         </button>
       </DraggablePill>
 
-      {/* === Floating Navigation Panel === */}
+      {/* ======================= */}
+      {/* Draggable Compass Nav */}
+      {/* ======================= */}
       {showCompass && (
         <DraggableCompassNav onNavigate={() => setShowCompass(false)} />
       )}

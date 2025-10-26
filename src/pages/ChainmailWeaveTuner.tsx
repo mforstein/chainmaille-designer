@@ -1,5 +1,5 @@
 // ========================================
-// src/pages/ChainmailWeaveTuner.tsx
+// src/pages/ChainmailWeaveTuner.tsx (UPDATED & FIXED)
 // ========================================
 import React, { useMemo, useState } from "react";
 import * as THREE from "three";
@@ -23,17 +23,22 @@ export default function ChainmailWeaveTuner() {
   const [angleOut, setAngleOut] = useState(-25);
   const [status, setStatus] = useState<"valid" | "no_solution">("valid");
   const [showCompass, setShowCompass] = useState(false);
+  const [version, setVersion] = useState(0); // 🔁 force rebuild key
 
+  // ============================================================
+  // ✅ Generate rings whenever any geometry input changes
+  // ============================================================
   const rings = useMemo(() => {
     const { ID_mm, WD_mm, OD_mm } = computeRingVarsFixedID(id, wire);
     const spacing = centerSpacing;
-    const rows = 6, cols = 6;
+    const rows = 6;
+    const cols = 6;
     const arr: any[] = [];
 
     for (let r = 0; r < rows; r++) {
       const y = r * spacing * 0.866;
-      const rowOffset = (r % 2 === 1) ? spacing / 2 : 0;
-      const rowTilt = (r % 2 === 0) ? angleIn : angleOut;
+      const rowOffset = r % 2 === 1 ? spacing / 2 : 0;
+      const rowTilt = r % 2 === 0 ? angleIn : angleOut;
 
       for (let c = 0; c < cols; c++) {
         const x = c * spacing + rowOffset;
@@ -53,11 +58,28 @@ export default function ChainmailWeaveTuner() {
     return arr;
   }, [id, wire, centerSpacing, angleIn, angleOut]);
 
+  // ============================================================
+  // ✅ Build params object (reactive to ID/Wire/etc.)
+  // ============================================================
+  const params = useMemo(() => {
+    const { ID_mm, WD_mm } = computeRingVarsFixedID(id, wire);
+    return {
+      rows: 6,
+      cols: 6,
+      innerDiameter: ID_mm,
+      wireDiameter: WD_mm,
+      ringColor: "#BFBFBF",
+      bgColor: "#0E0F12",
+      centerSpacing,
+    };
+  }, [id, wire, centerSpacing]);
+
   const handleSave = () => {
+    const { ID_mm, WD_mm } = computeRingVarsFixedID(id, wire);
     const entry = {
       id: `${id}_${wire}mm`,
-      innerDiameter: computeRingVarsFixedID(id, wire).ID_mm,
-      wireDiameter: wire,
+      innerDiameter: ID_mm,
+      wireDiameter: WD_mm,
       centerSpacing,
       angleIn,
       angleOut,
@@ -104,7 +126,10 @@ export default function ChainmailWeaveTuner() {
           Wire
           <select
             value={wire}
-            onChange={(e) => setWire(parseFloat(e.target.value))}
+            onChange={(e) => {
+              setWire(parseFloat(e.target.value));
+              setVersion((v) => v + 1); // 🔁 force geometry rebuild
+            }}
             style={{ marginLeft: 6 }}
           >
             {WIRE_OPTIONS.map((v) => (
@@ -119,7 +144,10 @@ export default function ChainmailWeaveTuner() {
           ID
           <select
             value={id}
-            onChange={(e) => setId(e.target.value)}
+            onChange={(e) => {
+              setId(e.target.value);
+              setVersion((v) => v + 1); // 🔁 force geometry rebuild
+            }}
             style={{ marginLeft: 6 }}
           >
             {ID_OPTIONS.map((v) => (
@@ -136,7 +164,10 @@ export default function ChainmailWeaveTuner() {
             max="25"
             step="0.1"
             value={centerSpacing}
-            onChange={(e) => setCenterSpacing(parseFloat(e.target.value))}
+            onChange={(e) => {
+              setCenterSpacing(parseFloat(e.target.value));
+              setVersion((v) => v + 1);
+            }}
             style={{ width: 140, marginLeft: 6 }}
           />
           <span style={{ marginLeft: 6 }}>{centerSpacing.toFixed(1)} mm</span>
@@ -150,7 +181,10 @@ export default function ChainmailWeaveTuner() {
             max="75"
             step="1"
             value={angleIn}
-            onChange={(e) => setAngleIn(parseFloat(e.target.value))}
+            onChange={(e) => {
+              setAngleIn(parseFloat(e.target.value));
+              setVersion((v) => v + 1);
+            }}
             style={{ width: 110, marginLeft: 6 }}
           />
           <span style={{ marginLeft: 6 }}>{angleIn}°</span>
@@ -164,7 +198,10 @@ export default function ChainmailWeaveTuner() {
             max="75"
             step="1"
             value={angleOut}
-            onChange={(e) => setAngleOut(parseFloat(e.target.value))}
+            onChange={(e) => {
+              setAngleOut(parseFloat(e.target.value));
+              setVersion((v) => v + 1);
+            }}
             style={{ width: 110, marginLeft: 6 }}
           />
           <span style={{ marginLeft: 6 }}>{angleOut}°</span>
@@ -209,16 +246,9 @@ export default function ChainmailWeaveTuner() {
         }}
       >
         <RingRenderer
+          key={version} // 🔁 ensures full geometry rebuild on parameter change
           rings={rings}
-          params={{
-            rows: 6,
-            cols: 6,
-            innerDiameter: 5,
-            wireDiameter: 1,
-            ringColor: "#BFBFBF",
-            bgColor: "#0E0F12",
-            centerSpacing,
-          }}
+          params={params}
           paint={new Map()}
           setPaint={() => {}}
           activeColor="#FFFFFF"

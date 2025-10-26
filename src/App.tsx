@@ -1,9 +1,10 @@
 // ==============================
-// src/App.tsx (Merged Full Version) — Part 1/3
+// src/App.tsx (Merged Full Version, FIXED + COMPLETE)
 // ==============================
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
-import { Routes, Route, Navigate, Link } from "react-router-dom";
+import React, { useRef, useState, useEffect, useMemo } from "react";
+import { Link } from "react-router-dom";
+import { ImageOverlayPanel, OverlayState } from "./components/ImageOverlayPanel";
 
 import "./index.css";
 import "./ui/ui-grid.css";
@@ -86,25 +87,38 @@ function DraggablePill({
     localStorage.setItem(`pill-pos-${id}`, JSON.stringify(pos));
   }, [id, pos]);
 
+  // ✅ Prevent drag start on interactive elements
+  const isInteractive = (el: EventTarget | null) => {
+    if (!(el instanceof HTMLElement)) return false;
+    return !!el.closest(
+      "button, input, select, textarea, label, a, [role='button'], [role='slider']"
+    );
+  };
+
   return (
     <div
       style={{
         position: "fixed",
         left: pos.x,
         top: pos.y,
-        zIndex: 40,
+        zIndex: 9999,
         background: "rgba(17,24,39,.92)",
         border: "1px solid rgba(0,0,0,.6)",
         boxShadow: "0 12px 40px rgba(0,0,0,.45)",
         borderRadius: 24,
         padding: 12,
         userSelect: "none",
+        cursor: draggingRef.current ? "grabbing" : "grab",
       }}
-      onMouseDown={(e) => start(e.clientX, e.clientY)}
+      onMouseDown={(e) => {
+        if (isInteractive(e.target)) return;
+        start(e.clientX, e.clientY);
+      }}
       onMouseMove={(e) => move(e.clientX, e.clientY)}
       onMouseUp={stop}
       onMouseLeave={stop}
       onTouchStart={(e) => {
+        if (isInteractive(e.target)) return;
         const t = e.touches[0];
         start(t.clientX, t.clientY);
       }}
@@ -148,48 +162,17 @@ const IconBtn: React.FC<
   </div>
 );
 
-// ==============================
-// 🧭 Draggable Navigation Panel
-// ==============================
-function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
-  return (
-    <DraggablePill id="compass-nav" defaultPosition={{ x: 140, y: 140 }}>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 8,
-          background: "rgba(17,24,39,0.96)",
-          border: "1px solid rgba(0,0,0,0.6)",
-          borderRadius: 14,
-          padding: 10,
-          boxShadow: "0 8px 22px rgba(0,0,0,0.45)",
-          userSelect: "none",
-        }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <Link to="/" onClick={onNavigate} title="Designer" style={{ fontSize: 22, textDecoration: "none" }}>
-          🧩
-        </Link>
-        <Link to="/chart" onClick={onNavigate} title="Ring Chart" style={{ fontSize: 22, textDecoration: "none" }}>
-          📊
-        </Link>
-        <Link to="/weave-tuner" onClick={onNavigate} title="Tuner" style={{ fontSize: 22, textDecoration: "none" }}>
-          ⚙️
-        </Link>
-        <Link to="/weave-atlas" onClick={onNavigate} title="Atlas" style={{ fontSize: 22, textDecoration: "none" }}>
-          🌐
-        </Link>
-      </div>
-    </DraggablePill>
-  );
-}
-export { DraggableCompassNav, DraggablePill };
+
 // ==============================================
-// === CHAINMAIL DESIGNER (Merged & Enhanced) ===
+// === CHAINMAIL DESIGNER COMPONENT STARTS HERE ===
 // ==============================================
 function ChainmailDesigner() {
+
+
+  // 🧩 All your useState hooks go here — top level
+  const [showOverlayPanel, setShowOverlayPanel] = useState(false);
+const [debugVisible, setDebugVisible] = useState(false);
+const [debugMessage, setDebugMessage] = useState("");
   const [params, setParams] = useState<Params>(() => {
     const saved = localStorage.getItem("cmd.params");
     const def: Params = {
@@ -220,6 +203,7 @@ function ChainmailDesigner() {
     const saved = localStorage.getItem("cmd.paint");
     return saved ? new Map(JSON.parse(saved)) : new Map();
   });
+
   const [paintMode, setPaintMode] = useState(true);
   const [eraseMode, setEraseMode] = useState(false);
   const [rotationLocked, setRotationLocked] = useState(true);
@@ -228,19 +212,12 @@ function ChainmailDesigner() {
   const [showMagnet, setShowMagnet] = useState(false);
   const [showMaterialPalette, setShowMaterialPalette] = useState(false);
   const [showCompass, setShowCompass] = useState(false);
+  const [overlayState, setOverlayState] = useState<OverlayState | null>(null);
 
   const rendererRef = useRef<RingRendererHandle | null>(null);
-
-  useEffect(() => {
-    localStorage.setItem("cmd.params", JSON.stringify(params));
-  }, [params]);
-
-  useEffect(() => {
-    localStorage.setItem("cmd.paint", JSON.stringify(Array.from(paint.entries())));
-  }, [paint]);
-
   const [lastWeave, setLastWeave] = useState<any | null>(null);
 
+  // --- load saved weave on mount ---
   useEffect(() => {
     const loadWeave = () => {
       try {
@@ -261,43 +238,94 @@ function ChainmailDesigner() {
       window.removeEventListener("weave-updated", loadWeave);
     };
   }, []);
+const rings = useMemo(() => {
+  const spacingFromWeave =
+    lastWeave?.layout?.centerSpacing ??
+    (Array.isArray(lastWeave?.layout)
+      ? lastWeave.layout[0]?.centerSpacing
+      : undefined) ??
+    lastWeave?.centerSpacing ??
+    params.centerSpacing ??
+    7.5;
 
-  const rings = useMemo(() => {
-    let spacingFromWeave =
+  const geometry = {
+    centerSpacing: spacingFromWeave,
+    angleIn: Number.isFinite(lastWeave?.angleIn) ? lastWeave.angleIn : 25,
+    angleOut: Number.isFinite(lastWeave?.angleOut) ? lastWeave.angleOut : -25,
+  };
+
+  return generateRings({
+    rows: params.rows,
+    cols: params.cols,
+    innerDiameter: params.innerDiameter,
+    wireDiameter: params.wireDiameter,
+    centerSpacing: geometry.centerSpacing,
+    angleIn: geometry.angleIn,
+    angleOut: geometry.angleOut,
+    layout: lastWeave?.layout ?? [],
+  });
+  // Only rebuild geometry when structural shape changes
+}, [params.rows, params.cols, params.innerDiameter, params.wireDiameter, lastWeave]);
+  // --- derive safeParams ---
+  const safeParams = {
+    rows: params?.rows ?? 1,
+    cols: params?.cols ?? 1,
+    innerDiameter: params?.innerDiameter ?? 6,
+    wireDiameter: params?.wireDiameter ?? 1,
+    ringColor: params?.ringColor ?? "#CCCCCC",
+    bgColor: params?.bgColor ?? "#0F1115",
+    centerSpacing:
       lastWeave?.layout?.centerSpacing ??
       (Array.isArray(lastWeave?.layout)
         ? lastWeave.layout[0]?.centerSpacing
         : undefined) ??
       lastWeave?.centerSpacing ??
-      params.centerSpacing ??
-      0;
-
-    if (!Number.isFinite(spacingFromWeave) || spacingFromWeave <= 0 || spacingFromWeave > 100) spacingFromWeave = 7.5;
-
-    const geometry = {
-      centerSpacing: spacingFromWeave,
-      angleIn: Number.isFinite(lastWeave?.angleIn) ? lastWeave.angleIn : 25,
-      angleOut: Number.isFinite(lastWeave?.angleOut) ? lastWeave.angleOut : -25,
-    };
-
-    return generateRings({
-      rows: params.rows,
-      cols: params.cols,
-      innerDiameter: params.innerDiameter,
-      wireDiameter: params.wireDiameter,
-      centerSpacing: geometry.centerSpacing,
-      angleIn: geometry.angleIn,
-      angleOut: geometry.angleOut,
-      layout: lastWeave?.layout ?? [],
-    });
-  }, [params.rows, params.cols, params.innerDiameter, params.wireDiameter, params.centerSpacing, lastWeave]);
-
-  const setLock = (locked: boolean) => {
-    rendererRef.current?.forceLockRotation?.(locked);
-    setRotationLocked(locked);
-    if (!locked) setPaintMode(false);
+      params?.centerSpacing ??
+      7.5,
   };
+// --- ensure param object updates identity on each value change ---
+const liveParams = useMemo(
+  () => ({
+    rows: safeParams.rows,
+    cols: safeParams.cols,
+    innerDiameter: safeParams.innerDiameter,
+    wireDiameter: safeParams.wireDiameter,
+    ringColor: safeParams.ringColor,
+    bgColor: safeParams.bgColor,
+    centerSpacing: safeParams.centerSpacing,
+  }),
+  [
+    safeParams.rows,
+    safeParams.cols,
+    safeParams.innerDiameter,
+    safeParams.wireDiameter,
+    safeParams.ringColor,
+    safeParams.bgColor,
+    safeParams.centerSpacing,
+  ]
+);
+  // --- derive color mode ---
+  const effectiveColor = eraseMode ? params.ringColor : activeColor;
 
+  // --- helper functions ---
+  const toggleExclusive = (menu: "camera" | "controls") =>
+    setActiveMenu((prev) => (prev === menu ? null : menu));
+
+// ============================================================
+// ✅ Lock/Unlock Rotation — independent from painting
+// ============================================================
+const setLock = (locked: boolean) => {
+  setRotationLocked(locked);
+  rendererRef.current?.forceLockRotation?.(locked);
+
+  // Lock camera only when explicitly locking back to 2D
+  if (locked) {
+    rendererRef.current?.lock2DView?.();
+  }
+
+  // ✅ Do not toggle paint here — independent systems
+  console.log(`🔒 3D Rotation ${locked ? "locked (2D)" : "unlocked (free rotation)"}`);
+};
   const doZoomIn = () => rendererRef.current?.zoomIn();
   const doZoomOut = () => rendererRef.current?.zoomOut();
   const doReset = () => rendererRef.current?.resetView();
@@ -306,73 +334,58 @@ function ChainmailDesigner() {
     setPaint(new Map());
   };
 
-  const applyAtlas = (e: any) => {
-    const AR = e.innerDiameter / e.wireDiameter;
-    setParams((prev) => ({
-      ...prev,
-      innerDiameter: e.innerDiameter,
-      wireDiameter: e.wireDiameter,
-      centerSpacing: e.centerSpacing,
-      ringSpec: `ID ${e.innerDiameter.toFixed(2)} mm / WD ${e.wireDiameter.toFixed(2)} mm (AR≈${AR.toFixed(2)})`,
-    }));
-    localStorage.setItem("chainmailSelected", JSON.stringify(e));
-    window.dispatchEvent(new Event("weave-updated"));
-    setShowMagnet(false);
-  };
+// ============================================================
+// ✅ Apply Atlas — preserve paint & overlay
+// ============================================================
+const applyAtlas = (e: any) => {
+  const AR = e.innerDiameter / e.wireDiameter;
 
-  const effectiveColor = eraseMode ? params.ringColor : activeColor;
+  setParams((prev) => ({
+    ...prev,
+    innerDiameter: e.innerDiameter,
+    wireDiameter: e.wireDiameter,
+    centerSpacing: e.centerSpacing,
+    ringSpec: `ID ${e.innerDiameter.toFixed(2)} mm / WD ${e.wireDiameter.toFixed(2)} mm (AR≈${AR.toFixed(2)})`,
+  }));
 
-  const toggleExclusive = (menu: "camera" | "controls") =>
-    setActiveMenu((prev) => (prev === menu ? null : menu));
+  // ✅ Preserve current paint + overlay
+  localStorage.setItem("chainmailSelected", JSON.stringify(e));
+  window.dispatchEvent(new Event("weave-updated"));
+  setShowMagnet(false);
 
-// ==============================
-// src/App.tsx — Part 2/3
-// ==============================
-
+  console.log("🧲 Material/Weave updated — paint and overlay preserved.");
+};
+  // --- render ---
   return (
     <div style={{ width: "100vw", height: "100vh", background: "#0E0F12" }}>
-
-
-      {/* Canvas (centered) */}
+      {/* Centered 3D Canvas */}
       <div
         style={{
           position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%,-50%)",
+          inset: 0,
+          display: "grid",
+          placeItems: "center",
+          pointerEvents: "none", // keep UI pills interactive above
         }}
       >
-        <RingRenderer
-          ref={rendererRef}
-          rings={rings}
-          params={{
-            rows: params.rows,
-            cols: params.cols,
-            innerDiameter: params.innerDiameter,
-            wireDiameter: params.wireDiameter,
-            ringColor: params.ringColor,
-            bgColor: params.bgColor,
-            centerSpacing:
-              lastWeave?.layout?.centerSpacing ??
-              (Array.isArray(lastWeave?.layout)
-                ? lastWeave.layout[0]?.centerSpacing
-                : undefined) ??
-              lastWeave?.centerSpacing ??
-              params.centerSpacing ??
-              0,
-          }}
-          paint={paint}
-          setPaint={setPaint}
-          initialPaintMode={paintMode}
-          initialEraseMode={eraseMode}
-          initialRotationLocked={rotationLocked}
-          activeColor={effectiveColor}
-        />
+        <div style={{ pointerEvents: "auto" }}>
+<RingRenderer
+  ref={rendererRef}
+  rings={rings}
+  params={liveParams}
+  paint={paint}
+  setPaint={setPaint}
+  initialPaintMode={paintMode}
+  initialEraseMode={eraseMode}
+  initialRotationLocked={rotationLocked}
+  activeColor={effectiveColor}
+  overlay={overlayState}
+/>
+        </div>
       </div>
 
       {/* === Left Toolbar (emoji pill) === */}
       <DraggablePill id="camera-pill" defaultPosition={{ x: 20, y: 20 }}>
-        {/* Compact pill (always visible) */}
         <div
           style={{
             display: "flex",
@@ -410,7 +423,74 @@ function ChainmailDesigner() {
           </IconBtn>
         </div>
 
-        {/* --- Camera Tools Menu --- */}
+        {/* --- Controls (▶) Menu — rows/cols dialog --- */}
+        {activeMenu === "controls" && (
+          <div
+            style={{
+              marginTop: 12,
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+              width: 160,
+              background: "#0b1324",
+              border: "1px solid #0b1020",
+              borderRadius: 16,
+              padding: 12,
+              color: "#ddd",
+              fontSize: 13,
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Grid Size</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span>Columns:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={params.cols}
+                  onChange={(e) => {
+                    const val = clamp(parseInt(e.target.value), 1, 200);
+                    setParams({ ...params, cols: val });
+                  }}
+                  style={{
+                    width: 80,
+                    textAlign: "right",
+                    background: "#111827",
+                    color: "#fff",
+                    border: "1px solid #222",
+                    borderRadius: 6,
+                  }}
+                />
+              </label>
+              <label style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span>Rows:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={params.rows}
+                  onChange={(e) => {
+                    const val = clamp(parseInt(e.target.value), 1, 200);
+                    setParams({ ...params, rows: val });
+                  }}
+                  style={{
+                    width: 80,
+                    textAlign: "right",
+                    background: "#111827",
+                    color: "#fff",
+                    border: "1px solid #222",
+                    borderRadius: 6,
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+        )}
+
+        {/* --- Camera Tools Menu (Image overlay, paint, zoom, etc.) --- */}
         {activeMenu === "camera" && (
           <div
             style={{
@@ -429,47 +509,58 @@ function ChainmailDesigner() {
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
-            {/* Paint */}
-            <IconBtn
-              tooltip="Paint Mode"
-              active={paintMode}
-              onClick={() => {
-                const next = !paintMode;
-                setPaintMode(next);
-                rendererRef.current?.setPaintMode(next);
-                if (next) setLock(true);
-              }}
-            >
-              🎨
-            </IconBtn>
+<IconBtn
+  tooltip="Image Overlay"
+  onClick={(e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setShowOverlayPanel((v) => !v);
+  }}
+>
+  🖼️
+</IconBtn>
 
-            {/* Erase */}
-            <IconBtn
-              tooltip="Erase Mode"
-              active={eraseMode}
-              onClick={() => {
-                if (!paintMode) setPaintMode(true);
-                setEraseMode((v) => !v);
-              }}
-            >
-              🧽
-            </IconBtn>
+<IconBtn
+  tooltip="Paint Mode"
+  active={paintMode}
+  onClick={() => {
+    const next = !paintMode;
+    setPaintMode(next);
 
-            {/* Zoom In / Out */}
-            <IconBtn tooltip="Zoom In" onClick={doZoomIn}>
+    setTimeout(() => {
+      rendererRef.current?.setPaintMode?.(next);
+      rendererRef.current?.setEraseMode?.(false);
+      rendererRef.current?.setPanEnabled?.(!next);
+    }, 0);
+  }}
+>
+  🎨
+</IconBtn>
+
+{paintMode && (
+  <IconBtn
+    tooltip="Erase Mode"
+    active={eraseMode}
+    onClick={() => {
+      const next = !eraseMode;
+      setEraseMode(next);
+      rendererRef.current?.setEraseMode?.(next);
+    }}
+  >
+    🧽
+  </IconBtn>
+)}  
+          <IconBtn tooltip="Zoom In" onClick={doZoomIn}>
               ＋
             </IconBtn>
             <IconBtn tooltip="Zoom Out" onClick={doZoomOut}>
               －
             </IconBtn>
 
-            {/* Reset */}
             <IconBtn tooltip="Reset View" onClick={doReset}>
               ↺
             </IconBtn>
-            
-			
-            {/* Lock / Unlock Rotation */}
+
             <IconBtn
               tooltip={rotationLocked ? "Unlock 3D Rotation" : "Lock to Flat 2D"}
               onClick={() => setLock(!rotationLocked)}
@@ -478,104 +569,66 @@ function ChainmailDesigner() {
               {rotationLocked ? "🔒" : "🔓"}
             </IconBtn>
 
-            {/* Clear paint */}
             <IconBtn tooltip="Clear Paint" onClick={doClearPaint}>
               🧹
             </IconBtn>
 
-            {/* Magnet (Supplier + Atlas) */}
-            <IconBtn
-              tooltip="Supplier & Atlas"
-              onClick={() => setShowMagnet((v) => !v)}
-            >
+            <IconBtn tooltip="Supplier & Atlas" onClick={() => setShowMagnet((v) => !v)}>
               🧲
             </IconBtn>
-{/* 🧭 Compass Navigation */}
-<IconBtn tooltip="Navigation Menu" onClick={() => setShowCompass((v) => !v)}>
-  🧭
-</IconBtn>
-            {/* Current Base Material Label (tap to open quick base-material palette) */}
-            <div
-              onClick={() => setShowMaterialPalette((v) => !v)}
-              style={{
-                fontSize: 12,
-                color: "#d8dee9",
-                marginTop: 6,
-                textAlign: "center",
-                width: "100%",
-                userSelect: "none",
-                lineHeight: 1.15,
-                cursor: "pointer",
-              }}
-              title="Click to choose base material"
-            >
-              {MATERIALS.find((m) => m.hex === params.ringColor)?.name || "Base Material"}
-              <br />
-              <span style={{ fontSize: 10, color: "#9ca3af" }}>{params.ringSpec}</span>
-            </div>
+
+            <IconBtn tooltip="Navigation Menu" onClick={() => setShowCompass((v) => !v)}>
+              🧭
+            </IconBtn>
           </div>
         )}
 
- {/* --- Controls (▶) Menu — rows/cols triangle dialog --- */}
-{activeMenu === "controls" && (
-  <div
-    style={{
-      marginTop: 12,
-      display: "flex",
-      flexDirection: "column",
-      gap: 10,
-      width: 200,
-      background: "#0b1324",
-      border: "1px solid #0b1020",
-      borderRadius: 16,
-      padding: 12,
-      color: "#ddd",
-      fontSize: 13,
-    }}
-    onMouseDown={(e) => e.stopPropagation()}
-    onTouchStart={(e) => e.stopPropagation()}
-  >
-    <div style={{ fontWeight: 700, marginBottom: 4 }}>Grid Size</div>
-    <div style={{ display: "flex", gap: 8 }}>
-      <input
-        type="number"
-        value={params.cols}
-        min={1}
-        max={200}
-        onChange={(e) => {
-          let val = parseInt(e.target.value);
-          if (isNaN(val)) return;
-          if (val > 200) val = 200;
-          const updated = { ...params, cols: val };
-          setParams(updated);
-        }}
-        style={{ width: "50%" }}
-      />
-      <input
-        type="number"
-        value={params.rows}
-        min={1}
-        max={200}
-        onChange={(e) => {
-          let val = parseInt(e.target.value);
-          if (isNaN(val)) return;
-          if (val > 200) val = 200;
-          const updated = { ...params, rows: val };
-          setParams(updated);
-        }}
-        style={{ width: "50%" }}
-      />
-    </div>
+{/* ✅ Fixed Base Material Label (Stacked, Wrapped & Centered) */}
+{/* ✅ Compact Base Material Label (Fixed number display) */}
+<div
+  onClick={() => setShowMaterialPalette((v) => !v)}
+  style={{
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    gap: 2,
+    padding: "4px 2px",
+    fontSize: 11,
+    color: "#f1f5f9",
+    marginTop: 6,
+    maxWidth: 80,
+    lineHeight: 1.25,
+    userSelect: "none",
+    cursor: "pointer",
+    whiteSpace: "normal",
+    wordBreak: "break-word",
+    overflowWrap: "break-word",
+    margin: "8px auto 0",
+  }}
+  title="Click to choose base material"
+>
+  <div style={{ fontWeight: 600, fontSize: 12 }}>
+    {MATERIALS.find((m) => m.hex === params.ringColor)?.name || "Base Material"}
   </div>
-)}
+  <div
+    style={{ fontSize: 10, color: "#9ca3af" }}
+    dangerouslySetInnerHTML={{
+      __html: params.ringSpec
+        ? params.ringSpec
+            .replace(/\s*\/\s*/g, "<br/>")     // put each spec on its own line
+            .replace(/\s*mm/g, " mm")          // spacing before mm
+            .replace(/\s*\(AR/g, "<br/>(AR")   // AR on new line
+        : "ID — mm<br/>WD — mm<br/>(AR≈—)",
+    }}
+  />
+</div>
       </DraggablePill>
 
       {/* === Draggable Universal Color Palette === */}
       {paintMode && (
-        <DraggablePill
-          id="color-palette"
-          defaultPosition={{ x: 20, y: window.innerHeight - 260 }}
-        >
+        <DraggablePill id="color-palette" defaultPosition={{ x: 20, y: window.innerHeight - 260 }}>
           <div
             style={{
               display: "flex",
@@ -608,11 +661,10 @@ function ChainmailDesigner() {
                     width: 22,
                     height: 22,
                     borderRadius: 5,
-                    border:
-                      activeColor === hex ? "2px solid white" : "1px solid #333",
+                    border: activeColor === hex ? "2px solid white" : "1px solid #333",
                     cursor: "pointer",
-                    transition: "transform 0.1s ease, border 0.2s ease",
                     transform: activeColor === hex ? "scale(1.15)" : "scale(1.0)",
+                    transition: "transform 0.1s ease, border 0.2s ease",
                   }}
                   title={hex}
                 />
@@ -622,7 +674,7 @@ function ChainmailDesigner() {
         </DraggablePill>
       )}
 
-      {/* === Quick Base Material Palette (tap the material label to open) === */}
+      {/* === Quick Base Material Palette === */}
       {showMaterialPalette && (
         <DraggablePill id="material-selector" defaultPosition={{ x: 120, y: 80 }}>
           <div
@@ -709,7 +761,7 @@ function ChainmailDesigner() {
               alignItems: "stretch",
             }}
           >
-            {/* === Supplier Menu === */}
+            {/* Supplier Menu */}
             <div
               style={{
                 background: "rgba(17,24,39,.96)",
@@ -719,72 +771,72 @@ function ChainmailDesigner() {
               }}
             >
               <SupplierMenu
-                onApplyPalette={(sel) => {
-                  // Color update from supplier selection
-                  const colorHex =
-                    sel.color && sel.color !== "Default Colors"
-                      ? (typeof sel.color === "string" && sel.color.startsWith("#")
-                          ? sel.color
-                          : params.ringColor)
-                      : params.ringColor;
+onApplyPalette={(sel) => {
+  const colorHex =
+    sel.color && sel.color !== "Default Colors"
+      ? (typeof sel.color === "string" && sel.color.startsWith("#")
+          ? sel.color
+          : params.ringColor)
+      : params.ringColor;
 
-                  // Parse helpers
-                  const parseNumber = (v: any) => {
-                    if (v == null) return NaN;
-                    if (typeof v === "number") return v;
-                    if (typeof v === "string") {
-                      const m = v.match(/-?\d+(\.\d+)?/);
-                      return m ? parseFloat(m[0]) : NaN;
-                    }
-                    return NaN;
-                  };
+  const parseNumber = (v: any) => {
+    if (v == null) return NaN;
+    if (typeof v === "number") return v;
+    if (typeof v === "string") {
+      const m = v.match(/-?\d+(\.\d+)?/);
+      return m ? parseFloat(m[0]) : NaN;
+    }
+    return NaN;
+  };
 
-                  const parseFractionalInchesToMm = (s?: string): number | undefined => {
-                    if (!s) return undefined;
-                    const raw = s.trim();
-                    const frac = raw.match(/^\s*(\d+)\s*\/\s*(\d+)\s*(in|")?\s*$/i);
-                    if (frac) {
-                      const num = parseFloat(frac[1]);
-                      const den = parseFloat(frac[2]);
-                      if (den !== 0) return (num / den) * 25.4;
-                    }
-                    const dec = raw.match(/-?\d+(\.\d+)?/);
-                    if (dec) {
-                      const inches = parseFloat(dec[0]);
-                      return inches * 25.4;
-                    }
-                    return undefined;
-                  };
+  const parseFractionalInchesToMm = (s?: string): number | undefined => {
+    if (!s) return undefined;
+    const raw = s.trim();
+    const frac = raw.match(/^\s*(\d+)\s*\/\s*(\d+)\s*(in|")?\s*$/i);
+    if (frac) {
+      const num = parseFloat(frac[1]);
+      const den = parseFloat(frac[2]);
+      if (den !== 0) return (num / den) * 25.4;
+    }
+    const dec = raw.match(/-?\d+(\.\d+)?/);
+    if (dec) {
+      const inches = parseFloat(dec[0]);
+      return inches * 25.4;
+    }
+    return undefined;
+  };
 
-                  // Compute new physical values
-                  const maybeIdMm = parseFractionalInchesToMm(
-                    typeof sel.ringID === "string" ? sel.ringID : undefined
-                  );
-                  const newInner = Number.isFinite(maybeIdMm as number)
-                    ? (maybeIdMm as number)
-                    : params.innerDiameter;
+  const maybeIdMm = parseFractionalInchesToMm(
+    typeof sel.ringID === "string" ? sel.ringID : undefined
+  );
+  const newInner = Number.isFinite(maybeIdMm as number)
+    ? (maybeIdMm as number)
+    : params.innerDiameter;
 
-                  const maybeWire = parseNumber(sel.wireGauge);
-                  const newWire = Number.isFinite(maybeWire)
-                    ? (maybeWire as number)
-                    : params.wireDiameter;
+  const maybeWire = parseNumber(sel.wireGauge);
+  const newWire = Number.isFinite(maybeWire)
+    ? (maybeWire as number)
+    : params.wireDiameter;
 
-                  const newAR = newWire > 0 ? (newInner / newWire).toFixed(2) : "—";
+  const newAR = newWire > 0 ? (newInner / newWire).toFixed(2) : "—";
 
-                  setParams((prev) => ({
-                    ...prev,
-                    ringColor: colorHex,
-                    innerDiameter: newInner,
-                    wireDiameter: newWire,
-                    ringSpec: `ID ${newInner.toFixed(2)} mm / WD ${newWire.toFixed(
-                      2
-                    )} mm (AR≈${newAR})`,
-                  }));
-                }}
+  // ✅ Preserve paint and overlay
+  setParams((prev) => ({
+    ...prev,
+    ringColor: colorHex,
+    innerDiameter: newInner,
+    wireDiameter: newWire,
+    ringSpec: `ID ${newInner.toFixed(2)} mm / WD ${newWire.toFixed(
+      2
+    )} mm (AR≈${newAR})`,
+  }));
+
+  console.log("🎨 Material applied — paint & overlay preserved.");
+}}
               />
             </div>
 
-            {/* === Atlas Palette === */}
+            {/* Atlas Palette */}
             <div
               style={{
                 background: "rgba(17,24,39,.96)",
@@ -798,73 +850,121 @@ function ChainmailDesigner() {
           </div>
         </div>
       )}
-      {/* 🧭 Floating Navigation Panel */}
+
+
+      {/* === Image Overlay Panel === */}
+      {showOverlayPanel && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position: "fixed",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            background: "rgba(17,24,39,0.98)",
+            borderRadius: 16,
+            padding: 20,
+            border: "1px solid #1f2937",
+            zIndex: 100001, // 🔥 higher than everything else
+            boxShadow: "0 20px 60px rgba(0,0,0,.7)",
+          }}
+        >
+<ImageOverlayPanel
+  onApply={async (overlay) => {
+    // 1️⃣ Update overlay preview plane (as before)
+    setOverlayState(overlay);
+    rendererRef.current?.applyOverlay?.(overlay);
+
+    // 2️⃣ NEW: Actually apply the overlay colors to the rings
+    try {
+      await rendererRef.current?.applyOverlayToRings?.(overlay);
+      setDebugMessage("✅ Overlay image successfully applied to rings!");
+      setDebugVisible(true);
+    } catch (err) {
+      console.error("❌ applyOverlayToRings failed:", err);
+      setDebugMessage("⚠️ Failed to apply overlay to rings. Check console.");
+      setDebugVisible(true);
+    }
+
+    // 3️⃣ Close panel
+    setShowOverlayPanel(false);
+  }}
+/>
+        </div>
+      )}
+   {/* === Compass Navigation Panel === */}
 {showCompass && (
-  <DraggableCompassNav onNavigate={() => setShowCompass(false)} />
-)}
+  <DraggableCompassNav
+    onNavigate={() => {
+      setShowCompass(false);
+    }}
+  />
+)} 
+    
     </div>
   );
-} // end ChainmailDesigner
-// ====================================
-// === Print / Report Functionality ===
-// ====================================
-function printReport() {
-  const params = JSON.parse(localStorage.getItem("cmd.params") || "{}");
-  const paint = new Map<string, string | null>(
-    JSON.parse(localStorage.getItem("cmd.paint") || "[]")
-  );
-  const colorUsage: Record<string, number> = {};
-  for (const [, color] of paint.entries()) {
-    if (!color) continue;
-    colorUsage[color] = (colorUsage[color] || 0) + 1;
-  }
+} // ✅ ChainmailDesigner ends here
 
-  const usageHTML = Object.entries(colorUsage)
-    .map(
-      ([hex, count]) => `
-        <div style="display:flex;align-items:center;gap:8px;margin:4px 0">
-          <span style="width:14px;height:14px;border-radius:3px;border:1px solid #000;display:inline-block;background:${hex}"></span>
-          <span>${hex}</span>
-          <span style="margin-left:auto">${count}</span>
-        </div>`
-    )
-    .join("");
-
-  const totalRings = (params.rows || 0) * (params.cols || 0);
-  const popup = window.open("", "_blank");
-  if (!popup) return;
-  popup.document.write(`
-    <html>
-      <head><title>Chainmaille Pattern Report</title></head>
-      <body style="font-family:system-ui;padding:20px;color:#111;">
-        <h2>Chainmaille Pattern Report</h2>
-        <p><b>Grid:</b> ${params.cols ?? "—"} × ${params.rows ?? "—"}</p>
-        <p><b>Supplier:</b> ${params.supplier || "—"}</p>
-        <p><b>Ring Spec:</b> ${params.ringSpec || "—"}</p>
-        <p><b>Total Rings:</b> ${totalRings}</p>
-        <h3>Colours Used</h3>
-        ${usageHTML || "<i>No painted colours.</i>"}
-      </body>
-    </html>
-  `);
-  popup.document.close();
-  popup.focus();
-  popup.print();
-}
-
-// ======================================
-// === ROUTER WRAPPER (App Root) ===
-// ======================================
-export default function App() {
+// ==============================================
+// 🧭 Draggable Navigation Panel
+// ==============================================
+function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <div style={{ width: "100vw", height: "100vh", background: "#0E0F12" }}>
-      <Routes>
-        <Route path="/" element={<ChainmailDesigner />} />
-        <Route path="chart" element={<RingSizeChart />} />
-        <Route path="weave-tuner" element={<ChainmailWeaveTuner />} />
-        <Route path="weave-atlas" element={<ChainmailWeaveAtlas />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </div>
+    <DraggablePill id="compass-nav" defaultPosition={{ x: 140, y: 140 }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 8,
+          background: "rgba(17,24,39,0.96)",
+          border: "1px solid rgba(0,0,0,0.6)",
+          borderRadius: 14,
+          padding: 10,
+          boxShadow: "0 8px 22px rgba(0,0,0,0.45)",
+          userSelect: "none",
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <Link
+          to="/"
+          onClick={onNavigate}
+          title="Designer"
+          style={{ fontSize: 22, textDecoration: "none" }}
+        >
+          🧩
+        </Link>
+        <Link
+          to="/chart"
+          onClick={onNavigate}
+          title="Ring Chart"
+          style={{ fontSize: 22, textDecoration: "none" }}
+        >
+          📊
+        </Link>
+        <Link
+          to="/weave-tuner"
+          onClick={onNavigate}
+          title="Tuner"
+          style={{ fontSize: 22, textDecoration: "none" }}
+        >
+          ⚙️
+        </Link>
+        <Link
+          to="/weave-atlas"
+          onClick={onNavigate}
+          title="Atlas"
+          style={{ fontSize: 22, textDecoration: "none" }}
+        >
+          🌐
+        </Link>
+      </div>
+    </DraggablePill>
   );
 }
+
+// ======================================
+// ✅ EXPORTS
+// ======================================
+export { DraggableCompassNav, DraggablePill };
+export default ChainmailDesigner;
