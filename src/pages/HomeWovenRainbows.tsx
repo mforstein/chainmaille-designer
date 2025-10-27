@@ -47,7 +47,7 @@ const HomeWovenRainbows: React.FC = () => {
 
   // Load Etsy items
   useEffect(() => {
-    fetch("/wovenrainbows_listings_local.json")
+    fetch("/wovenrainbows_listings_featured.json")
       .then((res) => res.json())
       .then((data) => setItems(data.items || []))
       .catch((err) => console.error("Failed to load Etsy listings:", err));
