@@ -1,0 +1,142 @@
+[
+  {
+    "file": "designer-chart.png",
+    "title": "Panel Size Triangle",
+    "description": "Allows up to 200 Rings Wide and 200 Tall!"
+  },
+  {
+    "file": "designer-main.png",
+    "title": "Designer Page Camera Toolbox",
+    "description": "Click on the camera toolbox to expand the tools!"
+  },
+  {
+    "file": "designer-materials.png",
+    "title": "Ring Atlas",
+    "description": "The Ring Atlas shows which Ring ID/WD combinations that have been saved. Which ones work and which ones do not!"
+  },
+  {
+    "file": "designer-overlay.png",
+    "title": "Materials SubMenu",
+    "description": "You can choose from the available Materials and base colors This is Gold!"
+  },
+  {
+    "file": "designer-paint.png",
+    "title": "Navigation SubMenu",
+    "description": "The Navigation SubMenu allows the loading of other pages including the Home page the Designer Page the Ring Chart the Ring Tuner and Ring Atlas"
+  },
+  {
+    "file": "designer-tuner.png",
+    "title": "Panel Size Triangle",
+    "description": "Allows up to 200 Rings Wide and 200 Tall!"
+  },
+  {
+    "file": "image10.png",
+    "title": "Eraser Button",
+    "description": "Using the Eraser removes paint from the selected area!"
+  },
+  {
+    "file": "image11.png",
+    "title": "Painting Selecting Colors",
+    "description": "The Color Selection Panel is movable and allows you to chose from 24 colors!"
+  },
+  {
+    "file": "image12.png",
+    "title": "Broom Clear Paint",
+    "description": "The Broom selection resets your chainmail panel!"
+  },
+  {
+    "file": "image13.png",
+    "title": "Wire Dimensions",
+    "description": "Once the tuner options are saved, A panel of wire sizes is available to choose from."
+  },
+  {
+    "file": "image14.png",
+    "title": "Default Button  (Materials SubMenu)",
+    "description": "The Default Button resets the chainmail panel to 20x20 with the default Wire Diameter and Internal Diameter."
+  },
+  {
+    "file": "image15.png",
+    "title": "The 3D Lock/UnLock",
+    "description": "The Lock is a way to look at the panel in 3D views."
+  },
+  {
+    "file": "image16.png",
+    "title": "Reset Button.",
+    "description": "The reset button sets the image back to square with the view"
+  },
+  {
+    "file": "image17.png",
+    "title": "Zoom OUT",
+    "description": "The minus sign on the controls will Zoom out along with the mouse wheel and the two fingers on touch screen."
+  },
+  {
+    "file": "image18.png",
+    "title": "Zoom IN",
+    "description": "The plus and the mouse wheel and the two fingers works to zoom in!"
+  },
+  {
+    "file": "image19.png",
+    "title": "Image Overlay Image Selection submenu",
+    "description": "When the picture frame is pressed the image selection dialog pops up."
+  },
+  {
+    "file": "image2.png",
+    "title": "Setting the Chainmail Panel Size",
+    "description": "The triangle lets you set the chainmail panel size!"
+  },
+  {
+    "file": "image20.png",
+    "title": "Image Preview (Choosing an Image)",
+    "description": "This shows what the image preview image selection looks like!"
+  },
+  {
+    "file": "image21.png",
+    "title": "Image Preview (prior to pressing the button)n",
+    "description": "This shows what the image preview looks like prior to applying it!"
+  },
+  {
+    "file": "image22.png",
+    "title": "Image Transfer to Panel",
+    "description": "This feature allows an image (jpeg or png) to a chainmail panel of any size!"
+  },
+  {
+    "file": "image23.png",
+    "title": "Image Preview",
+    "description": "The image can be zoomed in if you wish using the Image preview panel "
+  },
+  {
+    "file": "image24.png",
+    "title": "Apply image (Repeating)",
+    "description": "If you have a design that you want to be repeated you can select the image and apply it to the chainmail panel!"
+  },
+  {
+    "file": "image3.png",
+    "title": "Setting the Panel size",
+    "description": "The Panel size can be set up to 40,000 rings! 200 x 200! This is a large panel!"
+  },
+  {
+    "file": "image4.png",
+    "title": "Changing Materials (Gold!)",
+    "description": "Changing the materials allows you to select from possibly available materials from the suppliers"
+  },
+  {
+    "file": "image5.png",
+    "title": "Materials SubMenu",
+    "description": "The Materials SubMenu allows the creator to change materials or base color according to what is available from the suppliers! It also shows the selections available after saving the information from the Tuner page and select from the choices!"
+  },
+  {
+    "file": "image6.png",
+    "title": "Atlas Page",
+    "description": "Not all combinations are useable and this chart is file out depending on what you save in the tuner page."
+  },
+  {
+    "file": "image7.png",
+    "title": "Tuner page",
+    "description": "using the dialog and sliders the image of the chainmail can be adjusted to be acceptable from an artistic standpoint."
+  },
+  {
+    "file": "image8.png",
+    "title": "Chart Page",
+    "description": "This shows most of the available ring sizes for the suppliers. "
+  }
+]

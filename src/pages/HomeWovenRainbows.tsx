@@ -1,5 +1,5 @@
 // ======================================================
-// src/pages/HomeWovenRainbows.tsx — FINAL VERSION
+// src/pages/HomeWovenRainbows.tsx — with Blog System + Feather Access Button
 // ======================================================
 
 import React, { useEffect, useState } from "react";
@@ -13,16 +13,97 @@ interface EtsyItem {
   url: string;
 }
 
+interface DesignerFeature {
+  file: string;
+  title: string;
+  description: string;
+}
+
+interface BlogEntry {
+  author: string;
+  content: string;
+  timestamp: string;
+}
+
 const HomeWovenRainbows: React.FC = () => {
   const [items, setItems] = useState<EtsyItem[]>([]);
+  const [features, setFeatures] = useState<DesignerFeature[]>([]);
+  const [lightbox, setLightbox] = useState<string | null>(null);
+  const [blogEntries, setBlogEntries] = useState<BlogEntry[]>([]);
+  const [newPost, setNewPost] = useState("");
   const navigate = useNavigate();
 
+  // Simulated Erin login (to be replaced with PasswordGate or real auth)
+  const [isErin, setIsErin] = useState(() => {
+    return localStorage.getItem("authUser") === "erin";
+  });
+
+  // Secret feather fade-in control
+  const [showFeather, setShowFeather] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setShowFeather(true), 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Load Etsy items
   useEffect(() => {
     fetch("/wovenrainbows_listings_local.json")
       .then((res) => res.json())
       .then((data) => setItems(data.items || []))
       .catch((err) => console.error("Failed to load Etsy listings:", err));
   }, []);
+
+  // Load Designer features
+  useEffect(() => {
+    fetch("/designer_features.json")
+      .then((res) => res.json())
+      .then((data) => setFeatures(data || []))
+      .catch((err) => console.error("Failed to load designer features:", err));
+  }, []);
+
+  // Load Blog Entries
+  useEffect(() => {
+    fetch("/blog_entries.json")
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          const sorted = [...data].sort(
+            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          );
+          setBlogEntries(sorted);
+        } else {
+          setBlogEntries([]);
+        }
+      })
+      .catch(() => setBlogEntries([]));
+  }, []);
+
+  // Add new blog post (for Erin only)
+  const handleAddPost = () => {
+    if (!newPost.trim()) return;
+    const newEntry: BlogEntry = {
+      author: "Erin",
+      content: newPost.trim(),
+      timestamp: new Date().toISOString(),
+    };
+    const updated = [newEntry, ...blogEntries];
+    setBlogEntries(updated);
+    setNewPost("");
+
+    // Save locally in dev mode — Netlify won’t persist this
+    try {
+      fetch("/save-blog", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updated),
+      }).catch(() => {});
+    } catch {
+      console.warn("Save-blog route unavailable (local only)");
+    }
+  };
+
+  const latestPost = blogEntries[0];
+  const olderPosts = blogEntries.slice(1);
 
   return (
     <div
@@ -82,7 +163,86 @@ const HomeWovenRainbows: React.FC = () => {
         </p>
       </div>
 
-      {/* ======= Product Grid ======= */}
+      {/* ======= ✍️ Blog Input (Top, only for Erin) ======= */}
+      {isErin && (
+        <div
+          style={{
+            maxWidth: 800,
+            margin: "0 auto 60px",
+            background: "#1f2937",
+            padding: 20,
+            borderRadius: 10,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+          }}
+        >
+          <h2 style={{ fontSize: "1.5rem", marginBottom: 10 }}>✍️ Add a New Blog Entry</h2>
+          <textarea
+            value={newPost}
+            onChange={(e) => setNewPost(e.target.value)}
+            rows={4}
+            placeholder="Write a new update, design note, or thought..."
+            style={{
+              width: "100%",
+              borderRadius: 8,
+              padding: 10,
+              background: "#111827",
+              color: "#f1f5f9",
+              border: "1px solid #374151",
+              marginBottom: 10,
+            }}
+          />
+          <button
+            onClick={handleAddPost}
+            style={{
+              background: "#2563eb",
+              color: "#fff",
+              border: "none",
+              padding: "10px 20px",
+              borderRadius: 8,
+              cursor: "pointer",
+              fontWeight: 500,
+            }}
+          >
+            ➕ Post Entry
+          </button>
+        </div>
+      )}
+
+      {/* ======= 🪶 Latest Blog Entry (Top of Etsy Section) ======= */}
+      {latestPost && (
+        <div
+          style={{
+            maxWidth: 800,
+            margin: "0 auto 40px",
+            background: "#1f2937",
+            borderRadius: 12,
+            padding: 20,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+          }}
+        >
+<h2 style={{ fontSize: "1.6rem", marginBottom: 10 }}>
+  <span
+    role="img"
+    aria-label="feather"
+    style={{
+      fontSize: "1.6rem",
+      marginRight: 8,
+      verticalAlign: "middle",
+      filter: "drop-shadow(0 0 2px rgba(255,255,255,0.3))",
+    }}
+  >
+    🪶
+  </span>
+  Erin’s Latest Studio Note
+</h2>
+          <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{latestPost.content}</p>
+          <div style={{ marginTop: 10, color: "#9ca3af", fontSize: 13 }}>
+            — {latestPost.author}, {new Date(latestPost.timestamp).toLocaleDateString()}
+          </div>
+        </div>
+      )}
+
+      {/* ======= Etsy Product Grid ======= */}
       <div
         style={{
           display: "grid",
@@ -153,9 +313,29 @@ const HomeWovenRainbows: React.FC = () => {
           textAlign: "center",
         }}
       >
-        <h2 style={{ fontSize: "1.8rem", marginBottom: 30 }}>
+        <h2 style={{ fontSize: "1.8rem", marginBottom: 20 }}>
           💎 What You Can Do with the Chainmaille Designer
         </h2>
+
+        <div style={{ marginBottom: 40 }}>
+          <button
+            onClick={() => navigate("/wovenrainbowsbyerin/login")}
+            style={{
+              background: "#2563eb",
+              color: "#fff",
+              border: "none",
+              padding: "12px 24px",
+              borderRadius: 10,
+              cursor: "pointer",
+              fontSize: "1.1rem",
+              fontWeight: 600,
+              boxShadow: "0 4px 14px rgba(37,99,235,0.4)",
+              transition: "transform 0.2s ease",
+            }}
+          >
+            🧩 Access Designer
+          </button>
+        </div>
 
         <div
           style={{
@@ -165,51 +345,22 @@ const HomeWovenRainbows: React.FC = () => {
             padding: "0 10px",
           }}
         >
-          {[
-            {
-              img: "/images/designer/designer-main.png",
-              title: "Design in 3D",
-              desc: "Visualize chainmaille patterns in full 3D — rotate, zoom, and explore your weave from every angle.",
-            },
-            {
-              img: "/images/designer/designer-paint.png",
-              title: "Paint & Color Rings",
-              desc: "Use paint and eraser tools to color individual rings, experiment with gradients, and preview metal finishes.",
-            },
-            {
-              img: "/images/designer/designer-materials.png",
-              title: "Choose Materials & Suppliers",
-              desc: "Select rings from real suppliers and see instant AR (aspect ratio) and material effects.",
-            },
-            {
-              img: "/images/designer/designer-overlay.png",
-              title: "Overlay Images",
-              desc: "Load a background image to trace patterns or align your chainmaille design with artwork.",
-            },
-            {
-              img: "/images/designer/designer-tuner.png",
-              title: "Weave Atlas & Tuner",
-              desc: "Access an atlas of known weaves and fine-tune ring geometry to achieve perfect alignment.",
-            },
-            {
-              img: "/images/designer/designer-chart.png",
-              title: "Export & Share",
-              desc: "Export designs as images or PDFs, and share your creations directly with customers or social media.",
-            },
-          ].map((feature, i) => (
+          {features.map((f, i) => (
             <div
               key={i}
+              onClick={() => setLightbox(`/images/designer/${f.file}`)}
               style={{
                 background: "#1f2937",
                 borderRadius: 12,
                 overflow: "hidden",
                 boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
                 transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                cursor: "pointer",
               }}
             >
               <img
-                src={feature.img}
-                alt={feature.title}
+                src={`/images/designer/${f.file}`}
+                alt={f.title}
                 style={{
                   width: "100%",
                   height: 180,
@@ -226,10 +377,10 @@ const HomeWovenRainbows: React.FC = () => {
                     color: "#f9fafb",
                   }}
                 >
-                  {feature.title}
+                  {f.title}
                 </h3>
                 <p style={{ fontSize: 14, color: "#cbd5e1", lineHeight: 1.4 }}>
-                  {feature.desc}
+                  {f.description}
                 </p>
               </div>
             </div>
@@ -237,30 +388,122 @@ const HomeWovenRainbows: React.FC = () => {
         </div>
       </div>
 
-      {/* ======= Footer / Access Button ======= */}
-      <div style={{ textAlign: "center", marginTop: 50 }}>
-        <button
-          onClick={() => navigate("/wovenrainbowsbyerin/login")}
+      {/* ======= 📰 Older Blog Posts ======= */}
+      {olderPosts.length > 0 && (
+        <div
           style={{
-            background: "#2563eb",
-            color: "#fff",
-            border: "none",
-            padding: "10px 20px",
-            borderRadius: 8,
-            cursor: "pointer",
-            fontSize: "1rem",
-            fontWeight: 500,
-            boxShadow: "0 4px 14px rgba(37,99,235,0.4)",
-            transition: "transform 0.2s ease",
+            maxWidth: 800,
+            margin: "60px auto",
+            background: "#1f2937",
+            borderRadius: 12,
+            padding: 20,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
           }}
-          onMouseOver={(e) => (e.currentTarget.style.transform = "scale(1.05)")}
-          onMouseOut={(e) => (e.currentTarget.style.transform = "scale(1.0)")}
         >
-          🧩 Access Designer
-        </button>
-      </div>
-    </div>
-  );
+          <h2 style={{ fontSize: "1.6rem", marginBottom: 20, textAlign: "center" }}>
+            📰 Past Studio Notes
+          </h2>
+          {olderPosts.map((b, i) => (
+            <div
+              key={i}
+              style={{
+                background: "#111827",
+                borderRadius: 8,
+                padding: 14,
+                marginBottom: 12,
+              }}
+            >
+              <p style={{ marginBottom: 6 }}>{b.content}</p>
+              <div style={{ fontSize: 12, color: "#94a3b8" }}>
+                — {b.author}, {new Date(b.timestamp).toLocaleDateString()}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+{/* ======= Lightbox ======= */}
+{lightbox && (
+  <div
+    onClick={() => setLightbox(null)}
+    style={{
+      position: "fixed",
+      top: 0,
+      left: 0,
+      width: "100%",
+      height: "100%",
+      background: "rgba(0,0,0,0.8)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      zIndex: 1000,
+      cursor: "zoom-out",
+    }}
+  >
+    <img
+      src={lightbox}
+      alt="Preview"
+      style={{
+        maxWidth: "90%",
+        maxHeight: "90%",
+        borderRadius: 12,
+        boxShadow: "0 0 20px rgba(255,255,255,0.2)",
+      }}
+    />
+  </div>
+)}
+
+{/* ======= 🪶 Secret Blog Access Button (for Erin) ======= */}
+{showFeather && (
+  <div
+    style={{
+      position: "fixed",
+      bottom: 20,
+      right: 20,
+      opacity: 0.4,
+      transition: "opacity 0.2s ease",
+      zIndex: 2000,
+    }}
+    onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.8")}
+    onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.4")}
+  >
+    <button
+      onClick={() => {
+        const pass = prompt("Enter Erin’s access code:");
+        if (pass === "ERIN50") {
+          navigate("/blog-editor");
+        } else if (pass) {
+          alert("Incorrect code ❌");
+        }
+      }}
+      style={{
+        background: "none",
+        border: "none",
+        padding: 0,
+        cursor: "pointer",
+        userSelect: "none",
+      }}
+      title="Secret Blog Access"
+    >
+      <span
+        style={{
+          fontSize: "2rem",
+          opacity: 0.85,
+          filter: "drop-shadow(0 0 6px rgba(255,255,255,0.25))",
+          transition: "transform 0.3s ease",
+          display: "inline-block",
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.1)")}
+        onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1.0)")}
+      >
+        🪶
+      </span>
+    </button>
+  </div>
+)}
+{/* ✅ closes main container */}
+</div>
+);
 };
 
 export default HomeWovenRainbows;
