@@ -5,7 +5,7 @@
 import React, { useRef, useState, useEffect, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { ImageOverlayPanel, OverlayState } from "./components/ImageOverlayPanel";
-
+import { useNavigate } from "react-router-dom";
 import "./index.css";
 import "./ui/ui-grid.css";
 
@@ -967,6 +967,13 @@ rendererRef.current?.applyOverlayToRings?.(overlay);
 // 🧭 Draggable Navigation Panel
 // ==============================================
 function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
+  const navigate = useNavigate();
+
+  const go = (path: string) => {
+    navigate(path);
+    if (onNavigate) onNavigate();
+  };
+
   return (
     <DraggablePill id="compass-nav" defaultPosition={{ x: 140, y: 140 }}>
       <div
@@ -984,43 +991,47 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <Link
-          to="/"
-          onClick={onNavigate}
-          title="Designer"
-          style={{ fontSize: 22, textDecoration: "none" }}
+        {/* 🏠 Home Page */}
+        <button
+          onClick={() => go("/wovenrainbowsbyerin")}
+          title="Erin’s Home"
+          style={btnStyle}
         >
+          🏠
+        </button>
+
+        {/* 🧩 Designer */}
+        <button onClick={() => go("/designer")} title="Designer" style={btnStyle}>
           🧩
-        </Link>
-        <Link
-          to="/chart"
-          onClick={onNavigate}
-          title="Ring Chart"
-          style={{ fontSize: 22, textDecoration: "none" }}
-        >
+        </button>
+
+        {/* 📊 Chart */}
+        <button onClick={() => go("/chart")} title="Ring Chart" style={btnStyle}>
           📊
-        </Link>
-        <Link
-          to="/weave-tuner"
-          onClick={onNavigate}
-          title="Tuner"
-          style={{ fontSize: 22, textDecoration: "none" }}
-        >
+        </button>
+
+        {/* ⚙️ Tuner */}
+        <button onClick={() => go("/tuner")} title="Weave Tuner" style={btnStyle}>
           ⚙️
-        </Link>
-        <Link
-          to="/weave-atlas"
-          onClick={onNavigate}
-          title="Atlas"
-          style={{ fontSize: 22, textDecoration: "none" }}
-        >
+        </button>
+
+        {/* 🌐 Atlas */}
+        <button onClick={() => go("/atlas")} title="Weave Atlas" style={btnStyle}>
           🌐
-        </Link>
+        </button>
       </div>
     </DraggablePill>
   );
 }
 
+const btnStyle: React.CSSProperties = {
+  fontSize: 22,
+  textDecoration: "none",
+  background: "transparent",
+  border: "none",
+  color: "#dbeafe",
+  cursor: "pointer",
+};
 // ======================================
 // ✅ EXPORTS
 // ======================================
