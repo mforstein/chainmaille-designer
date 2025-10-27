@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
-    "postinstall": "sed -i '' 's|\"react-router/dom\"|\"react-router\"|g' node_modules/react-router-dom/dist/index.mjs && sed -i '' '/HydratedRouter/d' node_modules/react-router-dom/dist/index.mjs && sed -i '' '/RouterProvider/d' node_modules/react-router-dom/dist/index.mjs || true"
+    "postinstall": "node scripts/patch-react-router-dom.js"
   },
   "dependencies": {
     "axios": "^1.12.2",
