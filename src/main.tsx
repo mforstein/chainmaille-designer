@@ -16,6 +16,7 @@ import ChainmailWeaveTuner from "./pages/ChainmailWeaveTuner";
 import ChainmailWeaveAtlas from "./pages/ChainmailWeaveAtlas";
 import HomeWovenRainbows from "./pages/HomeWovenRainbows";
 import PasswordGate from "./pages/PasswordGate"; // ✅ Access control
+import ErinPattern2D from "./pages/ErinPattern2D"; // 🧶 NEW — Erin’s 2D Pattern Page
 
 // ------------------------------------------------------
 // Global Styles
@@ -35,9 +36,7 @@ if (import.meta.env.DEV) {
       <Route
         path="/matcher"
         element={
-          <React.Suspense
-            fallback={<div style={{ color: "white", padding: 20 }}>Loading matcher...</div>}
-          >
+          <React.Suspense fallback={<div style={{ color: "white", padding: 20 }}>Loading matcher...</div>}>
             <ImageMatcher />
           </React.Suspense>
         }
@@ -45,9 +44,7 @@ if (import.meta.env.DEV) {
       <Route
         path="/designer-editor"
         element={
-          <React.Suspense
-            fallback={<div style={{ color: "white", padding: 20 }}>Loading editor...</div>}
-          >
+          <React.Suspense fallback={<div style={{ color: "white", padding: 20 }}>Loading editor...</div>}>
             <DesignerGalleryEditor />
           </React.Suspense>
         }
@@ -72,8 +69,11 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         {/* 🔐 Access Code Page */}
         <Route path="/wovenrainbowsbyerin/login" element={<PasswordGate />} />
 
-        {/* 🧩 Main Chainmail Designer */}
+        {/* 🧩 Main Chainmail Designer (3D) */}
         <Route path="/designer" element={<ChainmailDesigner />} />
+
+        {/* 🧶 Erin’s 2D Pattern Page */}
+        <Route path="/erin2d" element={<ErinPattern2D />} />
 
         {/* 📊 Ring Size Chart */}
         <Route path="/chart" element={<RingSizeChart />} />

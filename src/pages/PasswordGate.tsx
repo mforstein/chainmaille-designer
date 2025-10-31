@@ -9,8 +9,14 @@ export default function PasswordGate() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (input.trim().toUpperCase() === "ERIN50") {
+    const code = input.trim().toUpperCase();
+
+    if (code === "ERIN50") {
       // Save session so Erin doesn’t have to re-enter password
+      localStorage.setItem("erin2DAuth", "true");
+      navigate("/erin2d");
+    } else if (code === "3DMODE") {
+      // Save session so 3D mode access persists
       localStorage.setItem("designerAuth", "true");
       navigate("/designer");
     } else {
