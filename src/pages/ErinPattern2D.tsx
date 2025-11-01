@@ -60,17 +60,14 @@ const ErinPattern2D: React.FC = () => {
 
   const svgRef = useRef<SVGSVGElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
-  const [imgDims, setImgDims] = useState({ w: 1920, h: 1080 });
-
-  useEffect(() => {
-    if (!imgRef.current) return;
-    const img = imgRef.current;
-    const onLoad = () =>
-      setImgDims({ w: img.naturalWidth, h: img.naturalHeight });
-    img.addEventListener("load", onLoad);
-    return () => img.removeEventListener("load", onLoad);
-  }, []);
-
+const [imgDims, setImgDims] = useState({ w: 1920, h: 1080 });
+useEffect(() => {
+  if (!imgRef.current) return;
+  const img = imgRef.current;
+  const onLoad = () => setImgDims({ w: img.naturalWidth, h: img.naturalHeight });
+  img.addEventListener("load", onLoad);
+  return () => img.removeEventListener("load", onLoad);
+}, []);
   // ------------------------------
   // Load settings JSON
   // ------------------------------
@@ -131,40 +128,39 @@ const ErinPattern2D: React.FC = () => {
   // ------------------------------
   // Painting logic
   // ------------------------------
-  const updateCellAtPosition = (clientX: number, clientY: number) => {
-    const svg = svgRef.current;
-    if (!svg) return;
+const updateCellAtPosition = (clientX: number, clientY: number) => {
+  const svg = svgRef.current;
+  if (!svg) return;
 
-    const pt = svg.createSVGPoint();
-    pt.x = clientX;
-    pt.y = clientY;
-    const svgP = pt.matrixTransform(svg.getScreenCTM()?.inverse());
-    const x = svgP.x;
-    const y = svgP.y;
+  // Convert client coordinates to SVG coordinate system
+  const pt = svg.createSVGPoint();
+  pt.x = clientX;
+  pt.y = clientY;
+  const svgP = pt.matrixTransform(svg.getScreenCTM()?.inverse());
 
-    const cellW = spacingX;
-    const cellH = spacingY;
-    const c = Math.floor((x - offsetX) / cellW);
-    const r = Math.floor((y - offsetY) / cellH);
-    if (c < 0 || r < 0 || c >= cols || r >= rows) return;
+  const x = svgP.x;
+  const y = svgP.y;
 
-    const key = `${r}-${c}`;
-    const next = new Map(cells);
-    if (isErasing) next.delete(key);
-    else next.set(key, selectedColor);
-    setCells(next);
-  };
+  const cellW = spacingX;
+  const cellH = spacingY;
+  const c = Math.floor((x - offsetX) / cellW);
+  const r = Math.floor((y - offsetY) / cellH);
+  if (c < 0 || r < 0 || c >= cols || r >= rows) return;
 
+  const key = `${r}-${c}`;
+  const next = new Map(cells);
+  if (isErasing) next.delete(key);
+  else next.set(key, selectedColor);
+  setCells(next);
+};
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     setIsPainting(true);
     updateCellAtPosition(e.clientX, e.clientY);
   };
-
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isPainting) updateCellAtPosition(e.clientX, e.clientY);
   };
-
   const handleMouseUp = () => setIsPainting(false);
 
   const clearAll = () => {
@@ -175,7 +171,7 @@ const ErinPattern2D: React.FC = () => {
   };
 
   // ------------------------------
-  // Draw ellipse rings
+  // Draw ellipse rings (scale affects shape only)
   // ------------------------------
   const drawRing = (cx: number, cy: number, fill: string | null, key: string) => {
     const stroke = "#000";
@@ -187,21 +183,21 @@ const ErinPattern2D: React.FC = () => {
 
     return (
       <g key={key}>
-        {fill && (
-          <path
-            d={`
-              M ${cx - rOuterX},${cy}
-              a ${rOuterX},${rOuterY} 0 1,0 ${2 * rOuterX},0
-              a ${rOuterX},${rOuterY} 0 1,0 -${2 * rOuterX},0
-              M ${cx - rInnerX},${cy}
-              a ${rInnerX},${rInnerY} 0 1,0 ${2 * rInnerX},0
-              a ${rInnerX},${rInnerY} 0 1,0 -${2 * rInnerX},0
-            `}
-            fillRule="evenodd"
-            fill={fill}
-            opacity={0.35}
-          />
-        )}
+{fill && (
+  <path
+    d={`
+      M ${cx - rOuterX},${cy}
+      a ${rOuterX},${rOuterY} 0 1,0 ${2 * rOuterX},0
+      a ${rOuterX},${rOuterY} 0 1,0 -${2 * rOuterX},0
+      M ${cx - rInnerX},${cy}
+      a ${rInnerX},${rInnerY} 0 1,0 ${2 * rInnerX},0
+      a ${rInnerX},${rInnerY} 0 1,0 -${2 * rInnerX},0
+    `}
+    fillRule="evenodd"
+    fill={fill}
+    opacity={0.35}
+  />
+)}
         {showLines && (
           <>
             <ellipse
@@ -227,9 +223,8 @@ const ErinPattern2D: React.FC = () => {
       </g>
     );
   };
-
-  // ------------------------------
-  // Build uniform grid
+    // ------------------------------
+  // Build uniform grid pattern (pure independent spacing)
   // ------------------------------
   const elements: JSX.Element[] = [];
   const cellW = spacingX;
@@ -248,40 +243,18 @@ const ErinPattern2D: React.FC = () => {
     }
   }
 
-  // ------------------------------
-  // Controls definition with typing
-  // ------------------------------
-  const controls: [
-    string,
-    number,
-    React.Dispatch<React.SetStateAction<number>>,
-    number,
-    number,
-    number
-  ][] = [
-    ["Columns", cols, setCols, 1, 100, 1],
-    ["Rows", rows, setRows, 1, 100, 1],
-    ["Major Axis", majorAxis, setMajorAxis, 5, 150, 0.01],
-    ["Minor Axis", minorAxis, setMinorAxis, 5, 150, 0.01],
-    ["Wire Diameter", wireD, setWireD, 1, 60, 0.01],
-    ["Spacing X", spacingX, setSpacingX, 5, 300, 0.01],
-    ["Spacing Y", spacingY, setSpacingY, 5, 300, 0.01],
-    ["Row Offset X", rowOffsetX, setRowOffsetX, -2, 2, 0.001],
-    ["Row Offset Y", rowOffsetY, setRowOffsetY, -2, 2, 0.001],
-    ["Offset X", offsetX, setOffsetX, -500, 500, 0.1],
-    ["Offset Y", offsetY, setOffsetY, -500, 500, 0.1],
-    ["Scale", scale, setScale, 0.1, 3, 0.001],
-  ];
+  const width = cols * cellW + 200;
+  const height = rows * cellH + 200;
 
   // ------------------------------
   // Render
   // ------------------------------
   return (
-    <div style={wrap as React.CSSProperties}>
+    <div style={wrap}>
       {/* Toolbar */}
-      <div style={toolbar as React.CSSProperties}>
+      <div style={toolbar}>
         <span style={{ fontWeight: 600, marginRight: 6 }}>Color:</span>
-        <div style={paletteWrap as React.CSSProperties}>
+        <div style={paletteWrap}>
           {COLORS.map((c) => (
             <button
               key={c}
@@ -305,19 +278,19 @@ const ErinPattern2D: React.FC = () => {
           ))}
         </div>
 
-        <button onClick={() => setIsErasing((v) => !v)} style={toolbarBtn as React.CSSProperties}>
+        <button onClick={() => setIsErasing((v) => !v)} style={toolbarBtn}>
           {isErasing ? "Eraser: ON" : "Eraser: OFF"}
         </button>
 
-        <button onClick={clearAll} style={clearBtn as React.CSSProperties}>
+        <button onClick={clearAll} style={clearBtn}>
           Clear
         </button>
 
-        <button onClick={saveSettingsJSON} style={saveBtn as React.CSSProperties}>
+        <button onClick={saveSettingsJSON} style={saveBtn}>
           Save JSON
         </button>
 
-        <button onClick={loadSettingsJSON} style={blueBtn as React.CSSProperties}>
+        <button onClick={loadSettingsJSON} style={blueBtn}>
           Reload JSON
         </button>
 
@@ -337,72 +310,79 @@ const ErinPattern2D: React.FC = () => {
       </div>
 
       {/* Controls */}
-      <div style={controlPanel as React.CSSProperties}>
-        {controls.map(([label, val, setter, min, max, step], idx) => (
-          <div key={idx} style={sliderRow as React.CSSProperties}>
-            <label style={sliderLabel as React.CSSProperties}>{label}</label>
+      <div style={controlPanel}>
+        {[
+          ["Columns", cols, setCols, 1, 100, 1],
+          ["Rows", rows, setRows, 1, 100, 1],
+          ["Major Axis", majorAxis, setMajorAxis, 5, 150, 0.01],
+          ["Minor Axis", minorAxis, setMinorAxis, 5, 150, 0.01],
+          ["Wire Diameter", wireD, setWireD, 1, 60, 0.01],
+          ["Spacing X", spacingX, setSpacingX, 5, 300, 0.01],
+          ["Spacing Y", spacingY, setSpacingY, 5, 300, 0.01],
+          ["Row Offset X", rowOffsetX, setRowOffsetX, -2, 2, 0.001],
+          ["Row Offset Y", rowOffsetY, setRowOffsetY, -2, 2, 0.001],
+          ["Offset X", offsetX, setOffsetX, -500, 500, 0.1],
+          ["Offset Y", offsetY, setOffsetY, -500, 500, 0.1],
+          ["Scale", scale, setScale, 0.1, 3, 0.001],
+        ].map(([label, val, setter, min, max, step], idx) => (
+          <div key={idx} style={sliderRow}>
+            <label style={sliderLabel}>{label}</label>
             <input
               type="range"
-              min={min}
-              max={max}
-              step={step}
-              value={val}
+              min={Number(min)}
+              max={Number(max)}
+              step={Number(step)}
+              value={Number(val)}
               onChange={(e) => setter(Number(e.target.value))}
               style={{ flexGrow: 1, minWidth: "720px" }}
             />
             <input
               type="number"
-              value={val}
-              step={step}
-              min={min}
-              max={max}
+              value={Number(val)}
+              step={Number(step)}
+              min={Number(min)}
+              max={Number(max)}
               onChange={(e) => setter(Number(e.target.value))}
-              style={numInput as React.CSSProperties}
+              style={numInput}
             />
           </div>
         ))}
       </div>
 
       {/* Static Underlay + Pattern */}
-      <div style={outerWrap as React.CSSProperties}>
+      <div style={outerWrap}>
         {showImage && (
-          <div style={staticImageWrap as React.CSSProperties}>
-            <img
-              ref={imgRef}
-              src={IMAGE_SRC}
-              alt="Reference"
-              style={staticImageStyle as React.CSSProperties}
-            />
+          <div style={staticImageWrap}>
+            <img ref={imgRef} src={IMAGE_SRC} alt="Reference" style={staticImageStyle} />
           </div>
         )}
 
-        <div style={patternWrap as React.CSSProperties}>
-          <svg
-            ref={svgRef}
-            width="100%"
-            height="100%"
-            viewBox={`0 0 ${imgDims.w} ${imgDims.h}`}
-            preserveAspectRatio="xMidYMid meet"
-            style={{
-              position: "absolute",
-              inset: 0,
-              zIndex: 2,
-              touchAction: "none",
-            }}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
-          >
-            <rect width="1920" height="1080" fill="transparent" />
-            {elements}
-          </svg>
-        </div>
+        <div style={patternWrap}>
+<svg
+  ref={svgRef}
+  width="100%"
+  height="100%"
+  viewBox={`0 0 ${imgDims.w} ${imgDims.h}`}
+  preserveAspectRatio="xMidYMid meet"
+    style={{
+    position: "absolute",
+    inset: 0,
+    zIndex: 2,
+    touchAction: "none",
+  }}
+  onMouseDown={handleMouseDown}
+  onMouseMove={handleMouseMove}
+  onMouseUp={handleMouseUp}
+  onMouseLeave={handleMouseUp}
+>
+  <rect width="1920" height="1080" fill="transparent" />
+  {elements}
+</svg>
+       </div>
       </div>
     </div>
   );
 };
-
 
 // ------------------------------
 // Styles
@@ -440,12 +420,12 @@ const toolbarBtn: React.CSSProperties = {
   fontWeight: 600,
 };
 
-const clearBtn: React.CSSProperties = { ...toolbarBtn, background: "#ef4444" };
-const saveBtn: React.CSSProperties = { ...toolbarBtn, background: "#10B981" };
-const blueBtn: React.CSSProperties = { ...toolbarBtn, background: "#3B82F6" };
+const clearBtn = { ...toolbarBtn, background: "#ef4444" };
+const saveBtn = { ...toolbarBtn, background: "#10B981" };
+const blueBtn = { ...toolbarBtn, background: "#3B82F6" };
 
-const paletteWrap: React.CSSProperties = { display: "flex", overflowX: "auto" };
-const controlPanel: React.CSSProperties = {
+const paletteWrap = { display: "flex", overflowX: "auto" };
+const controlPanel = {
   background: "#fff",
   padding: "10px",
   marginTop: "6px",
@@ -457,16 +437,16 @@ const controlPanel: React.CSSProperties = {
   flexDirection: "column",
   gap: "6px",
 };
-const sliderRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: "8px" };
-const sliderLabel: React.CSSProperties = { width: "150px", fontWeight: 600 };
-const numInput: React.CSSProperties = {
+const sliderRow = { display: "flex", alignItems: "center", gap: "8px" };
+const sliderLabel = { width: "150px", fontWeight: 600 };
+const numInput = {
   width: "80px",
   border: "1px solid #ccc",
   borderRadius: 4,
   padding: "2px 6px",
   textAlign: "right",
 };
-const outerWrap: React.CSSProperties = {
+const outerWrap = {
   position: "relative",
   width: "100%",
   height: "100%",
@@ -475,7 +455,7 @@ const outerWrap: React.CSSProperties = {
   alignItems: "center",
   overflow: "hidden",
 };
-const staticImageWrap: React.CSSProperties = {
+const staticImageWrap = {
   position: "absolute",
   top: 0,
   left: 0,
@@ -484,14 +464,14 @@ const staticImageWrap: React.CSSProperties = {
   zIndex: 0,
   overflow: "hidden",
 };
-const staticImageStyle: React.CSSProperties = {
+const staticImageStyle = {
   width: "100%",
   height: "100%",
   objectFit: "contain",
   opacity: 0.45,
   pointerEvents: "none",
 };
-const patternWrap: React.CSSProperties = {
+const patternWrap = {
   position: "absolute",
   top: 0,
   left: 0,
