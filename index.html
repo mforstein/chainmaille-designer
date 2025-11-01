@@ -5,21 +5,93 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pattern App</title>
+
     <style>
       :root {
         background: #e5e5e5;
       }
+
       body {
         margin: 0;
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         background: #f5f5f5;
       }
+
       #root {
         min-height: 100vh;
         display: flex;
       }
+
+      /* 🖨️ Hide toolbars and panels when printing */
+      @media print, .printing {
+        /* Hide all floating UI elements */
+        button,
+        [style*="position:fixed"],
+        [style*="cursor:move"],
+        [style*="zIndex: 40"],
+        [style*="zIndex: 50"],
+        [style*="zIndex: 60"] {
+          display: none !important;
+          visibility: hidden !important;
+        }
+
+        body,
+        html {
+          background: #fff !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+          width: 100% !important;
+          height: 100% !important;
+          overflow: hidden !important;
+        }
+
+        /* 🧾 Center and scale pattern perfectly */
+        #erin-canvas-area {
+          position: fixed !important;
+          top: 0 !important;
+          left: 0 !important;
+          right: 0 !important;
+          bottom: 0 !important;
+          margin: auto !important;
+          display: flex !important;
+          align-items: center !important;
+          justify-content: center !important;
+          background: #fff !important;
+          width: 100% !important;
+          height: 100% !important;
+        }
+
+        /* 🔧 Disable transforms during print */
+        #erin-canvas-area > div {
+          transform: none !important;
+          transform-origin: center center !important;
+          margin: auto !important;
+          position: relative !important;
+        }
+
+        /* 🖼️ Scale content neatly to printable area */
+        img,
+        svg {
+          max-width: 100% !important;
+          max-height: 100% !important;
+          object-fit: contain !important;
+          margin: auto !important;
+          display: block !important;
+        }
+
+        /* 🍏 iOS Safari centering fix */
+        @supports (-webkit-touch-callout: none) {
+          #erin-canvas-area {
+            transform: scale(1.05) translate(0, 0) !important;
+            transform-origin: center center !important;
+          }
+        }
+      }
     </style>
   </head>
+
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>

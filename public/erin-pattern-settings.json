@@ -4,11 +4,11 @@
   "majorAxis": 50.89,
   "minorAxis": 60.81,
   "wireD": 15.03,
-  "spacingX": 47.13,
-  "spacingY": 29.92,
+  "spacingX": 47.15,
+  "spacingY": 29.84,
   "offsetX": 9.4,
-  "offsetY": 8.3,
-  "rowOffsetX": -0.271,
-  "rowOffsetY": -0.019,
+  "offsetY": 11.8,
+  "rowOffsetX": -0.26,
+  "rowOffsetY": 0.032,
   "scale": 1
 }
