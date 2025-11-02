@@ -1,0 +1,25 @@
+{
+  "items": [
+    {
+      "title": "Radiant Rainbow Bracelet",
+      "price": "45.00",
+      "currency": "USD",
+      "image_url": "/images/sample_bracelet.jpg",
+      "url": "https://www.etsy.com/shop/WovenRainbowsByErin"
+    },
+    {
+      "title": "Aurora Borealis Earrings",
+      "price": "32.00",
+      "currency": "USD",
+      "image_url": "/images/sample_earrings.jpg",
+      "url": "https://www.etsy.com/shop/WovenRainbowsByErin"
+    },
+    {
+      "title": "Midnight Silver Weave Necklace",
+      "price": "58.00",
+      "currency": "USD",
+      "image_url": "/images/sample_necklace.jpg",
+      "url": "https://www.etsy.com/shop/WovenRainbowsByErin"
+    }
+  ]
+}
