@@ -1,28 +1,31 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 export default function PasswordGate() {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const location = useLocation();
+console.log("🔍 Redirect state:", location.state);
+  // 👇 Capture redirect (for blog or other pages)
+  const redirect = location.state?.redirect || "/erin2d";
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
     const code = input.trim().toUpperCase();
 
     if (code === "ERIN50") {
-      // Save session so Erin doesn’t have to re-enter password
       localStorage.setItem("erin2DAuth", "true");
-      navigate("/erin2d");
+      navigate(redirect); // ✅ Redirect wherever it came from
     } else if (code === "3DMODE") {
-      // Save session so 3D mode access persists
       localStorage.setItem("designerAuth", "true");
       navigate("/designer");
     } else {
       setError("Incorrect password. Please try again.");
     }
   };
+
+  const isBlogAccess = redirect === "/wovenrainbowsbyerin/blog";
 
   return (
     <div
@@ -36,9 +39,15 @@ export default function PasswordGate() {
         flexDirection: "column",
       }}
     >
-      <h1 style={{ marginBottom: 8 }}>Woven Rainbows Designer Access</h1>
+      <h1 style={{ marginBottom: 8 }}>
+        {isBlogAccess
+          ? "Woven Rainbows Blog Access"
+          : "Woven Rainbows Designer Access"}
+      </h1>
       <p style={{ color: "#9CA3AF", marginBottom: 24 }}>
-        Please enter your password to access the Chainmail Designer.
+        {isBlogAccess
+          ? "Please enter your password to view Erin’s Studio Blog."
+          : "Please enter your password to access the Chainmail Designer."}
       </p>
       <form
         onSubmit={handleSubmit}

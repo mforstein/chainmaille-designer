@@ -524,6 +524,20 @@ const handlePrint = () => {
           onMouseDown={toolsPanel.handleMouseDown}
           onTouchStart={toolsPanel.handleTouchStart}
         >
+        {/* 🏠 HOME BUTTON */}
+<button
+  style={{
+    ...floatIconBtn,
+    background: "#2563eb",
+  }}
+  onClick={(e) => {
+    e.stopPropagation(); // prevent dragging conflict
+    window.location.href = "/wovenrainbowsbyerin";
+  }}
+  title="Back to Home"
+>
+  🏠
+</button>
           <button
             style={{
               ...floatIconBtn,

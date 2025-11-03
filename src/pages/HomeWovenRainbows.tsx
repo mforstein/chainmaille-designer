@@ -322,7 +322,40 @@ useEffect(() => {
           </button>
         </div>
       </div>
-
+      {/* ======= Hidden Feather (Easter Egg Blog Access) ======= */}
+      {showFeather && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 20,
+            right: 20,
+            zIndex: 1000,
+            cursor: "pointer",
+            opacity: 0.8,
+            transform: "translateY(0)",
+            transition: "opacity 0.4s ease, transform 0.4s ease",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.8")}
+          onClick={() =>
+            navigate("/wovenrainbowsbyerin/login", {
+              state: { redirect: "/wovenrainbowsbyerin/blog" },
+            })
+          }
+        >
+          <span
+            role="img"
+            aria-label="feather"
+            style={{
+              fontSize: "2rem",
+              filter: "drop-shadow(0 0 6px rgba(255,255,255,0.4))",
+              animation: "floatFeather 3s ease-in-out infinite",
+            }}
+          >
+            🪶
+          </span>
+        </div>
+      )}
       {/* ======= Footer Band (removes white line) ======= */}
       <div
         style={{
@@ -334,5 +367,14 @@ useEffect(() => {
     </div>
   );
 };
-
+// Floating feather animation
+const styleSheet = document.styleSheets[0];
+if (styleSheet && !Array.from(styleSheet.cssRules).some(rule => rule.name === "floatFeather")) {
+  styleSheet.insertRule(`
+    @keyframes floatFeather {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-6px); }
+    }
+  `, styleSheet.cssRules.length);
+}
 export default HomeWovenRainbows;

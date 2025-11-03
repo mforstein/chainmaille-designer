@@ -4,27 +4,35 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pattern App</title>
+    <title>Woven Rainbows by Erin</title>
 
     <style>
-      :root {
-        background: #e5e5e5;
-      }
-
+      html,
       body {
         margin: 0;
+        padding: 0;
+        min-height: 100%;
+        width: 100%;
+        background: linear-gradient(180deg, #0f1115 0%, #1a1c22 100%) !important;
+        color: #f1f5f9 !important;
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background: #f5f5f5;
+        overflow-x: hidden;
       }
 
       #root {
+        position: relative;
+        z-index: 1;
         min-height: 100vh;
         display: flex;
+        flex-direction: column;
+      }
+
+      :root {
+        background: none !important;
       }
 
       /* 🖨️ Hide toolbars and panels when printing */
       @media print, .printing {
-        /* Hide all floating UI elements */
         button,
         [style*="position:fixed"],
         [style*="cursor:move"],
@@ -35,8 +43,8 @@
           visibility: hidden !important;
         }
 
-        body,
-        html {
+        html,
+        body {
           background: #fff !important;
           margin: 0 !important;
           padding: 0 !important;
@@ -47,7 +55,6 @@
           overflow: hidden !important;
         }
 
-        /* 🧾 Center and scale pattern perfectly */
         #erin-canvas-area {
           position: fixed !important;
           top: 0 !important;
@@ -63,7 +70,6 @@
           height: 100% !important;
         }
 
-        /* 🔧 Disable transforms during print */
         #erin-canvas-area > div {
           transform: none !important;
           transform-origin: center center !important;
@@ -71,7 +77,6 @@
           position: relative !important;
         }
 
-        /* 🖼️ Scale content neatly to printable area */
         img,
         svg {
           max-width: 100% !important;
@@ -81,7 +86,6 @@
           display: block !important;
         }
 
-        /* 🍏 iOS Safari centering fix */
         @supports (-webkit-touch-callout: none) {
           #erin-canvas-area {
             transform: scale(1.05) translate(0, 0) !important;

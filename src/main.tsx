@@ -5,26 +5,26 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import BlogEditor from "./pages/BlogEditor"; // 🪶 Erin’s Private Blog Page
 
 // ------------------------------------------------------
-// Core App + Pages
+// 🪶 Core Pages & Components
 // ------------------------------------------------------
-import ChainmailDesigner from "./App";
-import RingSizeChart from "./pages/RingSizeChart";
-import ChainmailWeaveTuner from "./pages/ChainmailWeaveTuner";
-import ChainmailWeaveAtlas from "./pages/ChainmailWeaveAtlas";
-import HomeWovenRainbows from "./pages/HomeWovenRainbows";
-import PasswordGate from "./pages/PasswordGate"; // ✅ Access control
-import ErinPattern2D from "./pages/ErinPattern2D"; // 🧶 NEW — Erin’s 2D Pattern Page
+import HomeWovenRainbows from "./pages/HomeWovenRainbows";  // 🌈 Erin’s main homepage
+import PasswordGate from "./pages/PasswordGate";            // 🔐 Password access screen
+import BlogEditor from "./pages/BlogEditor";                // 🪶 Blog viewer & editor
+import ChainmailDesigner from "./App";                      // 🧩 Main 3D Designer
+import ErinPattern2D from "./pages/ErinPattern2D";          // 🧶 Erin’s 2D Designer
+import RingSizeChart from "./pages/RingSizeChart";          // 📊 Size Chart
+import ChainmailWeaveTuner from "./pages/ChainmailWeaveTuner"; // ⚙️ Weave Tuner
+import ChainmailWeaveAtlas from "./pages/ChainmailWeaveAtlas"; // 🌐 Weave Atlas
 
 // ------------------------------------------------------
-// Global Styles
+// 🧰 Global Styles
 // ------------------------------------------------------
 import "./index.css";
 
 // ------------------------------------------------------
-// 🔧 Conditionally load developer-only tools (only during dev)
+// 🧑‍💻 Developer-Only Tools (Loaded only in dev mode)
 // ------------------------------------------------------
 let DevRoutes = null;
 if (import.meta.env.DEV) {
@@ -54,7 +54,7 @@ if (import.meta.env.DEV) {
 }
 
 // ------------------------------------------------------
-// ROOT RENDERER
+// 🧭 Root Router + Route Definitions
 // ------------------------------------------------------
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -66,8 +66,11 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         {/* 🌈 Home Page */}
         <Route path="/wovenrainbowsbyerin" element={<HomeWovenRainbows />} />
 
-        {/* 🔐 Access Code Page */}
+        {/* 🔐 Access Code Page (Password Gate) */}
         <Route path="/wovenrainbowsbyerin/login" element={<PasswordGate />} />
+
+        {/* 🪶 Erin’s Blog Page (Public After Login) */}
+        <Route path="/wovenrainbowsbyerin/blog" element={<BlogEditor />} />
 
         {/* 🧩 Main Chainmail Designer (3D) */}
         <Route path="/designer" element={<ChainmailDesigner />} />
@@ -84,13 +87,13 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         {/* 🌐 Weave Atlas */}
         <Route path="/atlas" element={<ChainmailWeaveAtlas />} />
 
-        {/* 🪶 Erin’s Blog Editor (Private Page) */}
+        {/* 🪶 Blog Editor (Direct Access — Internal Use) */}
         <Route path="/blog-editor" element={<BlogEditor />} />
 
         {/* 🧰 Developer Tools (only visible in dev mode) */}
         {DevRoutes}
 
-        {/* 🚫 Fallback — redirect all unknown routes to home */}
+        {/* 🚫 Fallback — redirect unknown routes to home */}
         <Route path="*" element={<Navigate to="/wovenrainbowsbyerin" replace />} />
       </Routes>
     </BrowserRouter>
