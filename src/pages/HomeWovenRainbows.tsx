@@ -369,12 +369,21 @@ useEffect(() => {
 };
 // Floating feather animation
 const styleSheet = document.styleSheets[0];
-if (styleSheet && !Array.from(styleSheet.cssRules).some(rule => rule.name === "floatFeather")) {
-  styleSheet.insertRule(`
+if (
+  styleSheet &&
+  !Array.from(styleSheet.cssRules).some(
+    (rule) => (rule as CSSKeyframesRule).name === "floatFeather"
+  )
+) {
+  styleSheet.insertRule(
+    `
     @keyframes floatFeather {
       0%, 100% { transform: translateY(0); }
       50% { transform: translateY(-6px); }
     }
-  `, styleSheet.cssRules.length);
+  `,
+    styleSheet.cssRules.length
+  );
 }
+
 export default HomeWovenRainbows;
