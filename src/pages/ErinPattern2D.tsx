@@ -60,11 +60,18 @@ const ErinPattern2D: React.FC = () => {
   const [cells, setCells] = useState<Map<string, string>>(new Map());
   const [isPainting, setIsPainting] = useState(false);
 
+  // 🎯 Hit circles (teal targets)
+  const [showHitGrid, setShowHitGrid] = useState(false);
+  const [hitRadiusFactor, setHitRadiusFactor] = useState(0.6);
+  const [hitOffsetX, setHitOffsetX] = useState(0);
+  const [hitOffsetY, setHitOffsetY] = useState(0);
+
   // 📏 Refs
   const svgRef = useRef<SVGSVGElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [imgDims, setImgDims] = useState({ w: 1920, h: 1080 });
   const transformRef = useRef<HTMLDivElement | null>(null);
+
   // ------------------------------
   // Load settings JSON
   // ------------------------------
@@ -85,51 +92,53 @@ const ErinPattern2D: React.FC = () => {
       setRowOffsetX(data.rowOffsetX ?? defaultSettings.rowOffsetX);
       setRowOffsetY(data.rowOffsetY ?? defaultSettings.rowOffsetY);
       setScale(data.scale ?? defaultSettings.scale);
+      setHitRadiusFactor(data.hitRadiusFactor ?? 0.6);
+      setHitOffsetX(data.hitOffsetX ?? 0);
+      setHitOffsetY(data.hitOffsetY ?? 0);
     } catch {
       console.warn("⚠️ Could not load JSON — using defaults");
     }
   };
 
-useEffect(() => {
-  loadSettingsJSON().then(() => {
-    setPanX(0);
-    setPanY(0);
-    setZoom(1);
-  });
-}, []);
-// ------------------------------
-// Image dimensions sync (iOS-safe)
-// ------------------------------
-useEffect(() => {
-  const img = imgRef.current;
-  if (!img) return;
-
-  const updateDims = () => {
-    // ✅ Always set explicit dimensions (for Safari repaint reliability)
-    setImgDims({
-      w: img.naturalWidth || 1920,
-      h: img.naturalHeight || 1080,
+  useEffect(() => {
+    loadSettingsJSON().then(() => {
+      setPanX(0);
+      setPanY(0);
+      setZoom(1);
     });
-  };
+  }, []);
+  
+    // ------------------------------
+  // Image dimensions sync (iOS-safe)
+  // ------------------------------
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img) return;
 
-  // If already loaded (e.g., after refresh), force re-render
-  if (img.complete && img.naturalWidth > 0) {
-    updateDims();
-  } else {
-    img.addEventListener("load", updateDims);
-  }
+    const updateDims = () => {
+      setImgDims({
+        w: img.naturalWidth || 1920,
+        h: img.naturalHeight || 1080,
+      });
+    };
 
-  // 🔁 iOS Safari fix: force a repaint when image toggles or on refresh
-  const safariRepaint = () => {
-    if (!img.complete) return;
-    img.style.display = "none";
-    void img.offsetHeight; // trigger reflow
-    img.style.display = "block";
-  };
-  safariRepaint();
+    if (img.complete && img.naturalWidth > 0) {
+      updateDims();
+    } else {
+      img.addEventListener("load", updateDims);
+    }
 
-  return () => img.removeEventListener("load", updateDims);
-}, [showImage]);
+    const safariRepaint = () => {
+      if (!img.complete) return;
+      img.style.display = "none";
+      void img.offsetHeight; // trigger reflow
+      img.style.display = "block";
+    };
+    safariRepaint();
+
+    return () => img.removeEventListener("load", updateDims);
+  }, [showImage]);
+
   // ------------------------------
   // LocalStorage: Save + Load
   // ------------------------------
@@ -161,193 +170,147 @@ useEffect(() => {
     }
   };
 
-// ------------------------------
-// ✅ Universal paint coordinate mapping (mouse + touch + Safari)
-// ------------------------------
-const updateCellAtPosition = (clientX: number, clientY: number) => {
-  const svg = svgRef.current;
-  if (!svg) return;
+  // ------------------------------
+  // ✅ Force redraw helper (Safari CTM refresh)
+  // ------------------------------
+  const forceRedraw = () => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    svg.style.willChange = "transform";
+    svg.style.transform = "translateZ(0)";
+    void (svg as unknown as HTMLElement).offsetHeight;
+    svg.style.transform = "";
+    svg.style.willChange = "";
+  };
 
-  const pt = svg.createSVGPoint();
-  pt.x = clientX;
-  pt.y = clientY;
+  // 🩹 Safari-specific zoom-out CTM fix (targeting the transform container)
+  useEffect(() => {
+    if (!/iPad|iPhone|iPod/.test(navigator.userAgent)) return;
 
-  const ctm = svg.getScreenCTM();
-  if (!ctm) return;
+    const container = transformRef.current;
+    if (!container) return;
 
-  const svgPt = pt.matrixTransform(ctm.inverse());
+    const t = setTimeout(() => {
+      container.style.willChange = "transform";
+      container.style.transform += " translateZ(0)";
+      void container.offsetHeight; // layout flush
+      container.style.willChange = "";
 
-  // 🧮 Detect if CTM already includes zoom (Safari vs Chrome difference)
-  // Safari sometimes gives CTM with scale = 1 even after zoom
-  const scaleX = Math.abs(ctm.a);
-  const scaleY = Math.abs(ctm.d);
-  const avgScale = (scaleX + scaleY) / 2;
-  const needsManualScale = Math.abs(avgScale - zoom) > 0.05;
+      const baseTransform = `translate(${Math.round(panX)}px, ${Math.round(panY)}px) scale(${zoom})`;
+      container.style.transform = baseTransform;
 
-  // 🧭 Adjust coordinates only if Safari's CTM is stale
-  const effectiveZoom = needsManualScale ? zoom : 1;
+      requestAnimationFrame(forceRedraw);
+    }, 80);
 
-  const x = (svgPt.x - offsetX) / effectiveZoom;
-  const y = (svgPt.y - offsetY) / effectiveZoom;
+    return () => clearTimeout(t);
+  }, [zoom, panX, panY]);
 
-  const c = Math.floor(x / spacingX);
-  const r = Math.floor(y / spacingY);
-
-  if (!Number.isFinite(c) || !Number.isFinite(r)) return;
-  if (c < 0 || r < 0 || c >= cols || r >= rows) return;
-
-  const key = `${r}-${c}`;
-  const next = new Map(cells);
-  if (isErasing) next.delete(key);
-  else next.set(key, selectedColor);
-  setCells(next);
-};
-// ------------------------------
-// ✅ Force redraw helper (Safari CTM refresh)
-// ------------------------------
-const forceRedraw = () => {
-  const svg = svgRef.current;
-  if (!svg) return;
-  svg.style.willChange = "transform";
-  svg.style.transform = "translateZ(0)";
-  void (svg as unknown as HTMLElement).offsetHeight;
-  svg.style.transform = "";
-  svg.style.willChange = "";
-};
-// 🩹 Safari-specific zoom-out CTM fix (targeting the transform container)
-useEffect(() => {
-  if (!/iPad|iPhone|iPod/.test(navigator.userAgent)) return;
-
-  const container = transformRef.current;
-  if (!container) return;
-
-  const t = setTimeout(() => {
-    container.style.willChange = "transform";
-    container.style.transform += " translateZ(0)";
-    void container.offsetHeight; // layout flush
-    container.style.willChange = "";
-
-    const baseTransform = `translate(${Math.round(panX)}px, ${Math.round(panY)}px) scale(${zoom})`;
-    container.style.transform = baseTransform;
-
-    requestAnimationFrame(forceRedraw);
-  }, 80);
-
-  return () => clearTimeout(t);
-}, [zoom, panX, panY]);
-// ------------------------------
-// ✅ Mouse Painting & Panning
-// ------------------------------
-const handleMouseDown = (e: React.MouseEvent) => {
-  e.preventDefault();
-  if (paintActive) {
-    setIsPainting(true);
-    updateCellAtPosition(e.clientX, e.clientY);
-  } else {
-    panStartRef.current = { x: e.clientX, y: e.clientY };
-    panOrigRef.current = { x: panX, y: panY };
-  }
-};
-
-const handleMouseMove = (e: React.MouseEvent) => {
-  if (paintActive && isPainting) {
-    updateCellAtPosition(e.clientX, e.clientY);
-  } else if (!paintActive && panStartRef.current) {
-    const dx = e.clientX - panStartRef.current.x;
-    const dy = e.clientY - panStartRef.current.y;
-    setPanX(panOrigRef.current.x + dx);
-    setPanY(panOrigRef.current.y + dy);
-  }
-};
-
-const handleMouseUp = () => {
-  setIsPainting(false);
-  panStartRef.current = null;
-};
-
-// ------------------------------
-// ✅ Touch / Pinch Zoom (Safari-stable, accurate paint coords)
-// ------------------------------
-const lastDist = useRef<number | null>(null);
-const lastZoom = useRef<number>(zoom);
-
-const handleTouchMove = (e: React.TouchEvent) => {
-  e.preventDefault(); // block scroll + bounce
-
-  if (e.touches.length === 2) {
-    // Pinch zoom
-    const dx = e.touches[0].clientX - e.touches[1].clientX;
-    const dy = e.touches[0].clientY - e.touches[1].clientY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (lastDist.current != null) {
-      const diff = dist - lastDist.current;
-      setZoom((z) => {
-        const next = Math.max(0.3, Math.min(5, z + diff * 0.002));
-        const rounded = Math.round(next * 100) / 100;
-        lastZoom.current = rounded;
-        requestAnimationFrame(forceRedraw);
-        return rounded;
-      });
+  // ------------------------------
+  // ✅ Mouse Panning Only (painting handled by hit circles)
+  // ------------------------------
+  const handleMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!paintActive) {
+      panStartRef.current = { x: e.clientX, y: e.clientY };
+      panOrigRef.current = { x: panX, y: panY };
     }
-    lastDist.current = dist;
-  } else if (e.touches.length === 1) {
-    // Paint or pan
-    const t = e.touches[0];
-    if (paintActive) {
-      updateCellAtPosition(t.clientX, t.clientY);
-    } else if (panStartRef.current) {
-      const dx = t.clientX - panStartRef.current.x;
-      const dy = t.clientY - panStartRef.current.y;
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!paintActive && panStartRef.current) {
+      const dx = e.clientX - panStartRef.current.x;
+      const dy = e.clientY - panStartRef.current.y;
       setPanX(panOrigRef.current.x + dx);
       setPanY(panOrigRef.current.y + dy);
     }
-  }
-};
-
-const handleTouchEnd = () => {
-  lastDist.current = null;
-  setIsPainting(false);
-  panStartRef.current = null;
-};
-
-// ------------------------------
-// ✅ Mouse Wheel Zoom (Safari + Chrome safe)
-// ------------------------------
-const handleWheel = (e: React.WheelEvent) => {
-  e.preventDefault();
-  const delta = -e.deltaY * 0.0015;
-  setZoom((z) => {
-    const next = Math.max(0.3, Math.min(5, z + delta));
-    const rounded = Math.round(next * 100) / 100;
-    requestAnimationFrame(forceRedraw);
-    return rounded;
-  });
-};
-
-// ------------------------------
-// 🩹 Fix "Unable to preventDefault" (non-passive event listeners)
-// ------------------------------
-useEffect(() => {
-  const svg = svgRef.current;
-  if (!svg) return;
-
-  // Remove React synthetic listeners (they're passive)
-  svg.onwheel = null;
-  svg.ontouchmove = null;
-
-  const touchMove = (e: TouchEvent) => handleTouchMove(e as any);
-  const wheelMove = (e: WheelEvent) => handleWheel(e as any);
-
-  svg.addEventListener("touchmove", touchMove, { passive: false });
-  svg.addEventListener("wheel", wheelMove, { passive: false });
-
-  return () => {
-    svg.removeEventListener("touchmove", touchMove);
-    svg.removeEventListener("wheel", wheelMove);
   };
-}, [handleTouchMove, handleWheel]);
+
+  const handleMouseUp = () => {
+    setIsPainting(false);
+    panStartRef.current = null;
+  };
+
   // ------------------------------
+  // ✅ Touch / Pinch Zoom (Safari-stable)
+  // ------------------------------
+  const lastDist = useRef<number | null>(null);
+  const lastZoom = useRef<number>(zoom);
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault(); // block scroll + bounce
+
+    if (e.touches.length === 2) {
+      // Pinch zoom
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (lastDist.current != null) {
+        const diff = dist - lastDist.current;
+        setZoom((z) => {
+          const next = Math.max(0.3, Math.min(5, z + diff * 0.002));
+          const rounded = Math.round(next * 100) / 100;
+          lastZoom.current = rounded;
+          requestAnimationFrame(forceRedraw);
+          return rounded;
+        });
+      }
+      lastDist.current = dist;
+    } else if (e.touches.length === 1) {
+      // Pan only (painting handled on circles)
+      const t = e.touches[0];
+      if (!paintActive && panStartRef.current) {
+        const dx = t.clientX - panStartRef.current.x;
+        const dy = t.clientY - panStartRef.current.y;
+        setPanX(panOrigRef.current.x + dx);
+        setPanY(panOrigRef.current.y + dy);
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    lastDist.current = null;
+    setIsPainting(false);
+    panStartRef.current = null;
+  };
+
+  // ------------------------------
+  // ✅ Mouse Wheel Zoom (Safari + Chrome safe)
+  // ------------------------------
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = -e.deltaY * 0.0015;
+    setZoom((z) => {
+      const next = Math.max(0.3, Math.min(5, z + delta));
+      const rounded = Math.round(next * 100) / 100;
+      requestAnimationFrame(forceRedraw);
+      return rounded;
+    });
+  };
+
+  // ------------------------------
+  // 🩹 Fix "Unable to preventDefault" (non-passive event listeners)
+  // ------------------------------
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    svg.onwheel = null;
+    svg.ontouchmove = null;
+
+    const touchMove = (e: TouchEvent) => handleTouchMove(e as any);
+    const wheelMove = (e: WheelEvent) => handleWheel(e as any);
+
+    svg.addEventListener("touchmove", touchMove, { passive: false });
+    svg.addEventListener("wheel", wheelMove, { passive: false });
+
+    return () => {
+      svg.removeEventListener("touchmove", touchMove);
+      svg.removeEventListener("wheel", wheelMove);
+    };
+  }, [handleTouchMove, handleWheel]);
+  
+    // ------------------------------
   // Draw Rings
   // ------------------------------
   const drawRing = (cx: number, cy: number, fill: string | null, key: string) => {
@@ -360,19 +323,19 @@ useEffect(() => {
 
     return (
       <g key={key}>
-{fill && (
-  <path
-    d={`M ${cx - rOuterX},${cy}
-      a ${rOuterX},${rOuterY} 0 1,0 ${2 * rOuterX},0
-      a ${rOuterX},${rOuterY} 0 1,0 -${2 * rOuterX},0
-      M ${cx - rInnerX},${cy}
-      a ${rInnerX},${rInnerY} 0 1,0 ${2 * rInnerX},0
-      a ${rInnerX},${rInnerY} 0 1,0 -${2 * rInnerX},0`}
-    fillRule="evenodd"
-    fill={fill}
-    opacity={0.55} // slightly more visible
-  />
-)}
+        {fill && (
+          <path
+            d={`M ${cx - rOuterX},${cy}
+              a ${rOuterX},${rOuterY} 0 1,0 ${2 * rOuterX},0
+              a ${rOuterX},${rOuterY} 0 1,0 -${2 * rOuterX},0
+              M ${cx - rInnerX},${cy}
+              a ${rInnerX},${rInnerY} 0 1,0 ${2 * rInnerX},0
+              a ${rInnerX},${rInnerY} 0 1,0 -${2 * rInnerX},0`}
+            fillRule="evenodd"
+            fill={fill}
+            opacity={0.55}
+          />
+        )}
         {showLines && (
           <>
             <ellipse cx={cx} cy={cy} rx={rOuterX} ry={rOuterY} fill="none" stroke={stroke} strokeWidth={sw} />
@@ -383,27 +346,114 @@ useEffect(() => {
     );
   };
 
-  const elements: JSX.Element[] = [];
-for (let r = 0; r < rows; r++) {
-  const xOffset = rowOffsetX * spacingX;
-  const yOffset = rowOffsetY * spacingY;
-  for (let c = 0; c < cols; c++) {
-    const cx = offsetX + c * spacingX + (r % 2 === 0 ? xOffset : -xOffset);
-    const cy = offsetY + r * spacingY + (r % 2 === 0 ? yOffset : -yOffset);
-    const key = `${r}-${c}`;
-    elements.push(drawRing(cx, cy, cells.get(key) || null, key));
-  }
-}
   // ------------------------------
-  // Save JSON (settings)
+  // Draw teal hit circle for painting
+  // ------------------------------
+  const drawHitCircle = (cx: number, cy: number, key: string) => {
+    const rOuterX = majorAxis / 2;
+    const rOuterY = minorAxis / 2;
+    const hitR = Math.min(rOuterX, rOuterY) * hitRadiusFactor;
+
+    const adjCx = cx + hitOffsetX;
+    const adjCy = cy + hitOffsetY;
+
+    const fill = showHitGrid ? "rgba(20,184,166,0.4)" : "rgba(0,0,0,0.001)"; // keep clickable when hidden
+    const stroke = showHitGrid ? "#14b8a6" : "none";
+
+    return (
+      <circle
+        key={`hit-${key}`}
+        cx={adjCx}
+        cy={adjCy}
+        r={hitR}
+        fill={fill}
+        stroke={stroke}
+        strokeWidth={0.5}
+        pointerEvents="all"
+        style={{ cursor: paintActive ? "pointer" : "default" }}
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          if (!paintActive) return;
+          setIsPainting(true);
+          const next = new Map(cells);
+          if (isErasing) next.delete(key);
+          else next.set(key, selectedColor);
+          setCells(next);
+        }}
+        onMouseEnter={() => {
+          if (!paintActive || !isPainting) return;
+          const next = new Map(cells);
+          if (isErasing) next.delete(key);
+          else next.set(key, selectedColor);
+          setCells(next);
+        }}
+        onMouseUp={() => setIsPainting(false)}
+        onTouchStart={(e) => {
+          e.stopPropagation();
+          if (!paintActive) return;
+          setIsPainting(true);
+          const next = new Map(cells);
+          if (isErasing) next.delete(key);
+          else next.set(key, selectedColor);
+          setCells(next);
+        }}
+        onTouchMove={(e) => {
+          if (!paintActive || !isPainting) return;
+          // Touch events don't deliver which circle we're over; relying on enter/move isn't ideal.
+          // We keep this minimal; painting-on-drag with circles will be coarse on touch.
+        }}
+        onTouchEnd={() => setIsPainting(false)}
+      />
+    );
+  };
+
+  // ------------------------------
+  // Draw Rings + Hit Grid elements
+  // ------------------------------
+  const elements: JSX.Element[] = [];
+  for (let r = 0; r < rows; r++) {
+    const xOffset = rowOffsetX * spacingX;
+    const yOffset = rowOffsetY * spacingY;
+    for (let c = 0; c < cols; c++) {
+      const cx = offsetX + c * spacingX + (r % 2 === 0 ? xOffset : -xOffset);
+      const cy = offsetY + r * spacingY + (r % 2 === 0 ? yOffset : -yOffset);
+      const key = `${r}-${c}`;
+      const fill = cells.get(key) || null;
+
+      elements.push(
+        <g key={`cell-${key}`}>
+          {drawRing(cx, cy, fill, key)}
+          {drawHitCircle(cx, cy, key)}
+        </g>
+      );
+    }
+  }
+
+  // ------------------------------
+  // 💾 Save JSON (includes hit circle settings)
   // ------------------------------
   const saveSettingsJSON = () => {
     const settings = {
-      cols, rows, majorAxis, minorAxis, wireD,
-      spacingX, spacingY, offsetX, offsetY,
-      rowOffsetX, rowOffsetY, scale
+      cols,
+      rows,
+      majorAxis,
+      minorAxis,
+      wireD,
+      spacingX,
+      spacingY,
+      offsetX,
+      offsetY,
+      rowOffsetX,
+      rowOffsetY,
+      scale,
+      hitRadiusFactor,
+      hitOffsetX,
+      hitOffsetY,
     };
-    const blob = new Blob([JSON.stringify(settings, null, 2)], { type: "application/json" });
+
+    const blob = new Blob([JSON.stringify(settings, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -412,99 +462,95 @@ for (let r = 0; r < rows; r++) {
     URL.revokeObjectURL(url);
   };
 
- // ------------------------------
-// Draggable helpers
-// ------------------------------
-const useDraggable = (
-  initial: { top: number; left: number },
-  resetKey?: any
-) => {
-  const [pos, setPos] = useState(initial);
-  const offset = useRef<{ x: number; y: number } | null>(null);
+  // ------------------------------
+  // Draggable helpers
+  // ------------------------------
+  const useDraggable = (
+    initial: { top: number; left: number },
+    resetKey?: any
+  ) => {
+    const [pos, setPos] = useState(initial);
+    const offset = useRef<{ x: number; y: number } | null>(null);
 
-  // 👇 if the caller gives us a *new* initial (e.g. mobile vs desktop),
-  // re-apply it
-  useEffect(() => {
-    setPos(initial);
-  }, [initial.top, initial.left, resetKey]);
+    useEffect(() => {
+      setPos(initial);
+    }, [initial.top, initial.left, resetKey]);
 
-  const startDrag = (x: number, y: number) => {
-    offset.current = { x: x - pos.left, y: y - pos.top };
-  };
+    const startDrag = (x: number, y: number) => {
+      offset.current = { x: x - pos.left, y: y - pos.top };
+    };
 
-  const moveDrag = (x: number, y: number) => {
-    if (!offset.current) return;
-    setPos({ top: y - offset.current.y, left: x - offset.current.x });
-  };
+    const moveDrag = (x: number, y: number) => {
+      if (!offset.current) return;
+      setPos({ top: y - offset.current.y, left: x - offset.current.x });
+    };
 
-  const endDrag = () => {
-    offset.current = null;
-  };
+    const endDrag = () => {
+      offset.current = null;
+    };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    startDrag(e.clientX, e.clientY);
-  };
+    const handleMouseDown = (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      startDrag(e.clientX, e.clientY);
+    };
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1) {
-      const t = e.touches[0];
-      startDrag(t.clientX, t.clientY);
-    }
-  };
-
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => moveDrag(e.clientX, e.clientY);
-    const onUp = () => endDrag();
-    const onTouchMove = (e: TouchEvent) => {
+    const handleTouchStart = (e: React.TouchEvent) => {
       if (e.touches.length === 1) {
         const t = e.touches[0];
-        moveDrag(t.clientX, t.clientY);
+        startDrag(t.clientX, t.clientY);
       }
     };
-    const onTouchEnd = () => endDrag();
 
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    window.addEventListener("touchmove", onTouchMove);
-    window.addEventListener("touchend", onTouchEnd);
+    useEffect(() => {
+      const onMove = (e: MouseEvent) => moveDrag(e.clientX, e.clientY);
+      const onUp = () => endDrag();
+      const onTouchMove = (e: TouchEvent) => {
+        if (e.touches.length === 1) {
+          const t = e.touches[0];
+          moveDrag(t.clientX, t.clientY);
+        }
+      };
+      const onTouchEnd = () => endDrag();
 
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      window.removeEventListener("touchmove", onTouchMove);
-      window.removeEventListener("touchend", onTouchEnd);
-    };
-  }, [pos]);
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+      window.addEventListener("touchmove", onTouchMove);
+      window.addEventListener("touchend", onTouchEnd);
 
-  return { pos, handleMouseDown, handleTouchStart };
-};
-// 🧰 Responsive starting positions for draggable panels
-const toolsPanel = useDraggable({
-  top: window.innerWidth < 768 ? 60 : 16,  // push down for mobile (below notch)
-  left: window.innerWidth < 768 ? 8 : 16,  // add slight left padding
-});
+      return () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        window.removeEventListener("touchmove", onTouchMove);
+        window.removeEventListener("touchend", onTouchEnd);
+      };
+    }, [pos]);
 
-const colorsPanel = useDraggable({
-  top: window.innerWidth < 768 ? 60 : 16,  // align vertically with toolbar
-  left: window.innerWidth < 768 ? 70 : 90, // keep beside toolbar, tighter on small screens
-});
-const handlePrint = () => {
-  // 🔹 Temporarily add a "printing" class to hide UI
-  document.body.classList.add("printing");
+    return { pos, handleMouseDown, handleTouchStart };
+  };
 
-  // Wait a moment for the UI to hide
-  setTimeout(() => {
-    window.print();
+  // 🧰 Responsive starting positions for draggable panels
+  const toolsPanel = useDraggable({
+    top: window.innerWidth < 768 ? 60 : 16,
+    left: window.innerWidth < 768 ? 8 : 16,
+  });
 
-    // 🔹 Restore UI after printing
+  const colorsPanel = useDraggable({
+    top: window.innerWidth < 768 ? 60 : 16,
+    left: window.innerWidth < 768 ? 70 : 90,
+  });
+
+  const handlePrint = () => {
+    document.body.classList.add("printing");
     setTimeout(() => {
-      document.body.classList.remove("printing");
-    }, 500);
-  }, 100);
-};
-  // ------------------------------
+      window.print();
+      setTimeout(() => {
+        document.body.classList.remove("printing");
+      }, 500);
+    }, 100);
+  };
+  
+    // ------------------------------
   // Render
   // ------------------------------
   return (
@@ -524,26 +570,28 @@ const handlePrint = () => {
           onMouseDown={toolsPanel.handleMouseDown}
           onTouchStart={toolsPanel.handleTouchStart}
         >
-        {/* 🏠 HOME BUTTON */}
-<button
-  style={{
-    ...floatIconBtn,
-    background: "#2563eb",
-  }}
-  onClick={(e) => {
-    e.stopPropagation(); // prevent dragging conflict
-    window.location.href = "/wovenrainbowsbyerin";
-  }}
-  title="Back to Home"
->
-  🏠
-</button>
+          {/* 🏠 HOME BUTTON */}
+          <button
+            style={{
+              ...floatIconBtn,
+              background: "#2563eb",
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              window.location.href = "/wovenrainbowsbyerin";
+            }}
+            title="Back to Home"
+          >
+            🏠
+          </button>
+
           <button
             style={{
               ...floatIconBtn,
               background: paintActive ? "#f97316" : "#1f2937",
             }}
             onClick={() => setPaintActive((v) => !v)}
+            title="Toggle paint mode"
           >
             🎨
           </button>
@@ -556,12 +604,14 @@ const handlePrint = () => {
                   ...floatIconBtn,
                   background: isErasing ? "#fbbf24" : "#1f2937",
                 }}
+                title="Eraser"
               >
                 🧽
               </button>
               <button
                 onClick={clearAll}
                 style={{ ...floatIconBtn, background: "#ef4444" }}
+                title="Clear all"
               >
                 🧹
               </button>
@@ -574,30 +624,48 @@ const handlePrint = () => {
               ...floatIconBtn,
               background: showImage ? "#0ea5e9" : "#1f2937",
             }}
+            title="Toggle image"
           >
             🖼️
           </button>
+
           <button
             onClick={() => setShowLines((v) => !v)}
             style={{
               ...floatIconBtn,
               background: showLines ? "#22c55e" : "#1f2937",
             }}
+            title="Toggle outlines"
           >
             📏
           </button>
+
           <button
             onClick={handlePrint}
             style={{ ...floatIconBtn, background: "#6b21a8" }}
+            title="Print"
           >
             🖨️
           </button>
+
+          <button
+            onClick={() => setShowHitGrid((v) => !v)}
+            style={{
+              ...floatIconBtn,
+              background: showHitGrid ? "#14b8a6" : "#1f2937",
+            }}
+            title="Toggle hit grid"
+          >
+            🎯
+          </button>
+
           <button
             onClick={() => setShowControls((v) => !v)}
             style={{
               ...floatIconBtn,
               background: showControls ? "#f97316" : "#1f2937",
             }}
+            title="Show controls"
           >
             🧰
           </button>
@@ -638,9 +706,7 @@ const handlePrint = () => {
                   ...colorSwatch,
                   background: c,
                   outline:
-                    selectedColor === c
-                      ? "2px solid #fff"
-                      : "1px solid #111",
+                    selectedColor === c ? "2px solid #fff" : "1px solid #111",
                 }}
               />
             ))}
@@ -663,6 +729,9 @@ const handlePrint = () => {
               ["Offset X", offsetX, setOffsetX, -500, 500, 0.1],
               ["Offset Y", offsetY, setOffsetY, -500, 500, 0.1],
               ["Scale", scale, setScale, 0.1, 3, 0.001],
+              ["Hit Radius", hitRadiusFactor, setHitRadiusFactor, 0.05, 1, 0.01],
+              ["Hit Offset X", hitOffsetX, setHitOffsetX, -20, 20, 0.1],
+              ["Hit Offset Y", hitOffsetY, setHitOffsetY, -20, 20, 0.1],
             ].map(([label, val, setter, min, max, step], idx) => (
               <div key={idx} style={sliderRow}>
                 <label style={sliderLabel}>{label as string}</label>
@@ -684,92 +753,94 @@ const handlePrint = () => {
               <button onClick={saveSettingsJSON} style={smallToolBtn}>
                 💾 Save
               </button>
-              <button
-                onClick={() => loadSettingsJSON()}
-                style={smallToolBtnBlue}
-              >
+              <button onClick={() => loadSettingsJSON()} style={smallToolBtnBlue}>
                 🔄 Reload
               </button>
             </div>
           </div>
         )}
 
-{/* 🖼️ IMAGE + SVG — unified pan/zoom transform */}
-<div style={outerWrap}>
-  {/* One shared transform container */}
-  <div
-    style={{
-      position: "absolute",
-      inset: 0,
-      transform: `translate(${Math.round(panX)}px, ${Math.round(panY)}px) scale(${zoom})`,
-      transformOrigin: "top left",
-    }}
-  >
-    {/* Background Image */}
-    {showImage && (
-      <img
-        ref={imgRef}
-        src={IMAGE_SRC}
-        alt="Reference"
-        style={{
-          ...staticImageStyle,
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: `${imgDims.w}px`,
-          height: `${imgDims.h}px`,
-          objectFit: "contain",
-        }}
-      />
-    )}
+        {/* 🖼️ IMAGE + SVG — unified pan/zoom transform */}
+        <div style={outerWrap}>
+          {/* One shared transform container */}
+          <div
+            ref={transformRef}
+            style={{
+              position: "absolute",
+              inset: 0,
+              transform: `translate(${Math.round(panX)}px, ${Math.round(
+                panY
+              )}px) scale(${zoom})`,
+              transformOrigin: "top left",
+            }}
+          >
+            {/* Background Image */}
+            {showImage && (
+              <img
+                ref={imgRef}
+                src={IMAGE_SRC}
+                alt="Reference"
+                style={{
+                  ...staticImageStyle,
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: `${imgDims.w}px`,
+                  height: `${imgDims.h}px`,
+                  objectFit: "contain",
+                }}
+              />
+            )}
 
-    {/* Grid Overlay */}
-    <svg
-      ref={svgRef}
-      width={imgDims.w}
-      height={imgDims.h}
-      viewBox={`0 0 ${imgDims.w} ${imgDims.h}`}
-      preserveAspectRatio="xMidYMid meet"
-      style={{
-        position: "absolute",
-        top: 0,
-        left: 0,
-        zIndex: 2,
-        touchAction: "none",
-      }}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
-      onTouchStart={(e) => {
-        if (!paintActive) {
-          const touch = e.touches[0];
-          panStartRef.current = { x: touch.clientX, y: touch.clientY };
-          panOrigRef.current = { x: panX, y: panY };
-        }
-      }}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      onWheel={handleWheel}
-    >
-      {/* 🧭 Debug border to verify alignment */}
-      <rect
-        x="0"
-        y="0"
-        width={imgDims.w}
-        height={imgDims.h}
-        fill="none"
-        stroke="red"
-        strokeWidth={2}
-      />
-      {elements}
-    </svg>
-  </div>
-</div>
-</div> {/* closes outerWrap */}
-</>
-  ); // ✅ end of return
+            {/* Grid Overlay */}
+            <svg
+              ref={svgRef}
+              width={imgDims.w}
+              height={imgDims.h}
+              viewBox={`0 0 ${imgDims.w} ${imgDims.h}`}
+              preserveAspectRatio="xMidYMid meet"
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                zIndex: 9999,           // ensure above image
+                touchAction: "none",
+                pointerEvents: "auto",  // allow interaction
+              }}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              onTouchStart={(e) => {
+                if (!paintActive) {
+                  const touch = e.touches[0];
+                  panStartRef.current = { x: touch.clientX, y: touch.clientY };
+                  panOrigRef.current = { x: panX, y: panY };
+                }
+              }}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              onWheel={handleWheel}
+            >
+              {/* 🧭 Debug border to verify alignment */}
+              <rect
+                x="0"
+                y="0"
+                width={imgDims.w}
+                height={imgDims.h}
+                fill="none"
+                stroke="red"
+                strokeWidth={2}
+              />
+              {elements}
+            </svg>
+          </div>
+        </div>
+      </div>
+    </>
+  );
 }; // ✅ end of ErinPattern2D component
+
 // ------------------------------
 // 💅 Styles
 // ------------------------------
@@ -869,12 +940,6 @@ const outerWrap: React.CSSProperties = {
   width: "100%",
   height: "100%",
   overflow: "hidden",
-};
-
-const staticImageWrap: React.CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  zIndex: 0,
 };
 
 const staticImageStyle: React.CSSProperties = {
