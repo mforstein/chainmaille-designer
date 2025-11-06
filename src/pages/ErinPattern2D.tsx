@@ -50,7 +50,7 @@ const ErinPattern2D: React.FC = () => {
   const panOrigRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // 🖌️ Paint + layers
-  const [showLines, setShowLines] = useState(true);
+  const [showLines, setShowLines] = useState(false);
   const [showImage, setShowImage] = useState(true);
   const [paintActive, setPaintActive] = useState(true);
   const [showControls, setShowControls] = useState(false);
@@ -529,11 +529,17 @@ const handleWheel = (e: React.WheelEvent) => {
       offset.current = { x: x - pos.left, y: y - pos.top };
     };
 
-    const moveDrag = (x: number, y: number) => {
-      if (!offset.current) return;
-      setPos({ top: y - offset.current.y, left: x - offset.current.x });
-    };
+const moveDrag = (x: number, y: number) => {
+  if (!offset.current) return;
+  const newTop = y - offset.current.y;
+  const newLeft = x - offset.current.x;
 
+  // prevent dragging completely off-screen
+  const clampedTop = Math.max(0, Math.min(window.innerHeight - 100, newTop));
+  const clampedLeft = Math.max(0, Math.min(window.innerWidth - 100, newLeft));
+
+  setPos({ top: clampedTop, left: clampedLeft });
+};
     const endDrag = () => {
       offset.current = null;
     };
@@ -577,14 +583,19 @@ const handleWheel = (e: React.WheelEvent) => {
   };
   
     // 🧰 Panels
-  const toolsPanel = useDraggable({
-    top: window.innerWidth < 768 ? 60 : 16,
-    left: window.innerWidth < 768 ? 8 : 16,
-  });
-  const colorsPanel = useDraggable({
-    top: window.innerWidth < 768 ? 60 : 16,
-    left: window.innerWidth < 768 ? 70 : 90,
-  });
+// 🧰 Panels (mobile-safe positioning)
+const safeTop = Math.min(window.innerHeight - 180, 80); // prevent bottom overflow
+const safeLeft = Math.min(window.innerWidth - 100, 16);
+
+const toolsPanel = useDraggable({
+  top: window.innerWidth < 768 ? safeTop : 16,
+  left: window.innerWidth < 768 ? safeLeft : 16,
+});
+
+const colorsPanel = useDraggable({
+  top: window.innerWidth < 768 ? safeTop : 16,
+  left: window.innerWidth < 768 ? safeLeft + 70 : 90,
+});
 
   const handlePrint = () => {
     document.body.classList.add("printing");
