@@ -29,7 +29,7 @@ const ErinPattern2D: React.FC = () => {
     scale: 1.0,
   };
 
-  // 🧭 Geometry and layout settings
+  // 🧭 Geometry + transforms
   const [cols, setCols] = useState(defaultSettings.cols);
   const [rows, setRows] = useState(defaultSettings.rows);
   const [majorAxis, setMajorAxis] = useState(defaultSettings.majorAxis);
@@ -43,14 +43,13 @@ const ErinPattern2D: React.FC = () => {
   const [rowOffsetY, setRowOffsetY] = useState(defaultSettings.rowOffsetY);
   const [scale, setScale] = useState(defaultSettings.scale);
 
-  // 🎥 Viewport transforms
   const [zoom, setZoom] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   const panStartRef = useRef<{ x: number; y: number } | null>(null);
   const panOrigRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // 🖌️ Painting and layers
+  // 🖌️ Paint + layers
   const [showLines, setShowLines] = useState(true);
   const [showImage, setShowImage] = useState(true);
   const [paintActive, setPaintActive] = useState(true);
@@ -60,17 +59,18 @@ const ErinPattern2D: React.FC = () => {
   const [cells, setCells] = useState<Map<string, string>>(new Map());
   const [isPainting, setIsPainting] = useState(false);
 
-  // 🎯 Hit circles (teal targets)
+  // 🎯 Hit detection
   const [showHitGrid, setShowHitGrid] = useState(false);
   const [hitRadiusFactor, setHitRadiusFactor] = useState(0.6);
   const [hitOffsetX, setHitOffsetX] = useState(0);
   const [hitOffsetY, setHitOffsetY] = useState(0);
 
   // 📏 Refs
-  const svgRef = useRef<SVGSVGElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
-  const [imgDims, setImgDims] = useState({ w: 1920, h: 1080 });
   const transformRef = useRef<HTMLDivElement | null>(null);
+  const interactionRef = useRef<HTMLDivElement | null>(null);
+  const [imgDims, setImgDims] = useState({ w: 1920, h: 1080 });
 
   // ------------------------------
   // Load settings JSON
@@ -109,7 +109,7 @@ const ErinPattern2D: React.FC = () => {
   }, []);
   
     // ------------------------------
-  // Image dimensions sync (iOS-safe)
+  // Image dimensions sync
   // ------------------------------
   useEffect(() => {
     const img = imgRef.current;
@@ -122,16 +122,13 @@ const ErinPattern2D: React.FC = () => {
       });
     };
 
-    if (img.complete && img.naturalWidth > 0) {
-      updateDims();
-    } else {
-      img.addEventListener("load", updateDims);
-    }
+    if (img.complete && img.naturalWidth > 0) updateDims();
+    else img.addEventListener("load", updateDims);
 
     const safariRepaint = () => {
       if (!img.complete) return;
       img.style.display = "none";
-      void img.offsetHeight; // trigger reflow
+      void img.offsetHeight;
       img.style.display = "block";
     };
     safariRepaint();
@@ -140,7 +137,7 @@ const ErinPattern2D: React.FC = () => {
   }, [showImage]);
 
   // ------------------------------
-  // LocalStorage: Save + Load
+  // LocalStorage save / load
   // ------------------------------
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -152,7 +149,7 @@ const ErinPattern2D: React.FC = () => {
       }
     }
   }, []);
-
+  
   useEffect(() => {
     const t = setTimeout(() => {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(cells.entries())));
@@ -160,9 +157,6 @@ const ErinPattern2D: React.FC = () => {
     return () => clearTimeout(t);
   }, [cells]);
 
-  // ------------------------------
-  // Clear all cells
-  // ------------------------------
   const clearAll = () => {
     if (window.confirm("Clear all painted cells?")) {
       setCells(new Map());
@@ -171,48 +165,176 @@ const ErinPattern2D: React.FC = () => {
   };
 
   // ------------------------------
-  // ✅ Force redraw helper (Safari CTM refresh)
+  // Canvas Drawing
   // ------------------------------
-  const forceRedraw = () => {
-    const svg = svgRef.current;
-    if (!svg) return;
-    svg.style.willChange = "transform";
-    svg.style.transform = "translateZ(0)";
-    void (svg as unknown as HTMLElement).offsetHeight;
-    svg.style.transform = "";
-    svg.style.willChange = "";
+  const drawCanvas = (ctx: CanvasRenderingContext2D) => {
+    ctx.clearRect(0, 0, imgDims.w, imgDims.h);
+    ctx.save();
+
+    for (let r = 0; r < rows; r++) {
+      const even = r % 2 === 0;
+      const xOffset = rowOffsetX * spacingX;
+      const yOffset = rowOffsetY * spacingY;
+
+      for (let c = 0; c < cols; c++) {
+        const cx = offsetX + c * spacingX + (even ? xOffset : -xOffset);
+        const cy = offsetY + r * spacingY + (even ? yOffset : -yOffset);
+        const key = `${r}-${c}`;
+        const fill = cells.get(key);
+        const rOuterX = majorAxis / 2;
+        const rOuterY = minorAxis / 2;
+        const rInnerX = Math.max(1, rOuterX - wireD / 2);
+        const rInnerY = Math.max(1, rOuterY - wireD / 2);
+
+        // Filled ring area
+        if (fill) {
+          ctx.globalAlpha = 0.55;
+          ctx.fillStyle = fill;
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, rOuterX, rOuterY, 0, 0, Math.PI * 2);
+          ctx.ellipse(cx, cy, rInnerX, rInnerY, 0, 0, Math.PI * 2, true);
+          ctx.fill("evenodd");
+        }
+
+        // Ring outlines
+        if (showLines) {
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = "#000";
+          ctx.lineWidth = 1.1;
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, rOuterX, rOuterY, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, rInnerX, rInnerY, 0, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // Optional hit grid
+        if (showHitGrid) {
+          ctx.globalAlpha = 0.4;
+          ctx.strokeStyle = "#14b8a6";
+          ctx.beginPath();
+          ctx.arc(
+            cx + hitOffsetX,
+            cy + hitOffsetY,
+            Math.min(rOuterX, rOuterY) * hitRadiusFactor,
+            0,
+            Math.PI * 2
+          );
+          ctx.stroke();
+        }
+      }
+    }
+
+    ctx.restore();
   };
 
-  // 🩹 Safari-specific zoom-out CTM fix (targeting the transform container)
+  // ------------------------------
+  // Redraw effect (HiDPI + transparent)
+  // ------------------------------
   useEffect(() => {
-    if (!/iPad|iPhone|iPod/.test(navigator.userAgent)) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-    const container = transformRef.current;
-    if (!container) return;
+    const ctx = canvas.getContext("2d", { alpha: true });
+    if (!ctx) return;
 
-    const t = setTimeout(() => {
-      container.style.willChange = "transform";
-      container.style.transform += " translateZ(0)";
-      void container.offsetHeight; // layout flush
-      container.style.willChange = "";
+    const dpr = window.devicePixelRatio || 1;
+    const logicalWidth = imgDims.w;
+    const logicalHeight = imgDims.h;
 
-      const baseTransform = `translate(${Math.round(panX)}px, ${Math.round(panY)}px) scale(${zoom})`;
-      container.style.transform = baseTransform;
+    canvas.width = logicalWidth * dpr;
+    canvas.height = logicalHeight * dpr;
+    canvas.style.width = `${logicalWidth}px`;
+    canvas.style.height = `${logicalHeight}px`;
 
-      requestAnimationFrame(forceRedraw);
-    }, 80);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, logicalWidth, logicalHeight);
+    ctx.translate(0.5, 0.5);
 
-    return () => clearTimeout(t);
-  }, [zoom, panX, panY]);
+    drawCanvas(ctx);
+  }, [
+    rows, cols, cells, majorAxis, minorAxis, wireD,
+    spacingX, spacingY, offsetX, offsetY,
+    rowOffsetX, rowOffsetY, showLines,
+    showHitGrid, hitRadiusFactor, hitOffsetX, hitOffsetY,
+    imgDims.w, imgDims.h
+  ]);
+  
+    const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!paintActive) return;
+    const { x, y } = screenToCanvas(e.clientX, e.clientY);
+
+    const c = Math.round((x - offsetX) / spacingX);
+    const r = Math.round((y - offsetY) / spacingY);
+    if (r < 0 || r >= rows || c < 0 || c >= cols) return;
+
+    const key = `${r}-${c}`;
+    const next = new Map(cells);
+    if (isErasing) next.delete(key);
+    else next.set(key, selectedColor);
+    setCells(next);
+  };
+
+  // convert screen → canvas coordinates considering zoom/pan
+  const screenToCanvas = (clientX: number, clientY: number) => {
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
+    const x = (clientX - rect.left) / zoom;
+    const y = (clientY - rect.top) / zoom;
+    return { x, y };
+  };
 
   // ------------------------------
-  // ✅ Mouse Panning Only (painting handled by hit circles)
+  // Force redraw helper (Safari fix)
+  // ------------------------------
+  const forceRedraw = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.style.willChange = "transform";
+    canvas.style.transform = "translateZ(0)";
+    void (canvas as unknown as HTMLElement).offsetHeight;
+    canvas.style.transform = "";
+    canvas.style.willChange = "";
+  };
+
+  // ------------------------------
+  // Apply zoom + pan transforms
+  // ------------------------------
+  useEffect(() => {
+    const el = transformRef.current;
+    if (!el) return;
+
+    const apply = () => {
+      el.style.transformOrigin = "top left";
+      el.style.transform = `translate(${Math.round(panX)}px, ${Math.round(panY)}px) scale(${zoom})`;
+    };
+
+    apply();
+    const id = requestAnimationFrame(apply);
+    const onResize = () => requestAnimationFrame(apply);
+    const onOrient = () => setTimeout(apply, 200);
+
+    window.addEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onOrient);
+    return () => {
+      cancelAnimationFrame(id);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onOrient);
+    };
+  }, [panX, panY, zoom]);
+
+  // ------------------------------
+  // Mouse panning + painting
   // ------------------------------
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     if (!paintActive) {
       panStartRef.current = { x: e.clientX, y: e.clientY };
       panOrigRef.current = { x: panX, y: panY };
+    } else {
+      setIsPainting(true);
     }
   };
 
@@ -222,6 +344,16 @@ const ErinPattern2D: React.FC = () => {
       const dy = e.clientY - panStartRef.current.y;
       setPanX(panOrigRef.current.x + dx);
       setPanY(panOrigRef.current.y + dy);
+    } else if (paintActive && isPainting) {
+      const { x, y } = screenToCanvas(e.clientX, e.clientY);
+      const c = Math.round((x - offsetX) / spacingX);
+      const r = Math.round((y - offsetY) / spacingY);
+      if (r < 0 || r >= rows || c < 0 || c >= cols) return;
+      const key = `${r}-${c}`;
+      const next = new Map(cells);
+      if (isErasing) next.delete(key);
+      else next.set(key, selectedColor);
+      setCells(next);
     }
   };
 
@@ -230,205 +362,118 @@ const ErinPattern2D: React.FC = () => {
     panStartRef.current = null;
   };
 
-  // ------------------------------
-  // ✅ Touch / Pinch Zoom (Safari-stable)
-  // ------------------------------
-  const lastDist = useRef<number | null>(null);
-  const lastZoom = useRef<number>(zoom);
+// ------------------------------
+// ✅ Touch / Pinch Zoom (centered + fully iOS Safari compatible)
+// ------------------------------
+const lastDist = useRef<number | null>(null);
+const pinchStartZoom = useRef<number>(zoom);
 
-  const handleTouchMove = (e: React.TouchEvent) => {
-    e.preventDefault(); // block scroll + bounce
-
-    if (e.touches.length === 2) {
-      // Pinch zoom
-      const dx = e.touches[0].clientX - e.touches[1].clientX;
-      const dy = e.touches[0].clientY - e.touches[1].clientY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (lastDist.current != null) {
-        const diff = dist - lastDist.current;
-        setZoom((z) => {
-          const next = Math.max(0.3, Math.min(5, z + diff * 0.002));
-          const rounded = Math.round(next * 100) / 100;
-          lastZoom.current = rounded;
-          requestAnimationFrame(forceRedraw);
-          return rounded;
-        });
-      }
-      lastDist.current = dist;
-    } else if (e.touches.length === 1) {
-      // Pan only (painting handled on circles)
-      const t = e.touches[0];
-      if (!paintActive && panStartRef.current) {
-        const dx = t.clientX - panStartRef.current.x;
-        const dy = t.clientY - panStartRef.current.y;
-        setPanX(panOrigRef.current.x + dx);
-        setPanY(panOrigRef.current.y + dy);
-      }
-    }
-  };
-
-  const handleTouchEnd = () => {
-    lastDist.current = null;
-    setIsPainting(false);
-    panStartRef.current = null;
-  };
-
-  // ------------------------------
-  // ✅ Mouse Wheel Zoom (Safari + Chrome safe)
-  // ------------------------------
-  const handleWheel = (e: React.WheelEvent) => {
+const handleTouchMove = (e: React.TouchEvent) => {
+  if (e.touches.length === 2) {
     e.preventDefault();
-    const delta = -e.deltaY * 0.0015;
-    setZoom((z) => {
-      const next = Math.max(0.3, Math.min(5, z + delta));
-      const rounded = Math.round(next * 100) / 100;
-      requestAnimationFrame(forceRedraw);
-      return rounded;
-    });
-  };
+    const [t1, t2] = e.touches;
+    const dx = t1.clientX - t2.clientX;
+    const dy = t1.clientY - t2.clientY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
 
-  // ------------------------------
-  // 🩹 Fix "Unable to preventDefault" (non-passive event listeners)
-  // ------------------------------
-  useEffect(() => {
-    const svg = svgRef.current;
-    if (!svg) return;
+    // Midpoint between fingers
+    const midX = (t1.clientX + t2.clientX) / 2;
+    const midY = (t1.clientY + t2.clientY) / 2;
 
-    svg.onwheel = null;
-    svg.ontouchmove = null;
-
-    const touchMove = (e: TouchEvent) => handleTouchMove(e as any);
-    const wheelMove = (e: WheelEvent) => handleWheel(e as any);
-
-    svg.addEventListener("touchmove", touchMove, { passive: false });
-    svg.addEventListener("wheel", wheelMove, { passive: false });
-
-    return () => {
-      svg.removeEventListener("touchmove", touchMove);
-      svg.removeEventListener("wheel", wheelMove);
-    };
-  }, [handleTouchMove, handleWheel]);
-  
-    // ------------------------------
-  // Draw Rings
-  // ------------------------------
-  const drawRing = (cx: number, cy: number, fill: string | null, key: string) => {
-    const stroke = "#000";
-    const sw = 1.1;
-    const rOuterX = (majorAxis / 2);
-    const rOuterY = (minorAxis / 2);
-    const rInnerX = Math.max(1, rOuterX - wireD / 2);
-    const rInnerY = Math.max(1, rOuterY - wireD / 2);
-
-    return (
-      <g key={key}>
-        {fill && (
-          <path
-            d={`M ${cx - rOuterX},${cy}
-              a ${rOuterX},${rOuterY} 0 1,0 ${2 * rOuterX},0
-              a ${rOuterX},${rOuterY} 0 1,0 -${2 * rOuterX},0
-              M ${cx - rInnerX},${cy}
-              a ${rInnerX},${rInnerY} 0 1,0 ${2 * rInnerX},0
-              a ${rInnerX},${rInnerY} 0 1,0 -${2 * rInnerX},0`}
-            fillRule="evenodd"
-            fill={fill}
-            opacity={0.55}
-          />
-        )}
-        {showLines && (
-          <>
-            <ellipse cx={cx} cy={cy} rx={rOuterX} ry={rOuterY} fill="none" stroke={stroke} strokeWidth={sw} />
-            <ellipse cx={cx} cy={cy} rx={rInnerX} ry={rInnerY} fill="none" stroke={stroke} strokeWidth={sw} />
-          </>
-        )}
-      </g>
-    );
-  };
-
-  // ------------------------------
-  // Draw teal hit circle for painting
-  // ------------------------------
-  const drawHitCircle = (cx: number, cy: number, key: string) => {
-    const rOuterX = majorAxis / 2;
-    const rOuterY = minorAxis / 2;
-    const hitR = Math.min(rOuterX, rOuterY) * hitRadiusFactor;
-
-    const adjCx = cx + hitOffsetX;
-    const adjCy = cy + hitOffsetY;
-
-    const fill = showHitGrid ? "rgba(20,184,166,0.4)" : "rgba(0,0,0,0.001)"; // keep clickable when hidden
-    const stroke = showHitGrid ? "#14b8a6" : "none";
-
-    return (
-      <circle
-        key={`hit-${key}`}
-        cx={adjCx}
-        cy={adjCy}
-        r={hitR}
-        fill={fill}
-        stroke={stroke}
-        strokeWidth={0.5}
-        pointerEvents="all"
-        style={{ cursor: paintActive ? "pointer" : "default" }}
-        onMouseDown={(e) => {
-          e.stopPropagation();
-          if (!paintActive) return;
-          setIsPainting(true);
-          const next = new Map(cells);
-          if (isErasing) next.delete(key);
-          else next.set(key, selectedColor);
-          setCells(next);
-        }}
-        onMouseEnter={() => {
-          if (!paintActive || !isPainting) return;
-          const next = new Map(cells);
-          if (isErasing) next.delete(key);
-          else next.set(key, selectedColor);
-          setCells(next);
-        }}
-        onMouseUp={() => setIsPainting(false)}
-        onTouchStart={(e) => {
-          e.stopPropagation();
-          if (!paintActive) return;
-          setIsPainting(true);
-          const next = new Map(cells);
-          if (isErasing) next.delete(key);
-          else next.set(key, selectedColor);
-          setCells(next);
-        }}
-        onTouchMove={(e) => {
-          if (!paintActive || !isPainting) return;
-          // Touch events don't deliver which circle we're over; relying on enter/move isn't ideal.
-          // We keep this minimal; painting-on-drag with circles will be coarse on touch.
-        }}
-        onTouchEnd={() => setIsPainting(false)}
-      />
-    );
-  };
-
-  // ------------------------------
-  // Draw Rings + Hit Grid elements
-  // ------------------------------
-  const elements: JSX.Element[] = [];
-  for (let r = 0; r < rows; r++) {
-    const xOffset = rowOffsetX * spacingX;
-    const yOffset = rowOffsetY * spacingY;
-    for (let c = 0; c < cols; c++) {
-      const cx = offsetX + c * spacingX + (r % 2 === 0 ? xOffset : -xOffset);
-      const cy = offsetY + r * spacingY + (r % 2 === 0 ? yOffset : -yOffset);
-      const key = `${r}-${c}`;
-      const fill = cells.get(key) || null;
-
-      elements.push(
-        <g key={`cell-${key}`}>
-          {drawRing(cx, cy, fill, key)}
-          {drawHitCircle(cx, cy, key)}
-        </g>
-      );
+    if (lastDist.current == null) {
+      lastDist.current = dist;
+      pinchStartZoom.current = zoom;
+      return;
     }
-  }
 
+    const scaleFactor = dist / lastDist.current;
+    const nextZoom = Math.max(0.3, Math.min(5, pinchStartZoom.current * scaleFactor));
+
+    const rect = interactionRef.current!.getBoundingClientRect();
+    const cx = midX - rect.left;
+    const cy = midY - rect.top;
+
+    const worldX = (cx - panX) / zoom;
+    const worldY = (cy - panY) / zoom;
+    const newPanX = cx - worldX * nextZoom;
+    const newPanY = cy - worldY * nextZoom;
+
+    setZoom(nextZoom);
+    setPanX(newPanX);
+    setPanY(newPanY);
+    requestAnimationFrame(forceRedraw);
+  } else if (e.touches.length === 1 && !paintActive) {
+    e.preventDefault();
+    const t = e.touches[0];
+    if (panStartRef.current) {
+      const dx = t.clientX - panStartRef.current.x;
+      const dy = t.clientY - panStartRef.current.y;
+      setPanX(panOrigRef.current.x + dx);
+      setPanY(panOrigRef.current.y + dy);
+    }
+  } else if (e.touches.length === 1 && paintActive && isPainting) {
+    e.preventDefault();
+    const t = e.touches[0];
+    const { x, y } = screenToCanvas(t.clientX, t.clientY);
+    const c = Math.round((x - offsetX) / spacingX);
+    const r = Math.round((y - offsetY) / spacingY);
+    if (r < 0 || r >= rows || c < 0 || c >= cols) return;
+    const key = `${r}-${c}`;
+    const next = new Map(cells);
+    if (isErasing) next.delete(key);
+    else next.set(key, selectedColor);
+    setCells(next);
+  }
+};
+
+const handleTouchEnd = (e: React.TouchEvent) => {
+  if (e.touches.length < 2) {
+    lastDist.current = null;
+  }
+  setIsPainting(false);
+  panStartRef.current = null;
+};
+
+// ------------------------------
+// 🩹 Ensure non-passive listeners (Safari requires it for preventDefault())
+// ------------------------------
+useEffect(() => {
+  const el = interactionRef.current;
+  if (!el) return;
+
+  const touchMove = (ev: TouchEvent) => handleTouchMove(ev as any);
+  const touchEnd = (ev: TouchEvent) => handleTouchEnd(ev as any);
+  el.addEventListener("touchmove", touchMove, { passive: false });
+  el.addEventListener("touchend", touchEnd, { passive: false });
+
+  return () => {
+    el.removeEventListener("touchmove", touchMove);
+    el.removeEventListener("touchend", touchEnd);
+  };
+}, [handleTouchMove]);
+// ------------------------------
+// ✅ Mouse Wheel Zoom (centered under cursor)
+// ------------------------------
+const handleWheel = (e: React.WheelEvent) => {
+  e.preventDefault();
+
+  const delta = -e.deltaY * 0.0015;
+  const zoomFactor = 1 + delta;
+  const nextZoom = Math.max(0.3, Math.min(5, zoom * zoomFactor));
+
+  const rect = (interactionRef.current as HTMLDivElement).getBoundingClientRect();
+  const cx = e.clientX - rect.left;
+  const cy = e.clientY - rect.top;
+
+  const worldX = (cx - panX) / zoom;
+  const worldY = (cy - panY) / zoom;
+  const newPanX = cx - worldX * nextZoom;
+  const newPanY = cy - worldY * nextZoom;
+
+  setZoom(nextZoom);
+  setPanX(newPanX);
+  setPanY(newPanY);
+};
   // ------------------------------
   // 💾 Save JSON (includes hit circle settings)
   // ------------------------------
@@ -463,7 +508,7 @@ const ErinPattern2D: React.FC = () => {
   };
 
   // ------------------------------
-  // Draggable helpers
+  // Draggable helper hook
   // ------------------------------
   const useDraggable = (
     initial: { top: number; left: number },
@@ -512,12 +557,10 @@ const ErinPattern2D: React.FC = () => {
         }
       };
       const onTouchEnd = () => endDrag();
-
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
       window.addEventListener("touchmove", onTouchMove);
       window.addEventListener("touchend", onTouchEnd);
-
       return () => {
         window.removeEventListener("mousemove", onMove);
         window.removeEventListener("mouseup", onUp);
@@ -528,13 +571,12 @@ const ErinPattern2D: React.FC = () => {
 
     return { pos, handleMouseDown, handleTouchStart };
   };
-
-  // 🧰 Responsive starting positions for draggable panels
+  
+    // 🧰 Panels
   const toolsPanel = useDraggable({
     top: window.innerWidth < 768 ? 60 : 16,
     left: window.innerWidth < 768 ? 8 : 16,
   });
-
   const colorsPanel = useDraggable({
     top: window.innerWidth < 768 ? 60 : 16,
     left: window.innerWidth < 768 ? 70 : 90,
@@ -549,8 +591,8 @@ const ErinPattern2D: React.FC = () => {
       }, 500);
     }, 100);
   };
-  
-    // ------------------------------
+
+  // ------------------------------
   // Render
   // ------------------------------
   return (
@@ -570,12 +612,8 @@ const ErinPattern2D: React.FC = () => {
           onMouseDown={toolsPanel.handleMouseDown}
           onTouchStart={toolsPanel.handleTouchStart}
         >
-          {/* 🏠 HOME BUTTON */}
           <button
-            style={{
-              ...floatIconBtn,
-              background: "#2563eb",
-            }}
+            style={{ ...floatIconBtn, background: "#2563eb" }}
             onClick={(e) => {
               e.stopPropagation();
               window.location.href = "/wovenrainbowsbyerin";
@@ -680,7 +718,6 @@ const ErinPattern2D: React.FC = () => {
             left: colorsPanel.pos.left,
             flexDirection: "column",
             width: 70,
-            height: "auto",
             padding: 6,
             cursor: "move",
             zIndex: 60,
@@ -760,9 +797,8 @@ const ErinPattern2D: React.FC = () => {
           </div>
         )}
 
-        {/* 🖼️ IMAGE + SVG — unified pan/zoom transform */}
+        {/* 🖼️ IMAGE + CANVAS (one unified interaction layer) */}
         <div style={outerWrap}>
-          {/* One shared transform container */}
           <div
             ref={transformRef}
             style={{
@@ -772,74 +808,75 @@ const ErinPattern2D: React.FC = () => {
                 panY
               )}px) scale(${zoom})`,
               transformOrigin: "top left",
+              background: "transparent",
             }}
           >
-            {/* Background Image */}
-            {showImage && (
-              <img
-                ref={imgRef}
-                src={IMAGE_SRC}
-                alt="Reference"
-                style={{
-                  ...staticImageStyle,
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: `${imgDims.w}px`,
-                  height: `${imgDims.h}px`,
-                  objectFit: "contain",
-                }}
-              />
-            )}
-
-            {/* Grid Overlay */}
-            <svg
-              ref={svgRef}
-              width={imgDims.w}
-              height={imgDims.h}
-              viewBox={`0 0 ${imgDims.w} ${imgDims.h}`}
-              preserveAspectRatio="xMidYMid meet"
+            <div
+              ref={interactionRef}
               style={{
                 position: "absolute",
-                top: 0,
-                left: 0,
-                zIndex: 9999,           // ensure above image
+                inset: 0,
                 touchAction: "none",
-                pointerEvents: "auto",  // allow interaction
+                cursor: paintActive ? "crosshair" : "grab",
+                zIndex: 2,
               }}
               onMouseDown={handleMouseDown}
               onMouseMove={handleMouseMove}
               onMouseUp={handleMouseUp}
               onMouseLeave={handleMouseUp}
+              onWheel={handleWheel}
               onTouchStart={(e) => {
                 if (!paintActive) {
-                  const touch = e.touches[0];
-                  panStartRef.current = { x: touch.clientX, y: touch.clientY };
+                  const t = e.touches[0];
+                  panStartRef.current = { x: t.clientX, y: t.clientY };
                   panOrigRef.current = { x: panX, y: panY };
+                } else {
+                  setIsPainting(true);
                 }
               }}
               onTouchMove={handleTouchMove}
               onTouchEnd={handleTouchEnd}
-              onWheel={handleWheel}
+              onClick={handleCanvasClick}
             >
-              {/* 🧭 Debug border to verify alignment */}
-              <rect
-                x="0"
-                y="0"
+              {showImage && (
+                <img
+                  ref={imgRef}
+                  src={IMAGE_SRC}
+                  alt="Reference"
+                  style={{
+                    ...staticImageStyle,
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: `${imgDims.w}px`,
+                    height: `${imgDims.h}px`,
+                    objectFit: "contain",
+                    zIndex: 1,
+                  }}
+                />
+              )}
+
+              <canvas
+                ref={canvasRef}
                 width={imgDims.w}
                 height={imgDims.h}
-                fill="none"
-                stroke="red"
-                strokeWidth={2}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  zIndex: 2,
+                  backgroundColor: "transparent",
+                  touchAction: "none",
+                  cursor: paintActive ? "crosshair" : "grab",
+                }}
               />
-              {elements}
-            </svg>
+            </div>
           </div>
         </div>
       </div>
     </>
   );
-}; // ✅ end of ErinPattern2D component
+};
 
 // ------------------------------
 // 💅 Styles
@@ -847,7 +884,7 @@ const ErinPattern2D: React.FC = () => {
 const wrap: React.CSSProperties = {
   width: "100%",
   height: "100vh",
-  background: "#0f172a",
+  background: "transparent",
   overflow: "hidden",
   position: "relative",
   touchAction: "none",
@@ -940,15 +977,16 @@ const outerWrap: React.CSSProperties = {
   width: "100%",
   height: "100%",
   overflow: "hidden",
+  background: "transparent",
 };
 
 const staticImageStyle: React.CSSProperties = {
   width: "100%",
   height: "100%",
   objectFit: "contain",
-  opacity: 0.45,
+  opacity: 1.0,
   pointerEvents: "none",
-  background: "#111",
+  background: "transparent",
 };
 
 export default ErinPattern2D;
