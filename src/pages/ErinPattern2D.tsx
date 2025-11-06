@@ -262,20 +262,6 @@ const ErinPattern2D: React.FC = () => {
     imgDims.w, imgDims.h
   ]);
   
-    const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!paintActive) return;
-    const { x, y } = screenToCanvas(e.clientX, e.clientY);
-
-    const c = Math.round((x - offsetX) / spacingX);
-    const r = Math.round((y - offsetY) / spacingY);
-    if (r < 0 || r >= rows || c < 0 || c >= cols) return;
-
-    const key = `${r}-${c}`;
-    const next = new Map(cells);
-    if (isErasing) next.delete(key);
-    else next.set(key, selectedColor);
-    setCells(next);
-  };
 
   // convert screen → canvas coordinates considering zoom/pan
   const screenToCanvas = (clientX: number, clientY: number) => {
@@ -371,7 +357,8 @@ const pinchStartZoom = useRef<number>(zoom);
 const handleTouchMove = (e: React.TouchEvent) => {
   if (e.touches.length === 2) {
     e.preventDefault();
-    const [t1, t2] = e.touches;
+    const t1 = e.touches.item(0)!; const t2 = e.touches.item(1)!;
+
     const dx = t1.clientX - t2.clientX;
     const dy = t1.clientY - t2.clientY;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -451,6 +438,23 @@ useEffect(() => {
     el.removeEventListener("touchend", touchEnd);
   };
 }, [handleTouchMove]);
+// ------------------------------
+// ✅ Handle Canvas Click (paint or erase cell)
+// ------------------------------
+const handleCanvasClick = (e: React.MouseEvent<HTMLElement>) => {
+  if (!paintActive) return;
+  const { x, y } = screenToCanvas(e.clientX, e.clientY);
+
+  const c = Math.round((x - offsetX) / spacingX);
+  const r = Math.round((y - offsetY) / spacingY);
+  if (r < 0 || r >= rows || c < 0 || c >= cols) return;
+
+  const key = `${r}-${c}`;
+  const next = new Map(cells);
+  if (isErasing) next.delete(key);
+  else next.set(key, selectedColor);
+  setCells(next);
+};
 // ------------------------------
 // ✅ Mouse Wheel Zoom (centered under cursor)
 // ------------------------------
@@ -811,66 +815,66 @@ const handleWheel = (e: React.WheelEvent) => {
               background: "transparent",
             }}
           >
-            <div
-              ref={interactionRef}
-              style={{
-                position: "absolute",
-                inset: 0,
-                touchAction: "none",
-                cursor: paintActive ? "crosshair" : "grab",
-                zIndex: 2,
-              }}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
-              onWheel={handleWheel}
-              onTouchStart={(e) => {
-                if (!paintActive) {
-                  const t = e.touches[0];
-                  panStartRef.current = { x: t.clientX, y: t.clientY };
-                  panOrigRef.current = { x: panX, y: panY };
-                } else {
-                  setIsPainting(true);
-                }
-              }}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={handleTouchEnd}
-              onClick={handleCanvasClick}
-            >
-              {showImage && (
-                <img
-                  ref={imgRef}
-                  src={IMAGE_SRC}
-                  alt="Reference"
-                  style={{
-                    ...staticImageStyle,
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: `${imgDims.w}px`,
-                    height: `${imgDims.h}px`,
-                    objectFit: "contain",
-                    zIndex: 1,
-                  }}
-                />
-              )}
+<div
+  ref={interactionRef}
+  style={{
+    position: "absolute",
+    inset: 0,
+    touchAction: "none",
+    cursor: paintActive ? "crosshair" : "grab",
+    zIndex: 2,
+  }}
+  onMouseDown={handleMouseDown}
+  onMouseMove={handleMouseMove}
+  onMouseUp={handleMouseUp}
+  onMouseLeave={handleMouseUp}
+  onWheel={handleWheel}
+  onTouchStart={(e) => {
+    if (!paintActive) {
+      const t = e.touches[0];
+      panStartRef.current = { x: t.clientX, y: t.clientY };
+      panOrigRef.current = { x: panX, y: panY };
+    } else {
+      setIsPainting(true);
+    }
+  }}
+  onTouchMove={handleTouchMove}
+  onTouchEnd={handleTouchEnd}
+  onClick={handleCanvasClick}  // ✅ just reference the function, do NOT redeclare it
+>
+  {showImage && (
+    <img
+      ref={imgRef}
+      src={IMAGE_SRC}
+      alt="Reference"
+      style={{
+        ...staticImageStyle,
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: `${imgDims.w}px`,
+        height: `${imgDims.h}px`,
+        objectFit: "contain",
+        zIndex: 1,
+      }}
+    />
+  )}
 
-              <canvas
-                ref={canvasRef}
-                width={imgDims.w}
-                height={imgDims.h}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  zIndex: 2,
-                  backgroundColor: "transparent",
-                  touchAction: "none",
-                  cursor: paintActive ? "crosshair" : "grab",
-                }}
-              />
-            </div>
+  <canvas
+    ref={canvasRef}
+    width={imgDims.w}
+    height={imgDims.h}
+    style={{
+      position: "absolute",
+      top: 0,
+      left: 0,
+      zIndex: 2,
+      backgroundColor: "transparent",
+      touchAction: "none",
+      cursor: paintActive ? "crosshair" : "grab",
+    }}
+  />
+</div>
           </div>
         </div>
       </div>
