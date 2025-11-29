@@ -816,15 +816,19 @@ function _generateRingsBase({
 
   const rings: any[] = new Array(requested);
   let index = 0;
-  let spacing = centerSpacing ?? 7.5;
+  const spacing = centerSpacing ?? 7.5;
 
   for (let r = 0; r < rows; r++) {
-    const tiltDeg = (r % 2 === 0 ? angleIn : angleOut) ?? 0;
-    const tiltRad = THREE.MathUtils.degToRad(tiltDeg);
+    // ✅ SAME AS TUNER
+    const rowTiltDeg = (r % 2 === 0 ? angleIn : angleOut) ?? 0;
+    const tiltRad = THREE.MathUtils.degToRad(rowTiltDeg);
+    const y = r * spacing * 0.8660254037844386; // ≈ spacing * sqrt(3)/2
+    const rowOffset = r % 2 === 1 ? spacing / 2 : 0;
+
     for (let c = 0; c < cols; c++) {
       if (index >= MAX_RINGS) break;
-      const x = c * spacing;
-      const y = r * (spacing * Math.sqrt(3) / 2);
+      const x = c * spacing + rowOffset; // ✅ staggered rows
+
       rings[index++] = {
         row: r,
         col: c,
@@ -833,12 +837,13 @@ function _generateRingsBase({
         z: 0,
         innerDiameter: ID_mm,
         wireDiameter: WD_mm,
-        radius: (ID_mm + WD_mm) / 2,
+        radius: OD_mm / 2,
         tiltRad,
         centerSpacing: spacing,
       };
     }
   }
+
   return rings.slice(0, index);
 }
 
