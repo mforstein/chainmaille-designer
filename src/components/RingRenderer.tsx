@@ -1,6 +1,5 @@
 // ============================================================
-// File: src/components/RingRenderer.tsx
-// FINAL with `mode` + fixed paint/overlay mapping
+// File: src/components/RingRenderer.tsx  (MESH-BASED + COLOR PATCH)
 // ============================================================
 
 import React, {
@@ -95,8 +94,6 @@ export interface RenderParams {
 
 export type PaintMap = Map<string, string | null>;
 
-type ViewMode = "designer" | "tuner" | "chart" | "freeform";
-
 type Props = {
   rings: Ring[];
   params: RenderParams;
@@ -107,7 +104,6 @@ type Props = {
   initialPaintMode?: boolean;
   initialEraseMode?: boolean;
   initialRotationLocked?: boolean;
-  mode?: ViewMode;
 };
 
 export type RingRendererHandle = {
@@ -159,10 +155,9 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
       setPaint,
       activeColor,
       overlay,
-      initialPaintMode,
-      initialEraseMode,
-      initialRotationLocked,
-      mode = "designer",
+      initialPaintMode = true,
+      initialEraseMode = false,
+      initialRotationLocked = true,
     },
     ref
   ) {
@@ -207,18 +202,12 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
     const cameraRef = useRef<THREE.PerspectiveCamera>();
     const rendererRef = useRef<THREE.WebGLRenderer>();
     const controlsRef = useRef<OrbitControls>();
-    const meshesRef = useRef<THREE.InstancedMesh[]>([]);
+    const meshesRef = useRef<THREE.Mesh[]>([]);
     const groupRef = useRef<THREE.Group>();
 
-    const [localPaintMode, setLocalPaintMode] = useState(
-      initialPaintMode ?? (mode === "designer" || mode === "freeform")
-    );
-    const [localEraseMode, setLocalEraseMode] = useState(
-      initialEraseMode ?? false
-    );
-    const [rotationLocked, setRotationLocked] = useState(
-      initialRotationLocked ?? (mode === "designer" || mode === "chart")
-    );
+    const [localPaintMode, setLocalPaintMode] = useState(initialPaintMode);
+    const [localEraseMode, setLocalEraseMode] = useState(initialEraseMode);
+    const [rotationLocked, setRotationLocked] = useState(initialRotationLocked);
 
     const paintModeRef = useRef(localPaintMode);
     const eraseModeRef = useRef(localEraseMode);
@@ -250,605 +239,559 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
     const initialTargetRef = useRef(new THREE.Vector3(0, 0, 0));
 
     // ============================================================
-    // Helper — apply current paint map to an InstancedMesh
+    // Helper — apply current paint map to ring meshes
     // ============================================================
-    const applyPaintMapToInst = (inst: THREE.InstancedMesh) => {
-      const c = new THREE.Color();
-      const fallbackCols = paramsRef.current.cols || safeParams.cols || 1;
-      const indexToCoord =
-        ((inst as any).userData &&
-          (inst as any).userData.indexToCoord) as
-          | { row: number; col: number }[]
-          | undefined;
+    const applyPaintToMeshes = () => {
+      const meshes = meshesRef.current;
+      if (!meshes || meshes.length === 0) return;
 
-      for (let i = 0; i < inst.count; i++) {
-        let row: number;
-        let col: number;
+      const defaultHex = paramsRef.current.ringColor || "#CCCCCC";
 
-        if (indexToCoord && indexToCoord[i]) {
-          row = indexToCoord[i].row;
-          col = indexToCoord[i].col;
-        } else {
-          row = Math.floor(i / fallbackCols);
-          col = i % fallbackCols;
+      for (const mesh of meshes) {
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        if (!mat) continue;
+        const row = mesh.userData.row as number;
+        const col = mesh.userData.col as number;
+        const key = `${row},${col}`;
+        const colorHex = paintRef.current.get(key) ?? defaultHex;
+        mat.color.set(colorHex);
+      }
+    };
+
+    // ============================================================
+    // Scene Initialization + Renderer Setup
+    // ============================================================
+    useEffect(() => {
+      if (!mountRef.current) return;
+      const mount = mountRef.current;
+
+      // Clean previous renderer
+      if (rendererRef.current) {
+        try {
+          rendererRef.current.dispose();
+          mount.replaceChildren();
+        } catch {
+          /* ignore */
         }
+      }
+
+      // Scene
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(safeParams.bgColor);
+      sceneRef.current = scene;
+
+      // Camera
+      const camera = new THREE.PerspectiveCamera(
+        45,
+        mount.clientWidth / mount.clientHeight,
+        0.1,
+        2000
+      );
+      camera.position.set(0, 0, initialZRef.current);
+      cameraRef.current = camera;
+
+      // Renderer
+      const canvas = document.createElement("canvas");
+      const gl = canvas.getContext("webgl2", {
+        antialias: true,
+        alpha: false,
+        depth: true,
+        powerPreference: "low-power",
+      }) as WebGL2RenderingContext;
+
+      const renderer = new THREE.WebGLRenderer({
+        canvas,
+        context: gl!,
+        antialias: true,
+        precision: "mediump",
+        powerPreference: "low-power",
+      });
+      renderer.setSize(mount.clientWidth, mount.clientHeight);
+      renderer.setClearColor(safeParams.bgColor, 1);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+      mount.appendChild(renderer.domElement);
+      rendererRef.current = renderer;
+
+      // Lights for 3D-ish shading
+      scene.add(new THREE.AmbientLight(0xffffff, 0.8));
+      const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+      dir.position.set(4, 6, 10);
+      scene.add(dir);
+      const rim = new THREE.DirectionalLight(0xffffff, 0.5);
+      rim.position.set(-4, -6, -8);
+      scene.add(rim);
+
+      // Controls
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.target.set(0, 0, 0);
+      controlsRef.current = controls;
+      camera.lookAt(controls.target);
+
+      const onResize = () => {
+        const { clientWidth: w, clientHeight: h } = mount;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      };
+      window.addEventListener("resize", onResize);
+      onResize();
+
+      // ============================================================
+      // Painting Handlers (raycast → Mesh → paint map)
+      // ============================================================
+      const raycaster = new THREE.Raycaster();
+      const ndc = new THREE.Vector2();
+      let isPainting = false;
+
+      const paintAt = (clientX: number, clientY: number) => {
+        if (!cameraRef.current || !rendererRef.current) return;
+        const camera = cameraRef.current;
+        const dom = rendererRef.current.domElement;
+        const rect = dom.getBoundingClientRect();
+        ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+        ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(ndc, camera);
+        const hits = raycaster.intersectObjects(meshesRef.current, false);
+        if (hits.length === 0) return;
+
+        const mesh = hits[0].object as THREE.Mesh;
+        const row = mesh.userData.row as number;
+        const col = mesh.userData.col as number;
+        if (row == null || col == null) return;
 
         const key = `${row},${col}`;
-        const hex = paintRef.current.get(key) ?? paramsRef.current.ringColor;
-        c.set(hex);
-        inst.setColorAt(i, c);
+        const mat = mesh.material as THREE.MeshStandardMaterial;
+        if (!mat) return;
+
+        setPaint((prev) => {
+          const next = new Map(prev);
+          if (eraseModeRef.current) {
+            next.set(key, null);
+            mat.color.set(paramsRef.current.ringColor || "#CCCCCC");
+          } else {
+            const c = activeColorRef.current || paramsRef.current.ringColor || "#CCCCCC";
+            next.set(key, c);
+            mat.color.set(c);
+          }
+          return next;
+        });
+      };
+
+      const onPointerDown = (e: PointerEvent) => {
+        if (!lockRef.current) return;
+        if (!paintModeRef.current) return;
+        if (e.button !== 0) return;
+        e.preventDefault();
+        isPainting = true;
+        paintAt(e.clientX, e.clientY);
+      };
+
+      const onPointerMove = (e: PointerEvent) => {
+        if (!lockRef.current || !paintModeRef.current || !isPainting) return;
+        e.preventDefault();
+        paintAt(e.clientX, e.clientY);
+      };
+
+      const onPointerUp = () => {
+        isPainting = false;
+      };
+
+      renderer.domElement.addEventListener("pointerdown", onPointerDown);
+      renderer.domElement.addEventListener("pointermove", onPointerMove);
+      renderer.domElement.addEventListener("pointerup", onPointerUp);
+      renderer.domElement.addEventListener("pointerleave", onPointerUp);
+
+      const animate = () => {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+      };
+      animate();
+
+      return () => {
+        window.removeEventListener("resize", onResize);
+        renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+        renderer.domElement.removeEventListener("pointermove", onPointerMove);
+        renderer.domElement.removeEventListener("pointerup", onPointerUp);
+        renderer.domElement.removeEventListener("pointerleave", onPointerUp);
+        try {
+          scene.clear();
+        } catch {
+          /* ignore */
+        }
+        try {
+          renderer.dispose();
+        } catch {
+          /* ignore */
+        }
+      };
+    }, [safeParams.bgColor]);
+
+    // ============================================================
+    // OrbitControls interactivity sync (lock vs paint mode)
+// ============================================================
+    useEffect(() => {
+      const ctr = controlsRef.current;
+      const ren = rendererRef.current;
+      if (!ctr || !ren) return;
+
+      if (!rotationLocked) {
+        // 🔓 UNLOCKED → full 3D (rotate + pan)
+        ctr.enableRotate = true;
+        ctr.enablePan = true;
+        ctr.enableZoom = true;
+        ctr.mouseButtons = {
+          LEFT: THREE.MOUSE.ROTATE,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.PAN,
+        };
+        ren.domElement.style.cursor = "grab";
+      } else {
+        // 🔒 LOCKED → flat 2D; painting disables pan
+        ctr.enableRotate = false;
+        ctr.enablePan = !localPaintMode;
+        ctr.enableZoom = true;
+        ctr.mouseButtons = {
+          LEFT: THREE.MOUSE.PAN,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.ROTATE,
+        };
+        ren.domElement.style.cursor = localPaintMode ? "crosshair" : "grab";
       }
 
-      if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
-    };
-    
-    // ============================================================
-// Scene Initialization + Renderer Setup
-// ============================================================
-useEffect(() => {
-  if (!mountRef.current) return;
-  const mount = mountRef.current;
-
-  // Clean previous renderer
-  if (rendererRef.current) {
-    try {
-      rendererRef.current.dispose();
-      mount.replaceChildren();
-    } catch {}
-  }
-
-  // Scene
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(safeParams.bgColor);
-  sceneRef.current = scene;
-
-  // Camera
-  const camera = new THREE.PerspectiveCamera(
-    45,
-    mount.clientWidth / mount.clientHeight,
-    0.1,
-    2000
-  );
-  camera.position.set(0, 0, initialZRef.current);
-  cameraRef.current = camera;
-
-  // Renderer
-  const canvas = document.createElement("canvas");
-  const gl = canvas.getContext("webgl2", {
-    antialias: true,
-    alpha: false,
-    depth: true,
-    powerPreference: "low-power",
-  }) as WebGL2RenderingContext;
-
-  const renderer = new THREE.WebGLRenderer({
-    canvas,
-    context: gl!,
-    antialias: true,
-    precision: "mediump",
-    powerPreference: "low-power",
-  });
-  renderer.setSize(mount.clientWidth, mount.clientHeight);
-  renderer.setClearColor(safeParams.bgColor, 1);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
-  mount.appendChild(renderer.domElement);
-  rendererRef.current = renderer;
-
-  // Lights
-  scene.add(new THREE.AmbientLight(0xffffff, 0.9));
-  const dir = new THREE.DirectionalLight(0xffffff, 1.1);
-  dir.position.set(4, 6, 10);
-  scene.add(dir);
-
-  // Controls
-  const controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
-  controls.target.set(0, 0, 0);
-  controlsRef.current = controls;
-  camera.lookAt(controls.target);
-
-  const onResize = () => {
-    const { clientWidth: w, clientHeight: h } = mount;
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-  };
-  window.addEventListener("resize", onResize);
-  onResize();
-
-  // ============================================================
-  // Painting Handlers (raycast → instance → paint map)
-  // ============================================================
-  const raycaster = new THREE.Raycaster();
-  const ndc = new THREE.Vector2();
-  let isPainting = false;
-  let lastIndex = -1;
-
-  const paintAt = (clientX: number, clientY: number) => {
-    const rect = renderer.domElement.getBoundingClientRect();
-    ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-    ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-
-    raycaster.setFromCamera(ndc, camera);
-    const hits = raycaster.intersectObjects(meshesRef.current, false);
-    if (hits.length === 0) return;
-
-    const index = (hits[0] as any).instanceId ?? 0;
-    if (index === lastIndex) return;
-    lastIndex = index;
-
-    // Pull correct row/col mapping
-    const inst = hits[0].object as THREE.InstancedMesh;
-    const lookup = inst.userData.indexToCoord?.[index];
-    if (!lookup) return;
-
-    const key = `${lookup.row},${lookup.col}`;
-
-    setPaint((prev) => {
-      const next = new Map(prev);
-      next.set(key, eraseModeRef.current ? null : activeColorRef.current);
-      return next;
-    });
-  };
-
-  const onPointerDown = (e: PointerEvent) => {
-    if (!lockRef.current) return;
-    if (!paintModeRef.current) return;
-    if (e.button !== 0) return;
-    e.preventDefault();
-    isPainting = true;
-    lastIndex = -1;
-    paintAt(e.clientX, e.clientY);
-  };
-
-  const onPointerMove = (e: PointerEvent) => {
-    if (!lockRef.current || !paintModeRef.current || !isPainting) return;
-    e.preventDefault();
-    paintAt(e.clientX, e.clientY);
-  };
-
-  const onPointerUp = () => {
-    isPainting = false;
-    lastIndex = -1;
-  };
-
-  renderer.domElement.addEventListener("pointerdown", onPointerDown);
-  renderer.domElement.addEventListener("pointermove", onPointerMove);
-  renderer.domElement.addEventListener("pointerup", onPointerUp);
-
-  const animate = () => {
-    requestAnimationFrame(animate);
-    controls.update();
-    renderer.render(scene, camera);
-  };
-  animate();
-
-  return () => {
-    window.removeEventListener("resize", onResize);
-    renderer.domElement.removeEventListener("pointerdown", onPointerDown);
-    renderer.domElement.removeEventListener("pointermove", onPointerMove);
-    renderer.domElement.removeEventListener("pointerup", onPointerUp);
-    try {
-      scene.clear();
-    } catch {}
-    try {
-      renderer.dispose();
-    } catch {}
-  };
-}, [safeParams.bgColor]);
-
-// ============================================================
-// OrbitControls interactivity sync
-// ============================================================
-useEffect(() => {
-  const ctr = controlsRef.current;
-  const ren = rendererRef.current;
-  if (!ctr || !ren) return;
-
-  if (!rotationLocked) {
-    ctr.enableRotate = true;
-    ctr.enablePan = true;
-    ctr.enableZoom = true;
-    ctr.mouseButtons = {
-      LEFT: THREE.MOUSE.ROTATE,
-      MIDDLE: THREE.MOUSE.DOLLY,
-      RIGHT: THREE.MOUSE.PAN,
-    };
-    ren.domElement.style.cursor = "grab";
-  } else {
-    ctr.enableRotate = false;
-    ctr.enablePan = !localPaintMode;
-    ctr.enableZoom = true;
-    ctr.mouseButtons = {
-      LEFT: THREE.MOUSE.PAN,
-      MIDDLE: THREE.MOUSE.DOLLY,
-      RIGHT: THREE.MOUSE.ROTATE,
-    };
-    ren.domElement.style.cursor = localPaintMode ? "crosshair" : "grab";
-  }
-
-  ctr.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
-  (ctr as any).listenToKeyEvents?.(window);
-  ctr.update();
-}, [localPaintMode, rotationLocked]);
-
-// ============================================================
-// Re-apply paint map to instanced colors
-// ============================================================
-useEffect(() => {
-  const inst = meshesRef.current[0];
-  if (!inst) return;
-  applyPaintMapToInst(inst);
-}, [paint, safeParams.ringColor, safeParams.cols]);
-
-// ============================================================
-// Geometry Build — supports JSON tilt + correct mapping
-// ============================================================
-useEffect(() => {
-  const scene = sceneRef.current;
-  if (!scene) return;
-
-  // Cleanup old group
-  if (groupRef.current) {
-    groupRef.current.traverse((o: any) => {
-      o.geometry?.dispose?.();
-      if (Array.isArray(o.material)) o.material.forEach((m: any) => m?.dispose?.());
-      else o.material?.dispose?.();
-    });
-    scene.remove(groupRef.current);
-    meshesRef.current = [];
-  }
-
-  const group = new THREE.Group();
-  groupRef.current = group;
-
-  if (!Array.isArray(rings) || rings.length === 0) {
-    scene.add(group);
-    meshesRef.current = [];
-    return;
-  }
-
-  // --- Group rings by (ID, WD) pair ---
-  const bucketMap = new Map<string, Ring[]>();
-  for (const r of rings) {
-    const ID = +(r.innerDiameter ?? safeParams.innerDiameter).toFixed(3);
-    const WD = +(r.wireDiameter ?? safeParams.wireDiameter).toFixed(3);
-    const key = `${ID}_${WD}`;
-    if (!bucketMap.has(key)) bucketMap.set(key, []);
-    bucketMap.get(key)!.push(r);
-  }
-
-  const dummy = new THREE.Object3D();
-  const newMeshes: THREE.InstancedMesh[] = [];
-
-  bucketMap.forEach((subset, key) => {
-    const [ID_s, WD_s] = key.split("_").map(Number);
-    const ringRadius = ID_s / 2 + WD_s / 2;
-    const tubeRadius = WD_s / 2;
-
-    const baseGeometry = new THREE.TorusGeometry(
-      ringRadius,
-      tubeRadius,
-      32,
-      64
-    );
-
-    // Allow vertex colors
-    baseGeometry.setAttribute(
-      "color",
-      new THREE.Float32BufferAttribute(
-        new Array(baseGeometry.attributes.position.count * 3).fill(1),
-        3
-      )
-    );
-
-    const material = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      metalness: 0.85,
-      roughness: 0.25,
-      vertexColors: true,
-    });
-
-    const inst = new THREE.InstancedMesh(
-      baseGeometry,
-      material,
-      subset.length
-    );
-
-    inst.instanceColor = new THREE.InstancedBufferAttribute(
-      new Float32Array(subset.length * 3),
-      3
-    );
-
-    // 🔥 Store mapping for paint + overlay
-    const indexToCoord = subset.map((r) => ({
-      row: r.row,
-      col: r.col,
-    }));
-    inst.userData.indexToCoord = indexToCoord;
+      ctr.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+      (ctr as any).listenToKeyEvents?.(window);
+      ctr.update();
+    }, [localPaintMode, rotationLocked]);
 
     // ============================================================
-    // 🎯 Correct 3D placement with JSON tilt
+    // Re-apply paint map whenever paint or ring color changes
     // ============================================================
-    subset.forEach((r, i) => {
-      const tiltRad =
-        typeof r.tiltRad === "number"
-          ? r.tiltRad
-          : THREE.MathUtils.degToRad(r.tilt ?? 0);
-
-      dummy.position.set(r.x, -r.y, r.z ?? 0);
-
-      // PERFECT orientation (designer/tuner/chart/freeform)
-      dummy.rotation.set(0, tiltRad, Math.PI / 2);
-
-      dummy.updateMatrix();
-      inst.setMatrixAt(i, dummy.matrix);
-    });
-
-    inst.instanceMatrix.needsUpdate = true;
-
-    group.add(inst);
-    newMeshes.push(inst);
+    useEffect(() => {
+      applyPaintToMeshes();
+    }, [paint, safeParams.ringColor]);
 
     // ============================================================
-    // Labels (Chart Mode)
+    // Geometry Build (Rings) — Mesh per ring
     // ============================================================
-    subset.forEach((r) => {
-      if ((r as any)._chartLabel) {
-        const label = (r as any)._chartLabel;
-        const WD = r.wireDiameter ?? WD_s;
-        label.textHeight = Math.max(2, WD * 2);
-        label.position.set(r.x, -r.y - WD * 4, r.z ?? 0);
-        label.center.set(0.5, 1.2);
-        label.material.depthTest = false;
-        label.material.depthWrite = false;
-        group.add(label);
+    useEffect(() => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+
+      // Cleanup old group and meshes
+      if (groupRef.current) {
+        groupRef.current.traverse((o: any) => {
+          o.geometry?.dispose?.();
+          if (Array.isArray(o.material)) {
+            o.material.forEach((m: any) => m?.dispose?.());
+          } else {
+            o.material?.dispose?.();
+          }
+        });
+        scene.remove(groupRef.current);
+        meshesRef.current = [];
       }
-    });
-  });
 
-  scene.add(group);
+      const group = new THREE.Group();
+      groupRef.current = group;
 
-  meshesRef.current = newMeshes;
-  if (newMeshes[0]) {
-    applyPaintMapToInst(newMeshes[0]);
-  }
-}, [rings, safeParams]);
+      if (!Array.isArray(rings) || rings.length === 0) {
+        scene.add(group);
+        meshesRef.current = [];
+        return;
+      }
 
-// ============================================================
-// Imperative Handle
-// ============================================================
-useImperativeHandle(ref, () => ({
-  zoomIn: () => {
-    if (!cameraRef.current) return;
-    dollyCamera(cameraRef.current, controlsRef.current, 0.9);
-  },
-  zoomOut: () => {
-    if (!cameraRef.current) return;
-    dollyCamera(cameraRef.current, controlsRef.current, 1.1);
-  },
-  resetView: () => {
-    const cam = cameraRef.current;
-    const ctr = controlsRef.current;
-    if (!cam || !ctr) return;
-    cam.position.set(0, 0, initialZRef.current);
-    ctr.target.copy(initialTargetRef.current);
-    ctr.update();
-  },
+      const meshes: THREE.Mesh[] = [];
 
-  toggleLock: () => setRotationLocked((v) => !v),
+      rings.forEach((r) => {
+        const ID = r.innerDiameter ?? safeParams.innerDiameter;
+        const WD = r.wireDiameter ?? safeParams.wireDiameter;
+        const ringRadius = ID / 2 + WD / 2;
+        const tubeRadius = WD / 2;
 
-  setPaintMode: (on: boolean) => {
-    setLocalPaintMode(on);
-    const ren = rendererRef.current;
-    if (ren && lockRef.current) {
-      ren.domElement.style.cursor = on ? "crosshair" : "default";
-    }
-  },
+        const geom = new THREE.TorusGeometry(ringRadius, tubeRadius, 32, 64);
 
-  setPanEnabled: (enabled: boolean) => {
-    if (controlsRef.current) controlsRef.current.enablePan = enabled;
-  },
+        // Slight variation in specular highlight by ring size
+        const metalness = 0.85;
+        const roughness = 0.25;
+        const mat = new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          metalness,
+          roughness,
+        });
 
-  setEraseMode: (enabled: boolean) => setLocalEraseMode(enabled),
-  toggleErase: () => setLocalEraseMode((v) => !v),
+        const mesh = new THREE.Mesh(geom, mat);
 
-  clearPaint: () => setPaint(new Map()),
+        const tiltRad =
+          typeof r.tiltRad === "number"
+            ? r.tiltRad
+            : THREE.MathUtils.degToRad(r.tilt ?? 0);
 
-  lock2DView: () => {
-    const cam = cameraRef.current;
-    if (cam) cam.position.set(0, 0, initialZRef.current);
-    setRotationLocked(true);
-  },
+        // Face camera like flat “circle”, with tilt around vertical axis
+        mesh.position.set(r.x, -r.y, r.z ?? 0);
+        mesh.rotation.set(0, tiltRad, Math.PI / 2);
 
-  forceLockRotation: (locked: boolean) => {
-    setRotationLocked(locked);
-    lockRef.current = locked;
+        mesh.userData.row = r.row;
+        mesh.userData.col = r.col;
 
-    const ctr = controlsRef.current;
-    const ren = rendererRef.current;
-    if (!ctr || !ren) return;
+        group.add(mesh);
+        meshes.push(mesh);
 
-    if (!locked) {
-      ren.domElement.style.cursor = "grab";
-      ctr.enableRotate = true;
-      ctr.enablePan = true;
-      ctr.enableZoom = true;
-      ctr.mouseButtons = {
-        LEFT: THREE.MOUSE.ROTATE,
-        MIDDLE: THREE.MOUSE.DOLLY,
-        RIGHT: THREE.MOUSE.PAN,
-      };
-    } else {
-      const painting = paintModeRef.current;
-      ren.domElement.style.cursor = painting ? "crosshair" : "grab";
-      ctr.enableRotate = false;
-      ctr.enablePan = false;
-      ctr.enableZoom = true;
-      ctr.mouseButtons = {
-        LEFT: THREE.MOUSE.PAN,
-        MIDDLE: THREE.MOUSE.DOLLY,
-        RIGHT: THREE.MOUSE.ROTATE,
-      };
-    }
-    ctr.update();
-  },
-
-  getState: () => ({
-    paintMode: paintModeRef.current,
-    eraseMode: eraseModeRef.current,
-    rotationLocked: lockRef.current,
-  }),
-
-  // ============================================================
-  // APPLY OVERLAY (Image → Ring Colors)
-  // ============================================================
-  applyOverlayToRings: async (ov: OverlayState) => {
-    try {
-      const inst = meshesRef.current[0];
-      const group = groupRef.current;
-      if (!ov?.dataUrl || !inst || !group) return;
-
-      // Load image
-      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-        const el = new Image();
-        el.onload = () => resolve(el);
-        el.onerror = reject;
-        el.src = ov.dataUrl!;
+        // Optional: chart labels as SpriteText in 3D
+        if ((r as any)._chartLabel) {
+          const label = (r as any)._chartLabel as SpriteText;
+          const WDloc = r.wireDiameter ?? WD;
+          label.textHeight = Math.max(2, WDloc * 2);
+          label.position.set(r.x, -r.y - WDloc * 4, r.z ?? 0);
+          label.center.set(0.5, 1.2);
+          (label.material as any).depthTest = false;
+          (label.material as any).depthWrite = false;
+          group.add(label);
+        }
       });
 
-      // Canvas sampling surface
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-      canvas.width = img.width;
-      canvas.height = img.height;
-      ctx.drawImage(img, 0, 0);
-      const { data, width: W, height: H } = ctx.getImageData(
-        0,
-        0,
-        img.width,
-        img.height
-      );
+      scene.add(group);
+      meshesRef.current = meshes;
 
-      // Compute ring centers in world space
-      const mInst = new THREE.Matrix4();
-      const mCombined = new THREE.Matrix4();
-      const mWorld = group.matrixWorld;
-      const p = new THREE.Vector3();
-      const worldXs = new Float32Array(inst.count);
-      const worldYs = new Float32Array(inst.count);
+      // Apply current paint to new meshes
+      applyPaintToMeshes();
+    }, [rings, safeParams]);
 
-      let minX = Infinity,
-        maxX = -Infinity,
-        minY = Infinity,
-        maxY = -Infinity;
+    // ============================================================
+    // Imperative Handle
+    // ============================================================
+    useImperativeHandle(ref, () => ({
+      zoomIn: () => {
+        if (!cameraRef.current) return;
+        dollyCamera(cameraRef.current, controlsRef.current, 0.9);
+      },
+      zoomOut: () => {
+        if (!cameraRef.current) return;
+        dollyCamera(cameraRef.current, controlsRef.current, 1.1);
+      },
+      resetView: () => {
+        const cam = cameraRef.current;
+        const ctr = controlsRef.current;
+        if (!cam || !ctr) return;
+        cam.position.set(0, 0, initialZRef.current);
+        ctr.target.copy(initialTargetRef.current);
+        ctr.update();
+        console.log("↺ Camera reset — paint and overlay preserved.");
+      },
 
-      for (let i = 0; i < inst.count; i++) {
-        inst.getMatrixAt(i, mInst);
-        mCombined.copy(mWorld).multiply(mInst);
-        p.set(0, 0, 0).applyMatrix4(mCombined);
-        worldXs[i] = p.x;
-        worldYs[i] = p.y;
-        if (p.x < minX) minX = p.x;
-        if (p.x > maxX) maxX = p.x;
-        if (p.y < minY) minY = p.y;
-        if (p.y > maxY) maxY = p.y;
-      }
+      toggleLock: () => setRotationLocked((v) => !v),
 
-      const cx = (minX + maxX) / 2;
-      const cy = (minY + maxY) / 2;
-      const widthWorld = Math.max(1e-6, maxX - minX);
-      const heightWorld = Math.max(1e-6, maxY - minY);
-      const span = Math.max(widthWorld, heightWorld); // isotropic
-
-      const scale = ov.scale ?? 1;
-      const rotRad = THREE.MathUtils.degToRad(ov.rotation ?? 0);
-      const repeatMode = (ov as any).repeat ?? "none";
-      const patternScale = ((ov as any).patternScale ?? 100) / 100;
-      const offU = (ov.offsetX ?? 0) / 100;
-      const offV = (ov.offsetY ?? 0) / 100;
-
-      const rotate2D = (x: number, y: number, r: number) => {
-        const c = Math.cos(r),
-          s = Math.sin(r);
-        return { x: x * c - y * s, y: x * s + y * c };
-      };
-
-      const cols = paramsRef.current.cols || 1;
-      const col = new THREE.Color();
-      const nextPaint = new Map<string, string | null>();
-
-      for (let i = 0; i < inst.count; i++) {
-        let nx = (worldXs[i] - cx) / span;
-        let ny = (worldYs[i] - cy) / span;
-        const r = rotate2D(nx, ny, rotRad);
-        nx = r.x / scale + offU;
-        ny = r.y / scale + offV;
-
-        let u = nx + 0.5;
-        let v = 0.5 - ny;
-
-        if (repeatMode === "tile") {
-          u = ((u / patternScale) % 1 + 1) % 1;
-          v = ((v / patternScale) % 1 + 1) % 1;
-        } else {
-          u = Math.min(1, Math.max(0, u));
-          v = Math.min(1, Math.max(0, v));
+      setPaintMode: (on: boolean) => {
+        setLocalPaintMode(on);
+        const ren = rendererRef.current;
+        if (ren && lockRef.current) {
+          ren.domElement.style.cursor = on ? "crosshair" : "default";
         }
+      },
 
-        const px = Math.min(W - 1, Math.max(0, Math.round(u * (W - 1))));
-        const py = Math.min(H - 1, Math.max(0, Math.round(v * (H - 1))));
-        const idx = (py * W + px) * 4;
-        const r8 = data[idx + 0],
-          g8 = data[idx + 1],
-          b8 = data[idx + 2];
+      setPanEnabled: (enabled: boolean) => {
+        if (controlsRef.current) controlsRef.current.enablePan = enabled;
+      },
 
-        col.setRGB(r8 / 255, g8 / 255, b8 / 255);
-        inst.setColorAt(i, col);
+      setEraseMode: (enabled: boolean) => setLocalEraseMode(enabled),
+      toggleErase: () => setLocalEraseMode((v) => !v),
 
-        // Reverse-map to row/col
-        const row = Math.floor(i / cols);
-        const cix = i % cols;
-        const hex = `#${r8
-          .toString(16)
-          .padStart(2, "0")}${g8
-          .toString(16)
-          .padStart(2, "0")}${b8.toString(16).padStart(2, "0")}`;
-        nextPaint.set(`${row},${cix}`, hex);
-      }
+      clearPaint: () => setPaint(new Map()),
 
-      if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
-      setPaint(nextPaint);
-    } catch (err) {
-      console.error("❌ applyOverlayToRings failed:", err);
-    }
-  },
-}));
+      lock2DView: () => {
+        const cam = cameraRef.current;
+        if (cam) cam.position.set(0, 0, initialZRef.current);
+        setRotationLocked(true);
+      },
 
-// ============================================================
-// Render Component
-// ============================================================
-return (
-  <div
-    ref={mountRef}
-    style={{
-      width: "100vw",
-      height: "100vh",
-      overflow: "hidden",
-      backgroundColor: safeParams.bgColor,
-    }}
-  />
-);
-}
+      forceLockRotation: (locked: boolean) => {
+        setRotationLocked(locked);
+        lockRef.current = locked;
+
+        const ctr = controlsRef.current;
+        const ren = rendererRef.current;
+        if (!ctr || !ren) return;
+
+        if (!locked) {
+          // 🔓 UNLOCKED → free rotate + pan (no paint)
+          ren.domElement.style.cursor = "grab";
+          ctr.enableRotate = true;
+          ctr.enablePan = true;
+          ctr.enableZoom = true;
+          ctr.mouseButtons = {
+            LEFT: THREE.MOUSE.ROTATE,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.PAN,
+          };
+        } else {
+          // 🔒 LOCKED → flat 2D, paint disables panning
+          const painting = paintModeRef.current;
+          ren.domElement.style.cursor = painting ? "crosshair" : "grab";
+          ctr.enableRotate = false;
+          ctr.enablePan = false;
+          ctr.enableZoom = true;
+          ctr.mouseButtons = {
+            LEFT: THREE.MOUSE.PAN,
+            MIDDLE: THREE.MOUSE.DOLLY,
+            RIGHT: THREE.MOUSE.ROTATE,
+          };
+        }
+        ctr.update();
+      },
+
+      getState: () => ({
+        paintMode: paintModeRef.current,
+        eraseMode: eraseModeRef.current,
+        rotationLocked: lockRef.current,
+      }),
+
+      // ============================================================
+      // APPLY OVERLAY — sample image → ring colors
+      // ============================================================
+      applyOverlayToRings: async (ov: OverlayState) => {
+        try {
+          const meshes = meshesRef.current;
+          const group = groupRef.current;
+          if (!ov?.dataUrl || !meshes || meshes.length === 0 || !group) return;
+
+          const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const el = new Image();
+            el.onload = () => resolve(el);
+            el.onerror = reject;
+            el.src = ov.dataUrl!;
+          });
+
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+          canvas.width = img.width;
+          canvas.height = img.height;
+          ctx.drawImage(img, 0, 0);
+          const { data, width: W, height: H } = ctx.getImageData(
+            0,
+            0,
+            img.width,
+            img.height
+          );
+
+          // --- Compute world-space bounding box of meshes ---
+          const p = new THREE.Vector3();
+          const worldXs = new Float32Array(meshes.length);
+          const worldYs = new Float32Array(meshes.length);
+
+          let minX = Infinity,
+            maxX = -Infinity,
+            minY = Infinity,
+            maxY = -Infinity;
+
+          meshes.forEach((mesh, i) => {
+            mesh.getWorldPosition(p);
+            worldXs[i] = p.x;
+            worldYs[i] = p.y;
+            if (p.x < minX) minX = p.x;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.y > maxY) maxY = p.y;
+          });
+
+          const cx = (minX + maxX) / 2;
+          const cy = (minY + maxY) / 2;
+          const widthWorld = Math.max(1e-6, maxX - minX);
+          const heightWorld = Math.max(1e-6, maxY - minY);
+          const span = Math.max(widthWorld, heightWorld);
+
+          const scale = ov.scale ?? 1;
+          const rotRad = THREE.MathUtils.degToRad(ov.rotation ?? 0);
+          const repeatMode = (ov as any).repeat ?? "none";
+          const patternScale = ((ov as any).patternScale ?? 100) / 100;
+          const offU = (ov.offsetX ?? 0) / 100;
+          const offV = (ov.offsetY ?? 0) / 100;
+
+          const rotate2D = (x: number, y: number, r: number) => {
+            const c = Math.cos(r),
+              s = Math.sin(r);
+            return { x: x * c - y * s, y: x * s + y * c };
+          };
+
+          const col = new THREE.Color();
+          const nextPaint = new Map<string, string | null>();
+
+          meshes.forEach((mesh, i) => {
+            let nx = (worldXs[i] - cx) / span;
+            let ny = (worldYs[i] - cy) / span;
+            const r2 = rotate2D(nx, ny, rotRad);
+            nx = r2.x / scale + offU;
+            ny = r2.y / scale + offV;
+
+            let u = nx + 0.5;
+            let v = 0.5 - ny;
+
+            if (repeatMode === "tile") {
+              u = ((u / patternScale) % 1 + 1) % 1;
+              v = ((v / patternScale) % 1 + 1) % 1;
+            } else {
+              u = Math.min(1, Math.max(0, u));
+              v = Math.min(1, Math.max(0, v));
+            }
+
+            const px = Math.min(W - 1, Math.max(0, Math.round(u * (W - 1))));
+            const py = Math.min(H - 1, Math.max(0, Math.round(v * (H - 1))));
+            const idx = (py * W + px) * 4;
+            const r8 = data[idx + 0],
+              g8 = data[idx + 1],
+              b8 = data[idx + 2];
+            col.setRGB(r8 / 255, g8 / 255, b8 / 255);
+
+            const mat = mesh.material as THREE.MeshStandardMaterial;
+            if (mat) mat.color.copy(col);
+
+            const hex = `#${r8
+              .toString(16)
+              .padStart(2, "0")}${g8.toString(16).padStart(2, "0")}${b8
+              .toString(16)
+              .padStart(2, "0")}`;
+            const row = mesh.userData.row as number;
+            const cc = mesh.userData.col as number;
+            if (row != null && cc != null) {
+              nextPaint.set(`${row},${cc}`, hex);
+            }
+          });
+
+          setPaint(nextPaint);
+          console.log("✅ Overlay applied — mesh-based, aspect preserved");
+        } catch (err) {
+          console.error("❌ applyOverlayToRings failed:", err);
+        }
+      },
+    }));
+
+    // ============================================================
+    // Render Component
+    // ============================================================
+    return (
+      <div
+        ref={mountRef}
+        style={{
+          width: "100vw",
+          height: "100vh",
+          overflow: "hidden",
+          backgroundColor: safeParams.bgColor,
+        }}
+      />
+    );
+  }
 );
 
 export default RingRenderer;
 
+//
 // ============================================================
-// SHARED RING GENERATORS — Designer / Chart / Tuner
+// SHARED RING GENERATORS — Designer, Chart, Tuner
 // ============================================================
+//
 
 export function _generateRingsBase({
   rows,
@@ -868,16 +811,17 @@ export function _generateRingsBase({
   layout?: any[];
 }) {
   const spacing = centerSpacing ?? 7.5;
+
   const rings: any[] = [];
 
   for (let r = 0; r < rows; r++) {
     const rowOffset = r % 2 === 1 ? spacing / 2 : 0;
-    const tilt = layout[r]?.tilt ?? 0;
+    const tilt = layout[r]?.tilt ?? 0; // 🔥 JSON tilt
     const tiltRad = THREE.MathUtils.degToRad(tilt);
 
     for (let c = 0; c < cols; c++) {
       const x = c * spacing + rowOffset;
-      const y = r * spacing * 0.8660;
+      const y = r * spacing * 0.866;
 
       rings.push({
         row: r,
@@ -898,7 +842,7 @@ export function _generateRingsBase({
   return rings;
 }
 
-// DESIGNER — row parity tilt (alternating)
+// DESIGNER
 export function generateRingsDesigner({
   rows,
   cols,
@@ -908,12 +852,22 @@ export function generateRingsDesigner({
   angleIn = 25,
   angleOut = -25,
   layout = [],
+}: {
+  rows: number;
+  cols: number;
+  innerDiameter: number;
+  wireDiameter: number;
+  centerSpacing?: number;
+  angleIn?: number;
+  angleOut?: number;
+  layout?: any[];
 }) {
   const ID_mm = innerDiameter;
   const WD_mm = wireDiameter;
   const OD_mm = ID_mm + 2 * WD_mm;
 
-  const finalLayout = [];
+  // Auto-build row tilt if layout does not provide it
+  const finalLayout: any[] = [];
   for (let r = 0; r < rows; r++) {
     finalLayout[r] = {
       ...(layout[r] || {}),
@@ -932,11 +886,11 @@ export function generateRingsDesigner({
   });
 }
 
-// CHART MODE
+// CHART
 export function generateRingsChart(opts: any) {
   const rings = generateRingsDesigner(opts);
 
-  rings.forEach((r) => {
+  rings.forEach((r: any) => {
     const label = new SpriteText(`${r.wireDiameter}mm / ${r.innerDiameter}mm`);
     label.color = "#CCCCCC";
     label.textHeight = 2.2;
@@ -950,11 +904,11 @@ export function generateRingsChart(opts: any) {
   return rings;
 }
 
-// TUNER MODE
+// TUNER
 export function generateRingsTuner(opts: any) {
   const rings = generateRingsDesigner(opts);
 
-  rings.forEach((r) => {
+  rings.forEach((r: any) => {
     const label = new SpriteText(`R${r.row} C${r.col}`);
     label.color = "#00FFFF";
     label.textHeight = 2;
@@ -965,5 +919,5 @@ export function generateRingsTuner(opts: any) {
   return rings;
 }
 
-// DEFAULT EXPORT
+// DEFAULT EXPORT FOR DESIGNER
 export const generateRings = generateRingsDesigner;
