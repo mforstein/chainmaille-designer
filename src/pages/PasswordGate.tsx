@@ -6,26 +6,54 @@ export default function PasswordGate() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
-console.log("🔍 Redirect state:", location.state);
-  // 👇 Capture redirect (for blog or other pages)
+
+  console.log("🔍 Redirect state:", location.state);
+
+  // default redirect (only used for ERIN50 blog and 2D access)
   const redirect = location.state?.redirect || "/erin2d";
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const code = input.trim().toUpperCase();
 
+    // ================================
+    // 💡 PASSWORD ROUTING LOGIC (fixed)
+    // ================================
+
     if (code === "ERIN50") {
       localStorage.setItem("erin2DAuth", "true");
-      navigate(redirect); // ✅ Redirect wherever it came from
-    } else if (code === "3DMODE") {
+      navigate(redirect);     // blog OR erin2d
+    } 
+    else if (code === "3DMODE") {
       localStorage.setItem("designerAuth", "true");
-      navigate("/designer");
-    } else {
+      navigate("/designer");  // 3D Builder
+    } 
+    else if (code === "FFMODE") {
+      localStorage.setItem("freeformAuth", "true");
+      navigate("/freeform");  // FREEFORM MODE! (fixed)
+    } 
+    else {
       setError("Incorrect password. Please try again.");
     }
   };
 
+  // ================================
+  // HEADER TEXT FIX (adds FREEFORM)
+  // ================================
   const isBlogAccess = redirect === "/wovenrainbowsbyerin/blog";
+  const isFreeform = redirect === "/freeform";
+
+  const title = isBlogAccess
+    ? "Woven Rainbows Blog Access"
+    : isFreeform
+    ? "Freeform Chainmail Mode Access"
+    : "Woven Rainbows Designer Access";
+
+  const subtitle = isBlogAccess
+    ? "Please enter your password to view Erin’s Studio Blog."
+    : isFreeform
+    ? "Please enter your password to access the Freeform Chainmail Designer."
+    : "Please enter your password to access the Chainmail Designer.";
 
   return (
     <div
@@ -39,16 +67,12 @@ console.log("🔍 Redirect state:", location.state);
         flexDirection: "column",
       }}
     >
-      <h1 style={{ marginBottom: 8 }}>
-        {isBlogAccess
-          ? "Woven Rainbows Blog Access"
-          : "Woven Rainbows Designer Access"}
-      </h1>
+      <h1 style={{ marginBottom: 8 }}>{title}</h1>
+
       <p style={{ color: "#9CA3AF", marginBottom: 24 }}>
-        {isBlogAccess
-          ? "Please enter your password to view Erin’s Studio Blog."
-          : "Please enter your password to access the Chainmail Designer."}
+        {subtitle}
       </p>
+
       <form
         onSubmit={handleSubmit}
         style={{
@@ -73,6 +97,7 @@ console.log("🔍 Redirect state:", location.state);
             color: "white",
           }}
         />
+
         <button
           type="submit"
           style={{
@@ -87,7 +112,10 @@ console.log("🔍 Redirect state:", location.state);
         >
           Enter
         </button>
-        {error && <p style={{ color: "#F87171", marginTop: 8 }}>{error}</p>}
+
+        {error && (
+          <p style={{ color: "#F87171", marginTop: 8 }}>{error}</p>
+        )}
       </form>
     </div>
   );

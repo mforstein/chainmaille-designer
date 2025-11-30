@@ -1,5 +1,5 @@
 // ======================================================
-// src/main.tsx — Root Renderer (Router-Wrapped Final Version)
+// src/main.tsx — Root Renderer (Final Clean Version)
 // ======================================================
 
 import React from "react";
@@ -7,26 +7,28 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 // ------------------------------------------------------
-// 🪶 Core Pages & Components
+// Core Pages & Components
 // ------------------------------------------------------
-import HomeWovenRainbows from "./pages/HomeWovenRainbows";  // 🌈 Erin’s main homepage
-import PasswordGate from "./pages/PasswordGate";            // 🔐 Password access screen
-import BlogEditor from "./pages/BlogEditor";                // 🪶 Blog viewer & editor
-import ChainmailDesigner from "./App";                      // 🧩 Main 3D Designer
-import ErinPattern2D from "./pages/ErinPattern2D";          // 🧶 Erin’s 2D Designer
-import RingSizeChart from "./pages/RingSizeChart";          // 📊 Size Chart
-import ChainmailWeaveTuner from "./pages/ChainmailWeaveTuner"; // ⚙️ Weave Tuner
-import ChainmailWeaveAtlas from "./pages/ChainmailWeaveAtlas"; // 🌐 Weave Atlas
+import HomeWovenRainbows from "./pages/HomeWovenRainbows";
+import PasswordGate from "./pages/PasswordGate";
+import BlogEditor from "./pages/BlogEditor";
+import ChainmailDesigner from "./App";
+import ErinPattern2D from "./pages/ErinPattern2D";
+import RingSizeChart from "./pages/RingSizeChart";
+import ChainmailWeaveTuner from "./pages/ChainmailWeaveTuner";
+import ChainmailWeaveAtlas from "./pages/ChainmailWeaveAtlas";
+import FreeformChainmail2D from "./pages/FreeformChainmail2D";
 
 // ------------------------------------------------------
-// 🧰 Global Styles
+// Global Styles
 // ------------------------------------------------------
 import "./index.css";
 
 // ------------------------------------------------------
-// 🧑‍💻 Developer-Only Tools (Loaded only in dev mode)
+// Developer Tools (Loaded ONLY in Dev Mode)
 // ------------------------------------------------------
 let DevRoutes = null;
+
 if (import.meta.env.DEV) {
   const ImageMatcher = React.lazy(() => import("./pages/ImageMatcher"));
   const DesignerGalleryEditor = React.lazy(() => import("./pages/DesignerGalleryEditor"));
@@ -41,6 +43,7 @@ if (import.meta.env.DEV) {
           </React.Suspense>
         }
       />
+
       <Route
         path="/designer-editor"
         element={
@@ -53,47 +56,43 @@ if (import.meta.env.DEV) {
   );
 }
 
-// ------------------------------------------------------
-// 🧭 Root Router + Route Definitions
-// ------------------------------------------------------
+// ======================================================
+// Root Renderer with Router
+// ======================================================
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
       <Routes>
-        {/* 🏠 Default redirect to home */}
+        {/* Default redirect to main homepage */}
         <Route path="/" element={<Navigate to="/wovenrainbowsbyerin" replace />} />
 
-        {/* 🌈 Home Page */}
+        {/* Public pages */}
         <Route path="/wovenrainbowsbyerin" element={<HomeWovenRainbows />} />
-
-        {/* 🔐 Access Code Page (Password Gate) */}
         <Route path="/wovenrainbowsbyerin/login" element={<PasswordGate />} />
-
-        {/* 🪶 Erin’s Blog Page (Public After Login) */}
         <Route path="/wovenrainbowsbyerin/blog" element={<BlogEditor />} />
 
-        {/* 🧩 Main Chainmail Designer (3D) */}
+        {/* Core chainmail pages */}
         <Route path="/designer" element={<ChainmailDesigner />} />
-
-        {/* 🧶 Erin’s 2D Pattern Page */}
         <Route path="/erin2d" element={<ErinPattern2D />} />
-
-        {/* 📊 Ring Size Chart */}
         <Route path="/chart" element={<RingSizeChart />} />
-
-        {/* ⚙️ Weave Tuner */}
         <Route path="/tuner" element={<ChainmailWeaveTuner />} />
-
-        {/* 🌐 Weave Atlas */}
         <Route path="/atlas" element={<ChainmailWeaveAtlas />} />
-
-        {/* 🪶 Blog Editor (Direct Access — Internal Use) */}
         <Route path="/blog-editor" element={<BlogEditor />} />
 
-        {/* 🧰 Developer Tools (only visible in dev mode) */}
+        {/* Dev-only routes */}
         {DevRoutes}
 
-        {/* 🚫 Fallback — redirect unknown routes to home */}
+        {/* 🧰 Freeform Mode — ALWAYS protected (dev + prod) */}
+        <Route
+          path="/freeform"
+          element={
+            localStorage.getItem("freeformAuth") === "true"
+              ? <FreeformChainmail2D />
+              : <Navigate to="/wovenrainbowsbyerin/login" state={{ redirect: "/freeform" }} />
+          }
+        />
+
+        {/* Fallback */}
         <Route path="*" element={<Navigate to="/wovenrainbowsbyerin" replace />} />
       </Routes>
     </BrowserRouter>

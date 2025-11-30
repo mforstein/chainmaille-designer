@@ -11,7 +11,7 @@ import "./ui/ui-grid.css";
 
 // Unified imports from RingRenderer
 import RingRenderer, {
-  computeRingVarsFixedID,
+  computeRingVarsIndependent,   // ✔ correct existing function
   generateRingsChart,
   generateRingsDesigner,
   generateRingsTuner,
