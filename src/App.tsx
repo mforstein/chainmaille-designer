@@ -9,15 +9,16 @@ import { useNavigate } from "react-router-dom";
 import "./index.css";
 import "./ui/ui-grid.css";
 
-// Unified imports from RingRenderer
+// Renderer only
 import RingRenderer, {
-  computeRingVarsIndependent,   // ✔ correct existing function
-  generateRingsChart,
-  generateRingsDesigner,
-  generateRingsTuner,
-  generateRings,
   RingRendererHandle,
 } from "./components/RingRenderer";
+
+// Geometry generators
+import {
+  generateRings,
+  generateRingsDesigner,
+} from "./components/ringGenerators";
 
 import { MATERIALS, UNIVERSAL_COLORS } from "./utils/colors";
 import SupplierMenu from "./components/SupplierMenu";
@@ -386,31 +387,29 @@ const applyAtlas = (e: any) => {
   // --- render ---
   return (
     <div style={{ width: "100vw", height: "100vh", background: "#0E0F12" }}>
-      {/* Centered 3D Canvas */}
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          display: "grid",
-          placeItems: "center",
-          pointerEvents: "none", // keep UI pills interactive above
-        }}
-      >
-        <div style={{ pointerEvents: "auto" }}>
-<RingRenderer
-  ref={rendererRef}
-  rings={rings}
-  params={liveParams}
-  paint={paint}
-  setPaint={setPaint}
-  initialPaintMode={paintMode}
-  initialEraseMode={eraseMode}
-  initialRotationLocked={rotationLocked}
-  activeColor={effectiveColor}
-  overlay={overlayState}
-/>
-        </div>
-      </div>
+{/* Fullscreen 3D Canvas */}
+<div
+  style={{
+    position: "absolute",
+    inset: 0,
+    width: "100vw",
+    height: "100vh",
+    pointerEvents: "auto",
+  }}
+>
+  <RingRenderer
+    ref={rendererRef}
+    rings={rings}
+    params={liveParams}
+    paint={paint}
+    setPaint={setPaint}
+    initialPaintMode={paintMode}
+    initialEraseMode={eraseMode}
+    initialRotationLocked={rotationLocked}
+    activeColor={effectiveColor}
+    overlay={overlayState}
+  />
+</div>
 
       {/* === Left Toolbar (emoji pill) === */}
       <DraggablePill id="camera-pill" defaultPosition={{ x: 20, y: 20 }}>
@@ -930,22 +929,19 @@ onApplyPalette={(sel: any) => {
 <ImageOverlayPanel
   onApply={async (overlay) => {
     // 1️⃣ Update overlay preview plane (as before)
-    setOverlayState(overlay);
-rendererRef.current?.applyOverlayToRings?.(overlay);
+setOverlayState(overlay);
 
-    // 2️⃣ NEW: Actually apply the overlay colors to the rings
-    try {
-      await rendererRef.current?.applyOverlayToRings?.(overlay);
-      setDebugMessage("✅ Overlay image successfully applied to rings!");
-      setDebugVisible(true);
-    } catch (err) {
-      console.error("❌ applyOverlayToRings failed:", err);
-      setDebugMessage("⚠️ Failed to apply overlay to rings. Check console.");
-      setDebugVisible(true);
-    }
+try {
+  await rendererRef.current?.applyOverlayToRings?.(overlay);
+  setDebugMessage("✅ Overlay image successfully applied to rings!");
+  setDebugVisible(true);
+} catch (err) {
+  console.error("❌ applyOverlayToRings failed:", err);
+  setDebugMessage("⚠️ Failed to apply overlay to rings. Check console.");
+  setDebugVisible(true);
+}
 
-    // 3️⃣ Close panel
-    setShowOverlayPanel(false);
+setShowOverlayPanel(false);
   }}
 />
         </div>

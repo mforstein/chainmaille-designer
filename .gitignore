@@ -1,4 +1,6 @@
+# =========================
 # Logs
+# =========================
 logs
 *.log
 npm-debug.log*
@@ -7,28 +9,47 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# =========================
+# Dependency directories
+# =========================
 node_modules
+
+# =========================
+# Build output
+# =========================
 dist
 dist-ssr
 *.local
 
-# Editor directories and files
+# TypeScript incremental build cache
+tsconfig.tsbuildinfo
+
+# =========================
+# OS / Editor files
+# =========================
+.DS_Store
+*.dmg
+
 .vscode/*
 !.vscode/extensions.json
+
 .idea
-.DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
 
-# Local Netlify folder
+# =========================
+# Netlify
+# =========================
 .netlify
-# Local data backups
+
+# =========================
+# Local data / backups
+# =========================
 /public/wovenrainbows_listings_local_backup.json
 /public/wovenrainbows_listings_local.json
-
 
 
 

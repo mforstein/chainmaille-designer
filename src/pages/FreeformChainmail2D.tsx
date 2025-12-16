@@ -1,17 +1,12 @@
 // ======================================================
 // src/pages/FreeformChainmail2D.tsx
-// Freeform 2D chainmail painter over the shared 3D RingRenderer
+// Freeform 3D painter using Erin-style hex grid + hit logic.
+// Rings and hit-circles share ONE projection pipeline.
+// RingRenderer itself is unchanged.
 // ======================================================
 
-import React, {
-  useRef,
-  useState,
-  useEffect,
-  useMemo,
-  useCallback,
-} from "react";
+import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import * as THREE from "three";
 import RingRenderer from "../components/RingRenderer";
 
 import {
@@ -21,8 +16,10 @@ import {
   resolvePlacement,
 } from "../utils/e4in1Placement";
 
+import * as THREE from "three";
+
 // ======================================================
-// Safety placeholders for any legacy bindings (no-op)
+// SAFETY STUBS (history integration preserved, no-ops here)
 // ======================================================
 const commitRings = () => {};
 const handleUndo = () => {};
@@ -34,7 +31,7 @@ const applyHistory = () => {};
 const pushHistory = () => {};
 
 // ======================================================
-// Color Palette (same as Designer)
+// COLOR PALETTE
 // ======================================================
 const PALETTE: string[] = [
   "#000000",
@@ -64,7 +61,7 @@ const PALETTE: string[] = [
 ];
 
 // ======================================================
-// UI Helpers
+// UI HELPERS
 // ======================================================
 const ToolButton: React.FC<
   React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }
@@ -177,7 +174,7 @@ const SliderRow: React.FC<{
 );
 
 // ======================================================
-// RingSet (matches Tuner JSON)
+// RING SET (matches Tuner JSON)
 // ======================================================
 interface RingSet {
   id: string;
@@ -197,14 +194,12 @@ const AUTO_FOLLOW_KEY = "freeformAutoFollowTuner";
 const ACTIVE_SET_KEY = "freeformActiveRingSetId";
 
 // ======================================================
-// Shared 3D camera constants (MATCH RingRenderer)
+// CAMERA CONSTANTS (match RingRenderer projection)
 // ======================================================
-const CAMERA_Z = 240; // same as RingRenderer initialZRef
-const FOV_DEG = 45;
-const FOV_RAD = (FOV_DEG * Math.PI) / 180;
-
-// 1 world unit == 1 mm everywhere (Tuner/Designer/RingRenderer)
-const SCALE = 1;
+const FALLBACK_CAMERA_Z = 52;
+const FOV = 45;
+const MIN_ZOOM = 0.20; // allow wider zoom-out than before
+const MAX_ZOOM = 6.0;  // allow wider zoom-in than before
 
 // ======================================================
 // MAIN COMPONENT
@@ -213,18 +208,30 @@ const FreeformChainmail2D: React.FC = () => {
   const navigate = useNavigate();
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null); // interaction
+  const hitCanvasRef = useRef<HTMLCanvasElement | null>(null); // overlay circles
+  const ringRendererRef = useRef<any>(null);
 
-  // Ring placement data (hex grid of placed rings)
+  // ====================================================
+  // PLACED RINGS
+  // ====================================================
   const [rings, setRings] = useState<RingMap>(() => new Map());
   const [nextClusterId, setNextClusterId] = useState(1);
 
-  const [activeColor, setActiveColor] = useState(PALETTE[0]);
+  // ✅ DEFAULT COLOR OF RINGS SHOULD BE WHITE
+  const [activeColor, setActiveColor] = useState("#ffffff");
+
   const [eraseMode, setEraseMode] = useState(false);
   const [showControls, setShowControls] = useState(false);
 
-  // Geometry → synced with Tuner ring sets
-  const [innerIDmm, setInnerIDmm] = useState(7.94); // ~5/16"
+  // Diagnostics toggle + log
+  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(true);
+  const [diagLog, setDiagLog] = useState<string>("");
+
+  // ====================================================
+  // GEOMETRY (synced with Tuner)
+  // ====================================================
+  const [innerIDmm, setInnerIDmm] = useState(7.94);
   const [wireMm, setWireMm] = useState(1.2);
   const [centerSpacing, setCenterSpacing] = useState(7.0);
   const [angleIn, setAngleIn] = useState(25);
@@ -235,183 +242,712 @@ const FreeformChainmail2D: React.FC = () => {
     [innerIDmm, wireMm]
   );
 
-  // Tuner ring sets
+  // ====================================================
+  // RING SETS (from Tuner JSON)
+  // ====================================================
   const [ringSets, setRingSets] = useState<RingSet[]>([]);
   const [activeRingSetId, setActiveRingSetId] = useState<string | null>(null);
   const [autoFollowTuner, setAutoFollowTuner] = useState<boolean>(true);
 
-  // Weave grid settings (used by resolvePlacement)
+  // ====================================================
+  // WEAVE GRID SETTINGS (for resolvePlacement)
+  // ====================================================
   const settings = useMemo(
     () => ({
       ...WEAVE_SETTINGS_DEFAULT,
       spacingX: centerSpacing,
-      spacingY: centerSpacing * 0.866, // hex vertical spacing
+      spacingY: centerSpacing * 0.866,
       wireD: wireMm,
     }),
     [centerSpacing, wireMm]
   );
 
-  // ======================================================
-  // 3D data for RingRenderer (project placed rings into 3D)
-  // ======================================================
+  // ====================================================
+  // PAN / ZOOM (virtual camera → applied to both rings & circles)
+  // ====================================================
+  const [zoom, setZoom] = useState(1.0);
+  const [panWorldX, setPanWorldX] = useState(0);
+  const [panWorldY, setPanWorldY] = useState(0);
+
+  const [panMode, setPanMode] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
+
+  const panStart = useRef<{
+    screenX: number;
+    screenY: number;
+    panX: number;
+    panY: number;
+    lx: number;
+    ly: number;
+  } | null>(null);
+
+  const pinchStateRef = useRef<{
+    active: boolean;
+    lastDist: number;
+    lx?: number;
+    ly?: number;
+  }>({
+    active: false,
+    lastDist: 0,
+  });
+
+  // ====================================================
+  // CIRCLE OFFSETS / SCALE (hit circles only)
+  // ====================================================
+  const [circleOffsetX, setCircleOffsetX] = useState(0); // mm
+  const [circleOffsetY, setCircleOffsetY] = useState(0); // mm
+  const [circleScale, setCircleScale] = useState(1.0);
+  const [hideCircles, setHideCircles] = useState(false);
+
+  // ====================================================
+  // HEX GRID HELPERS (row/col ↔ logical mm)
+  // ====================================================
+  const spacingY = useMemo(() => centerSpacing * 0.866, [centerSpacing]);
+
+  const rcToLogical = useCallback(
+    (row: number, col: number) => {
+      const rowOffset = row & 1 ? centerSpacing / 2 : 0;
+      const x = col * centerSpacing + rowOffset;
+      const y = row * spacingY;
+      return { x, y };
+    },
+    [centerSpacing, spacingY]
+  );
+
+  // ✅ Debug markers stored in LOGICAL coords
+  const [debugClicks, setDebugClicks] = useState<
+    { id: number; lx: number; ly: number }[]
+  >([]);
+
+  const addDebugMarker = useCallback((lx: number, ly: number) => {
+    setDebugClicks((prev) => [...prev, { id: prev.length + 1, lx, ly }]);
+  }, []);
+
+  // ====================================================
+  // DYNAMIC GRID EXTENTS (unbounded freeform)
+  // IMPORTANT: must be INSIDE component (needs rings)
+  // ====================================================
+  const { maxRowSpan, maxColSpan, minRow, minCol, maxRow, maxCol } = useMemo(() => {
+    if (!rings.size) {
+      return {
+        maxRowSpan: 128,
+        maxColSpan: 128,
+        minRow: 0,
+        minCol: 0,
+        maxRow: 0,
+        maxCol: 0,
+      };
+    }
+
+    let _minRow = Infinity;
+    let _maxRow = -Infinity;
+    let _minCol = Infinity;
+    let _maxCol = -Infinity;
+
+    rings.forEach((r) => {
+      _minRow = Math.min(_minRow, r.row);
+      _maxRow = Math.max(_maxRow, r.row);
+      _minCol = Math.min(_minCol, r.col);
+      _maxCol = Math.max(_maxCol, r.col);
+    });
+
+    // Larger padding so camera never clips edge rings
+    const PAD = 24;
+
+    return {
+      maxRowSpan: Math.max(128, _maxRow - _minRow + 1 + PAD),
+      maxColSpan: Math.max(128, _maxCol - _minCol + 1 + PAD),
+      minRow: _minRow,
+      minCol: _minCol,
+      maxRow: _maxRow,
+      maxCol: _maxCol,
+    };
+  }, [rings]);
+
+  // ====================================================
+  // FLOATING ORIGIN (prevents huge world coords => seam/clipping/precision loss)
+  // We compute a logical center from ring bounds and render relative to it.
+  // ====================================================
+  const logicalOrigin = useMemo(() => {
+    if (!rings.size) return { ox: 0, oy: 0 };
+
+    // Use bounds center in logical space
+    const { x: minX, y: minY } = rcToLogical(minRow, minCol);
+    const { x: maxX, y: maxY } = rcToLogical(maxRow, maxCol);
+
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+
+    return { ox: cx, oy: cy };
+  }, [rings.size, minRow, minCol, maxRow, maxCol, rcToLogical]);
+
+// ====================================================
+// TRUE HEX-GRID SNAP (point → row/col)
+// Inverse of rcToLogical() — ODD-ROW OFFSET GRID
+// ====================================================
+const logicalToRowColApprox = useCallback(
+  (lx: number, ly: number) => {
+    // Row comes directly from Y
+    const row = Math.round(ly / spacingY);
+
+    // Undo odd-row horizontal offset
+    const rowOffset = row & 1 ? centerSpacing / 2 : 0;
+
+    // Column from X
+    const col = Math.round((lx - rowOffset) / centerSpacing);
+
+    return { row, col };
+  },
+  [centerSpacing, spacingY]
+);
+  // ====================================================
+  // ✅ Use RingRenderer camera for projection/unprojection
+  // ====================================================
+  const getRendererCamera = useCallback((): THREE.PerspectiveCamera | null => {
+    const cam = ringRendererRef.current?.getCamera?.();
+    return cam && cam.isPerspectiveCamera ? (cam as THREE.PerspectiveCamera) : null;
+  }, []);
+
+  // ====================================================
+  // ✅ Viewport rect
+  // IMPORTANT: use the WRAP rect as authority to avoid half-width/seam issues
+  // when RingRenderer internally changes its canvas/scissor.
+  // ====================================================
+  const getViewRect = useCallback(() => {
+    const wrap = wrapRef.current;
+    if (wrap) return wrap.getBoundingClientRect();
+
+    const canvas = canvasRef.current;
+    if (canvas) return canvas.getBoundingClientRect();
+
+    return new DOMRect(0, 0, 1, 1);
+  }, []);
+
+  const getCameraZ = useCallback(() => {
+    const z = ringRendererRef.current?.getCameraZ?.();
+    return typeof z === "number" && z > 0 ? z : FALLBACK_CAMERA_Z;
+  }, []);
+
+  // ====================================================
+  // World convention:
+  // RingRenderer renders mesh at (x, -y)
+  // We ALSO apply floating-origin recentering (subtract logicalOrigin).
+  // ====================================================
+  const logicalToWorld = useCallback(
+    (lx: number, ly: number) => {
+      const ox = logicalOrigin.ox;
+      const oy = logicalOrigin.oy;
+      return { wx: lx - ox, wy: -(ly - oy) };
+    },
+    [logicalOrigin]
+  );
+
+  const worldToLogical = useCallback(
+    (wx: number, wy: number) => {
+      const ox = logicalOrigin.ox;
+      const oy = logicalOrigin.oy;
+      return { lx: wx + ox, ly: -wy + oy };
+    },
+    [logicalOrigin]
+  );
+
+  const worldToScreen = useCallback(
+    (wx: number, wy: number) => {
+      const cam = getRendererCamera();
+      if (!cam) return { sx: 0, sy: 0 };
+
+      const rect = getViewRect();
+      const W = rect.width || 1;
+      const H = rect.height || 1;
+
+      const v = new THREE.Vector3(wx, wy, 0);
+      v.project(cam);
+
+      return {
+        sx: (v.x + 1) * 0.5 * W,
+        sy: (-v.y + 1) * 0.5 * H,
+      };
+    },
+    [getRendererCamera, getViewRect]
+  );
+
+  const screenToWorld = useCallback(
+    (sx: number, sy: number) => {
+      const cam = getRendererCamera();
+      if (!cam) return { wx: 0, wy: 0, lx: 0, ly: 0 };
+
+      const rect = getViewRect();
+      const W = rect.width || 1;
+      const H = rect.height || 1;
+
+      const xNdc = (sx / W) * 2 - 1;
+      const yNdc = -((sy / H) * 2 - 1);
+
+      const origin = new THREE.Vector3();
+      const dir = new THREE.Vector3(xNdc, yNdc, 0.5)
+        .unproject(cam)
+        .sub(cam.position)
+        .normalize();
+      origin.copy(cam.position);
+
+      const t = (0 - origin.z) / (dir.z || 1e-9);
+      const hit = origin.clone().add(dir.multiplyScalar(t));
+
+      const wx = hit.x;
+      const wy = hit.y;
+      const { lx, ly } = worldToLogical(wx, wy);
+
+      return { wx, wy, lx, ly };
+    },
+    [getRendererCamera, getViewRect, worldToLogical]
+  );
+
+  const projectRingRadiusPx = useCallback(
+    (lx: number, ly: number, outerRmmBase: number) => {
+      const { wx: cx, wy: cy } = logicalToWorld(lx, ly);
+      const { wx: rx, wy: ry } = logicalToWorld(lx + outerRmmBase, ly);
+
+      const { sx: sx1 } = worldToScreen(cx, cy);
+      const { sx: sx2 } = worldToScreen(rx, ry);
+
+      return Math.abs(sx2 - sx1);
+    },
+    [logicalToWorld, worldToScreen]
+  );
+
+  const getCanvasPoint = useCallback(
+    (evt: { clientX: number; clientY: number }) => {
+      const rect = getViewRect();
+      return { sx: evt.clientX - rect.left, sy: evt.clientY - rect.top };
+    },
+    [getViewRect]
+  );
+
+  // ====================================================
+  // RING DATA FOR RingRenderer (authoritative tilt, default white)
+  // Note: we also apply floating-origin to x/y so renderer stays near 0.
+  // ====================================================
   const { rings3D, paintMap } = useMemo(() => {
     const arr: any[] = [];
     const paint = new Map<string, string>();
-
-    const ID_mm = innerIDmm;
-    const WD_mm = wireMm;
-    const radius = (ID_mm + WD_mm) / 2;
+    const outerRadiusMm = (innerIDmm + 2 * wireMm) / 2;
 
     rings.forEach((r: PlacedRing) => {
-      // ✅ True European 4-in-1 hex grid staggering:
-      //   - Odd rows shifted by centerSpacing / 2 horizontally
-      //   - Vertical spacing = centerSpacing * 0.866 (sqrt(3)/2)
-      const rowOffset = r.row % 2 === 1 ? centerSpacing / 2 : 0;
-      const worldX = r.col * centerSpacing + rowOffset;
-      const worldY = r.row * centerSpacing * 0.866;
+      const { x: baseX, y: baseY } = rcToLogical(r.row, r.col);
 
-// EXACT Designer/Tuner tilt rule:
-const tiltDeg = r.row % 2 === 0 ? angleIn : angleOut;
+      // Apply origin shift for stable rendering coordinates
+      const shiftedX = baseX - logicalOrigin.ox;
+      const shiftedY = baseY - logicalOrigin.oy;
 
-arr.push({
-  row: r.row,
-  col: r.col,
-  x: worldX,
-  y: -worldY, // RingRenderer uses Y flipped when positioning
-  z: 0,
-  innerDiameter: ID_mm,
-  wireDiameter: WD_mm,
-  radius,
-  tilt: tiltDeg,       // <-- MUST pass degrees (NOT tiltRad)
-  centerSpacing,
-});
+      const tiltDeg = r.row % 2 === 0 ? angleIn : angleOut;
+      const tiltRad = THREE.MathUtils.degToRad(tiltDeg);
 
-      // Paint map keyed by world-grid row/col (stable for now)
-      paint.set(`${r.row},${r.col}`, r.color);
+      const color = (r as any).color ?? "#ffffff";
+
+      arr.push({
+        id: `${r.row},${r.col}`,
+        row: r.row,
+        col: r.col,
+        x: shiftedX,
+        y: shiftedY,
+        z: 0,
+        innerDiameter: innerIDmm,
+        wireDiameter: wireMm,
+        radius: outerRadiusMm,
+        centerSpacing: centerSpacing,
+        tilt: tiltDeg,
+        tiltRad: tiltRad,
+        color,
+      });
+
+      paint.set(`${r.row},${r.col}`, color);
     });
 
     return { rings3D: arr, paintMap: paint };
-  }, [rings, innerIDmm, wireMm, centerSpacing, angleIn, angleOut]);
+  }, [
+    rings,
+    innerIDmm,
+    wireMm,
+    centerSpacing,
+    angleIn,
+    angleOut,
+    rcToLogical,
+    logicalOrigin,
+  ]);
 
+  // ====================================================
+  // Renderer params (rows/cols only affect internal grid; keep large + padded)
+  // ====================================================
   const rendererParams = useMemo(
     () => ({
-      rows: 1,
-      cols: 1,
+      rows: maxRowSpan,
+      cols: maxColSpan,
       innerDiameter: innerIDmm,
       wireDiameter: wireMm,
       ringColor: "#ffffff",
       bgColor: "#020617",
       centerSpacing,
     }),
-    [innerIDmm, wireMm, centerSpacing]
+    [innerIDmm, wireMm, centerSpacing, maxRowSpan, maxColSpan]
   );
 
-  // ======================================================
-  // Canvas resize (transparent overlay for interaction)
-  // ======================================================
-  useEffect(() => {
-    const canvas = canvasRef.current;
+  // ====================================================
+  // Resize canvases reliably (window + layout changes)
+  // ====================================================
+  const resizeOverlayCanvases = useCallback(() => {
     const wrap = wrapRef.current;
+    const canvas = canvasRef.current;
+    const hitCanvas = hitCanvasRef.current;
+    if (!wrap || !canvas || !hitCanvas) return;
 
+    const rect = wrap.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+
+    // interaction canvas
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, rect.width, rect.height);
+    }
+
+    // hit overlay canvas
+    hitCanvas.width = rect.width * dpr;
+    hitCanvas.height = rect.height * dpr;
+    hitCanvas.style.width = `${rect.width}px`;
+    hitCanvas.style.height = `${rect.height}px`;
+    const hctx = hitCanvas.getContext("2d");
+    if (hctx) {
+      hctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      hctx.clearRect(0, 0, rect.width, rect.height);
+    }
+  }, []);
+
+  useEffect(() => {
+    resizeOverlayCanvases();
+
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+
+    const ro = new ResizeObserver(() => {
+      resizeOverlayCanvases();
+    });
+    ro.observe(wrap);
+
+    window.addEventListener("resize", resizeOverlayCanvases);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", resizeOverlayCanvases);
+    };
+  }, [resizeOverlayCanvases]);
+
+  // ====================================================
+  // Effective inner radius (accounts for row tilt)
+  // ====================================================
+  const getEffectiveInnerRadiusMm = useCallback(
+    (row: number) => {
+      const tiltDeg = row % 2 === 0 ? angleIn : angleOut;
+      const tiltRad = THREE.MathUtils.degToRad(tiltDeg);
+      return (innerIDmm / 2) * Math.abs(Math.cos(tiltRad));
+    },
+    [innerIDmm, angleIn, angleOut]
+  );
+
+  // ====================================================
+  // HIT CIRCLE DRAWING (WORLD SPACE → SCREEN SPACE)
+  // ====================================================
+  const drawHitCircles = useCallback(() => {
+    const canvas = hitCanvasRef.current;
+    const wrap = wrapRef.current;
     if (!canvas || !wrap) return;
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
     const rect = wrap.getBoundingClientRect();
-    const W = rect.width;
-    const H = rect.height;
+    ctx.clearRect(0, 0, rect.width, rect.height);
 
-    canvas.width = W * dpr;
-    canvas.height = H * dpr;
-    canvas.style.width = `${W}px`;
-    canvas.style.height = `${H}px`;
+    if (hideCircles) return;
 
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, W, H); // fully transparent so 3D shows through
-  }, [rings]);
+    ctx.strokeStyle = "rgba(20,184,166,0.8)";
+    ctx.lineWidth = 1;
 
-  // ======================================================
-  // Coordinate Helpers — MATCH DESIGNER / TUNER 3D CAMERA
-  // ======================================================
+    rings.forEach((r) => {
+      const { x, y } = rcToLogical(r.row, r.col);
 
-  // screen pixel → canvas-local pixel
-  const getCanvasPoint = useCallback(
-    (evt: { clientX: number; clientY: number }) => {
-      const canvas = canvasRef.current;
-      if (!canvas) {
-        return { sx: 0, sy: 0 };
-      }
-      const rect = canvas.getBoundingClientRect();
-      return {
-        sx: evt.clientX - rect.left,
-        sy: evt.clientY - rect.top,
+      const lx = x + circleOffsetX;
+      const ly = y + circleOffsetY;
+
+      const { wx, wy } = logicalToWorld(lx, ly);
+      const { sx, sy } = worldToScreen(wx, wy);
+
+      const effInner = getEffectiveInnerRadiusMm(r.row);
+      const baseRmm = Math.max(effInner - wireMm * 0.5, effInner * 0.3);
+      const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
+
+      ctx.beginPath();
+      ctx.arc(sx, sy, rPx, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+  }, [
+    rings,
+    rcToLogical,
+    logicalToWorld,
+    worldToScreen,
+    projectRingRadiusPx,
+    getEffectiveInnerRadiusMm,
+    wireMm,
+    circleScale,
+    circleOffsetX,
+    circleOffsetY,
+    hideCircles,
+  ]);
+
+  useEffect(() => {
+    drawHitCircles();
+  }, [drawHitCircles, zoom, panWorldX, panWorldY, logicalOrigin]);
+
+  // ===============================
+  // PAN / ZOOM (mouse + touch)
+  // ===============================
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!panMode) return;
+
+      const { sx, sy } = getCanvasPoint(e);
+      const { lx, ly } = screenToWorld(sx, sy);
+
+      setIsPanning(true);
+      panStart.current = {
+        screenX: e.clientX,
+        screenY: e.clientY,
+        panX: panWorldX,
+        panY: panWorldY,
+        lx,
+        ly,
       };
     },
-    []
+    [panMode, panWorldX, panWorldY, getCanvasPoint, screenToWorld]
   );
 
-  // canvas pixel → world mm at z=0 using same perspective math
-  // as RingRenderer (camera at z=CAMERA_Z, FOV=45°).
-  const screenToWorld = useCallback((sx: number, sy: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) {
-      return { x: 0, y: 0 };
-    }
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!panMode || !isPanning || !panStart.current) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const width = rect.width || 1;
-    const height = rect.height || 1;
-    const aspect = width / height;
+      e.preventDefault();
 
-    // Screen → NDC
-    const xNdc = (sx / width) * 2 - 1;
-    const yNdc = -((sy / height) * 2 - 1);
+      const { sx, sy } = getCanvasPoint(e);
+      const { lx, ly } = screenToWorld(sx, sy);
 
-    // NDC → world units at plane z=0 with camera at (0,0,CAMERA_Z)
-    const halfHeightAtZ = CAMERA_Z * Math.tan(FOV_RAD / 2);
-    const halfWidthAtZ = halfHeightAtZ * aspect;
+      const dxLogical = panStart.current.lx - lx;
+      const dyLogical = panStart.current.ly - ly;
 
-    const worldX_units = xNdc * halfWidthAtZ;
-    const worldY_units = yNdc * halfHeightAtZ;
+      setPanWorldX(panStart.current.panX + dxLogical);
+      setPanWorldY(panStart.current.panY + dyLogical);
+    },
+    [panMode, isPanning, getCanvasPoint, screenToWorld]
+  );
 
-    // world units → mm (SCALE is kept for future flexibility)
-    // NOTE: worldY_mm is flipped so positive Y is "down" to match
-    // the way we build rings (worldY = row * spacing * 0.866).
-    const worldX_mm = worldX_units / SCALE;
-    const worldY_mm = worldY_units / SCALE;
-
-    return { x: worldX_mm, y: worldY_mm };
+  const handleMouseUp = useCallback(() => {
+    setIsPanning(false);
+    panStart.current = null;
   }, []);
 
-  // ======================================================
-  // Mouse Interaction — click = place / erase / recolor
-  // ======================================================
+  const zoomAroundPoint = useCallback(
+    (sx: number, sy: number, factor: number) => {
+      if (factor === 1) return;
+
+      const { lx: lxBefore, ly: lyBefore } = screenToWorld(sx, sy);
+
+      let nextZoom = zoom * factor;
+      if (nextZoom < MIN_ZOOM) nextZoom = MIN_ZOOM;
+      if (nextZoom > MAX_ZOOM) nextZoom = MAX_ZOOM;
+
+      setZoom(nextZoom);
+
+      const { lx: lxAfter, ly: lyAfter } = screenToWorld(sx, sy);
+
+      const dx = lxBefore - lxAfter;
+      const dy = lyBefore - lyAfter;
+
+      setPanWorldX((p) => p + dx);
+      setPanWorldY((p) => p + dy);
+    },
+    [zoom, screenToWorld]
+  );
+
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<HTMLCanvasElement>) => {
+      e.preventDefault();
+
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      const { sx, sy } = getCanvasPoint(e);
+
+      zoomAroundPoint(sx, sy, factor);
+    },
+    [getCanvasPoint, zoomAroundPoint]
+  );
+
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent<HTMLCanvasElement>) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+
+        const [t1, t2] = Array.from(e.touches);
+        const dx = t2.clientX - t1.clientX;
+        const dy = t2.clientY - t1.clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        pinchStateRef.current = { active: true, lastDist: dist };
+        return;
+      }
+
+      if (!panMode || e.touches.length !== 1) return;
+
+      const t = e.touches[0];
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const sx = t.clientX - rect.left;
+      const sy = t.clientY - rect.top;
+
+      const { lx, ly } = screenToWorld(sx, sy);
+
+      setIsPanning(true);
+      panStart.current = {
+        screenX: t.clientX,
+        screenY: t.clientY,
+        panX: panWorldX,
+        panY: panWorldY,
+        lx,
+        ly,
+      };
+    },
+    [panMode, panWorldX, panWorldY, screenToWorld]
+  );
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent<HTMLCanvasElement>) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+
+        const [t1, t2] = Array.from(e.touches);
+        const dx = t2.clientX - t1.clientX;
+        const dy = t2.clientY - t1.clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (!rect) return;
+
+        const midX = (t1.clientX + t2.clientX) / 2 - rect.left;
+        const midY = (t1.clientY + t2.clientY) / 2 - rect.top;
+
+        if (!pinchStateRef.current.active) {
+          pinchStateRef.current.active = true;
+          pinchStateRef.current.lastDist = dist;
+
+          const { lx, ly } = screenToWorld(midX, midY);
+          pinchStateRef.current.lx = lx;
+          pinchStateRef.current.ly = ly;
+          return;
+        }
+
+        if (pinchStateRef.current.lastDist > 0) {
+          const factor = dist / pinchStateRef.current.lastDist;
+          pinchStateRef.current.lastDist = dist;
+          zoomAroundPoint(midX, midY, factor);
+        }
+        return;
+      }
+
+      if (!panMode || !isPanning || !panStart.current) return;
+
+      const t = e.touches[0];
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+
+      const sx = t.clientX - rect.left;
+      const sy = t.clientY - rect.top;
+
+      const { lx, ly } = screenToWorld(sx, sy);
+
+      const dxLogical = panStart.current.lx - lx;
+      const dyLogical = panStart.current.ly - ly;
+
+      setPanWorldX(panStart.current.panX + dxLogical);
+      setPanWorldY(panStart.current.panY + dyLogical);
+    },
+    [panMode, isPanning, screenToWorld, zoomAroundPoint]
+  );
+
+  const handleTouchEnd = useCallback(() => {
+    pinchStateRef.current = { active: false, lastDist: 0 };
+    setIsPanning(false);
+    panStart.current = null;
+  }, []);
+
+  // ===============================
+  // CLICK → place / erase nearest ring
+  // ===============================
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (panMode) return;
+
       const { sx, sy } = getCanvasPoint(e);
-      const { x: worldX, y: worldY } = screenToWorld(sx, sy);
+      const { lx, ly } = screenToWorld(sx, sy);
 
-      // world mm → hex-grid coordinates (dimensionless)
-      //
-      // Matches WEAVE_SETTINGS_DEFAULT + snapToHexCell:
-      //
-      //   spacingX = centerSpacing
-      //   spacingY = centerSpacing * 0.866
-      //
-      // snapToHexCell then:
-      //   row = round(gridY)
-      //   colShift = row%2 ? 0.5 : 0
-      //   col = round(gridX - colShift)
-      //
-      const gridX = worldX / centerSpacing;
-      const gridY = worldY / (centerSpacing * 0.866);
+      addDebugMarker(lx, ly);
 
-      // Let resolvePlacement choose the correct hex cell
+      const adjLx = lx - circleOffsetX;
+      const adjLy = ly - circleOffsetY;
+
+      const { row: approxRow, col: approxCol } = logicalToRowColApprox(adjLx, adjLy);
+
+      const effectiveInnerRadiusMm = getEffectiveInnerRadiusMm(approxRow);
+
+      const baseCircleRmm = Math.max(
+        effectiveInnerRadiusMm - wireMm * 0.5,
+        effectiveInnerRadiusMm * 0.3
+      );
+
+      const hitRadiusPx =
+        projectRingRadiusPx(adjLx, adjLy, baseCircleRmm * circleScale) * 1.05;
+
+      let bestRow = approxRow;
+      let bestCol = approxCol;
+      let bestDist2 = Number.POSITIVE_INFINITY;
+      let found = false;
+
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          const row = approxRow + dr;
+          const col = approxCol + dc;
+
+          const { x: gx, y: gy } = rcToLogical(row, col);
+          const { wx, wy } = logicalToWorld(gx, gy);
+          const { sx: ringSx, sy: ringSy } = worldToScreen(wx, wy);
+
+          const dx = sx - ringSx;
+          const dy = sy - ringSy;
+          const d2 = dx * dx + dy * dy;
+
+          if (d2 <= hitRadiusPx * hitRadiusPx && d2 < bestDist2) {
+            bestDist2 = d2;
+            bestRow = row;
+            bestCol = col;
+            found = true;
+          }
+        }
+      }
+
+      if (!found) return;
+
       const { ring, newClusterId } = resolvePlacement(
-        gridX,
-        gridY,
+        bestCol,
+        bestRow,
         rings,
         nextClusterId,
         eraseMode ? "#000000" : activeColor,
@@ -427,77 +963,38 @@ arr.push({
         if (delKey) mapCopy.delete(delKey);
       } else {
         const key = `${ring.row}-${ring.col}`;
-        const existing = [...mapCopy.entries()].find(
-          ([, v]) => v.row === ring.row && v.col === ring.col
-        );
-
-        if (existing) {
-          mapCopy.set(existing[0], {
-            ...existing[1],
-            color: activeColor,
-          });
-        } else {
-          mapCopy.set(key, ring);
-        }
+        mapCopy.set(key, ring);
       }
 
       setRings(mapCopy);
       setNextClusterId(newClusterId);
-      commitRings();
-      updateHistory();
     },
     [
+      panMode,
       getCanvasPoint,
       screenToWorld,
+      addDebugMarker,
+      circleOffsetX,
+      circleOffsetY,
+      logicalToRowColApprox,
+      getEffectiveInnerRadiusMm,
+      wireMm,
+      circleScale,
+      projectRingRadiusPx,
+      rcToLogical,
+      logicalToWorld,
+      worldToScreen,
       rings,
       nextClusterId,
       eraseMode,
       activeColor,
       settings,
-      centerSpacing,
     ]
   );
 
-  // ======================================================
-  // Wheel / Touch — keep simple for now (no 2D pan/zoom)
-  // ======================================================
-  const handleWheel = useCallback(
-    (e: React.WheelEvent<HTMLCanvasElement>) => {
-      e.preventDefault(); // prevent page scroll when wheel over canvas
-    },
-    []
-  );
-
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement>) => {
-      e.preventDefault();
-    },
-    []
-  );
-
-  const handleMouseUp = useCallback(() => {}, []);
-  const handleMouseMove = useCallback(
-    (_e: React.MouseEvent<HTMLCanvasElement>) => {},
-    []
-  );
-
-  const handleTouchStart = useCallback(
-    (e: React.TouchEvent<HTMLCanvasElement>) => {
-      e.preventDefault();
-    },
-    []
-  );
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent<HTMLCanvasElement>) => {
-      e.preventDefault();
-    },
-    []
-  );
-  const handleTouchEnd = useCallback(() => {}, []);
-
-  // ======================================================
-  // Clear / Reset Geometry
-  // ======================================================
+  // ===============================
+  // CLEAR / GEOMETRY RESET
+  // ===============================
   const handleClear = useCallback(() => {
     if (!window.confirm("Clear all rings?")) return;
     setRings(new Map());
@@ -511,9 +1008,9 @@ arr.push({
     setAngleOut(-25);
   }, []);
 
-  // ======================================================
-  // Tuner Ring Set Loading (same structure as Tuner)
-  // ======================================================
+  // ===============================
+  // Ring Set loading (Tuner + JSON)
+  // ===============================
   const reloadRingSets = useCallback(() => {
     try {
       const txt = localStorage.getItem(TUNER_LS_KEY);
@@ -563,14 +1060,11 @@ arr.push({
     reloadRingSets();
 
     const storedAuto = localStorage.getItem(AUTO_FOLLOW_KEY);
-    const auto =
-      storedAuto === null ? true : storedAuto === "true" || storedAuto === "1";
+    const auto = storedAuto === null ? true : storedAuto === "true" || storedAuto === "1";
     setAutoFollowTuner(auto);
 
     const storedActive = localStorage.getItem(ACTIVE_SET_KEY);
-    if (storedActive) {
-      setActiveRingSetId(storedActive);
-    }
+    if (storedActive) setActiveRingSetId(storedActive);
   }, [reloadRingSets]);
 
   useEffect(() => {
@@ -593,47 +1087,68 @@ arr.push({
   }, [autoFollowTuner]);
 
   useEffect(() => {
-    if (activeRingSetId) {
-      localStorage.setItem(ACTIVE_SET_KEY, activeRingSetId);
-    }
+    if (activeRingSetId) localStorage.setItem(ACTIVE_SET_KEY, activeRingSetId);
   }, [activeRingSetId]);
 
-  // ======================================================
-  // Manual JSON load (same format as Tuner saves)
-  // ======================================================
-  const handleFileJSONLoad = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        try {
-          const data = JSON.parse(String(ev.target?.result || "{}"));
-          if (typeof data.innerDiameter === "number")
-            setInnerIDmm(data.innerDiameter);
-          if (typeof data.wireDiameter === "number")
-            setWireMm(data.wireDiameter);
-          if (typeof data.centerSpacing === "number")
-            setCenterSpacing(data.centerSpacing);
-          if (typeof data.angleIn === "number") setAngleIn(data.angleIn);
-          if (typeof data.angleOut === "number") setAngleOut(data.angleOut);
+  // Prevent panning inside RingRenderer; we own pan/zoom here
+  useEffect(() => {
+    if (ringRendererRef.current?.setPanEnabled) {
+      ringRendererRef.current.setPanEnabled(false);
+    }
+  }, []);
 
-          const newId = data.id || `file:${file.name}`;
-          setActiveRingSetId(newId);
-          setAutoFollowTuner(false);
-        } catch (err) {
-          alert("Could not parse JSON file.");
-          console.error(err);
-        }
-      };
-      reader.readAsText(file);
-    },
-    []
-  );
+  // ====================================================
+  // Manual JSON load
+  // ====================================================
+  const handleFileJSONLoad = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  // ======================================================
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(String(ev.target?.result || "{}"));
+
+        if (typeof data.innerDiameter === "number") setInnerIDmm(data.innerDiameter);
+        if (typeof data.wireDiameter === "number") setWireMm(data.wireDiameter);
+        if (typeof data.centerSpacing === "number") setCenterSpacing(data.centerSpacing);
+        if (typeof data.angleIn === "number") setAngleIn(data.angleIn);
+        if (typeof data.angleOut === "number") setAngleOut(data.angleOut);
+
+        const newId = data.id || `file:${file.name}`;
+        setActiveRingSetId(newId);
+        setAutoFollowTuner(false);
+      } catch (err) {
+        alert("Could not parse JSON file.");
+        console.error(err);
+      }
+    };
+
+    reader.readAsText(file);
+  }, []);
+
+// ====================================================
+// External view state passed to RingRenderer
+// IMPORTANT: must use SAME floating-origin pipeline as rings3D
+// ====================================================
+const externalViewState = useMemo(
+  () => {
+    // Convert logical pan center -> renderer world coords (shifted + y-inverted)
+    const worldPanX = panWorldX - logicalOrigin.ox;
+    const worldPanY = -(panWorldY - logicalOrigin.oy);
+
+    return {
+      panX: worldPanX,
+      panY: worldPanY,
+      zoom,
+    };
+  },
+  [panWorldX, panWorldY, zoom, logicalOrigin.ox, logicalOrigin.oy]
+);
+
+  // ====================================================
   // RENDER
-  // ======================================================
+  // ====================================================
   return (
     <div
       style={{
@@ -650,21 +1165,23 @@ arr.push({
       {/* LEFT TOOLBAR */}
       <div
         style={{
+          position: "fixed",
+          left: 0,
+          top: 0,
           width: 72,
+          height: "100vh",
           padding: 10,
           display: "flex",
           flexDirection: "column",
           gap: 10,
           background: "#020617",
           borderRight: "1px solid rgba(148,163,184,0.2)",
-          zIndex: 5,
+          zIndex: 10,
         }}
       >
         <ToolButton
           active={!eraseMode}
-          onClick={() => {
-            setEraseMode(false);
-          }}
+          onClick={() => setEraseMode(false)}
           title="Place / recolor ring"
         >
           🎨
@@ -672,12 +1189,18 @@ arr.push({
 
         <ToolButton
           active={eraseMode}
-          onClick={() => {
-            setEraseMode(true);
-          }}
+          onClick={() => setEraseMode(true)}
           title="Erase ring"
         >
           🧽
+        </ToolButton>
+
+        <ToolButton
+          active={panMode}
+          onClick={() => setPanMode((v) => !v)}
+          title="Pan / Drag view"
+        >
+          ✋
         </ToolButton>
 
         <ToolButton
@@ -688,9 +1211,28 @@ arr.push({
           🧰
         </ToolButton>
 
+        <ToolButton
+          active={showDiagnostics}
+          onClick={() => setShowDiagnostics((v) => !v)}
+          title="Toggle diagnostics (coords)"
+        >
+          📊
+        </ToolButton>
+
         <ToolButton onClick={handleClear} title="Clear all">
           🧹
         </ToolButton>
+
+        <div
+          style={{
+            marginTop: "auto",
+            fontSize: 10,
+            opacity: 0.7,
+            textAlign: "center",
+          }}
+        >
+          Scroll / pinch = zoom
+        </div>
       </div>
 
       {/* MAIN WORK AREA */}
@@ -700,16 +1242,13 @@ arr.push({
           flex: 1,
           position: "relative",
           background: "#020617",
+          marginLeft: 72,
         }}
       >
-        {/* 3D VIEW (RingRenderer — same as Designer/Tuner) */}
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-          }}
-        >
+        {/* 3D VIEW */}
+        <div style={{ position: "absolute", inset: 0 }}>
           <RingRenderer
+            ref={ringRendererRef}
             rings={rings3D}
             params={rendererParams}
             paint={paintMap}
@@ -718,16 +1257,17 @@ arr.push({
             initialPaintMode={false}
             initialEraseMode={false}
             initialRotationLocked={true}
+            externalViewState={externalViewState}
           />
         </div>
 
-        {/* TRANSPARENT INTERACTION CANVAS */}
+        {/* INTERACTION CANVAS */}
         <canvas
           ref={canvasRef}
           style={{
             position: "absolute",
             inset: 0,
-            cursor: eraseMode ? "not-allowed" : "crosshair",
+            cursor: panMode ? "grab" : eraseMode ? "not-allowed" : "crosshair",
             touchAction: "none",
             background: "transparent",
             zIndex: 3,
@@ -742,11 +1282,55 @@ arr.push({
           onTouchEnd={handleTouchEnd}
         />
 
+        {/* HIT CIRCLES CANVAS */}
+        <canvas
+          ref={hitCanvasRef}
+          style={{
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            background: "transparent",
+            zIndex: 2,
+          }}
+        />
+
+        {/* DEBUG CLICK MARKERS */}
+        {!hideCircles &&
+          debugClicks.map((marker) => {
+            const { wx, wy } = logicalToWorld(marker.lx, marker.ly);
+            const { sx, sy } = worldToScreen(wx, wy);
+
+            return (
+              <div
+                key={marker.id}
+                style={{
+                  position: "absolute",
+                  left: sx - 10,
+                  top: sy - 10,
+                  width: 20,
+                  height: 20,
+                  backgroundColor: "rgba(0,255,0,0.85)",
+                  color: "black",
+                  fontSize: "14px",
+                  fontWeight: "bold",
+                  borderRadius: "2px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  pointerEvents: "none",
+                  zIndex: 4,
+                }}
+              >
+                {marker.id}
+              </div>
+            );
+          })}
+
         {/* COLOR PALETTE */}
         <div
           style={{
-            position: "absolute",
-            left: 16,
+            position: "fixed",
+            left: 88,
             bottom: 16,
             padding: 8,
             borderRadius: 12,
@@ -755,7 +1339,7 @@ arr.push({
             display: "grid",
             gridTemplateColumns: "repeat(8, 1fr)",
             gap: 6,
-            zIndex: 6,
+            zIndex: 11,
           }}
         >
           {PALETTE.map((c) => (
@@ -781,11 +1365,11 @@ arr.push({
           ))}
         </div>
 
-        {/* RIGHT CONTROL PANEL (Geometry + JSON) */}
+        {/* RIGHT CONTROL PANEL */}
         {showControls && (
           <div
             style={{
-              position: "absolute",
+              position: "fixed",
               right: 16,
               top: 16,
               width: 340,
@@ -795,7 +1379,7 @@ arr.push({
               padding: 12,
               border: "1px solid rgba(148,163,184,0.35)",
               boxShadow: "0 10px 30px rgba(0,0,0,0.6)",
-              zIndex: 7,
+              zIndex: 12,
               display: "flex",
               flexDirection: "column",
               gap: 10,
@@ -809,16 +1393,18 @@ arr.push({
             </h3>
 
             <p style={{ margin: 0, opacity: 0.8, lineHeight: 1.3 }}>
-              Uses the same <b>center spacing</b> and hex grid as the Weave
-              Tuner. Vertical spacing is always <code>center × 0.866</code> and
-              odd rows are shifted by <code>center / 2</code> so the freeform
-              grid matches the 3D tuner grid.
+              Uses the same <b>center spacing</b> and hex grid as the Weave Tuner.
+              Vertical spacing is <code>center × 0.866</code> and odd rows are shifted by{" "}
+              <code>center / 2</code>.
             </p>
 
             <SliderRow
               label="Center Spacing (mm)"
               value={centerSpacing}
-              setValue={setCenterSpacing}
+              setValue={(v) => {
+                setCenterSpacing(v);
+                setAutoFollowTuner(false);
+              }}
               min={2}
               max={25}
               step={0.1}
@@ -845,6 +1431,64 @@ arr.push({
               unit="°"
             />
 
+            {/* CIRCLE TUNING PANEL */}
+            <div
+              style={{
+                marginTop: 4,
+                padding: 8,
+                borderRadius: 12,
+                background: "rgba(15,23,42,0.95)",
+                border: "1px solid rgba(148,163,184,0.25)",
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                fontSize: 11,
+              }}
+            >
+              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input
+                  type="checkbox"
+                  checked={hideCircles}
+                  onChange={(e) => setHideCircles(e.target.checked)}
+                />
+                <span>Hide circles (still clickable)</span>
+              </label>
+
+              <div style={{ fontWeight: 700, fontSize: 12, textAlign: "left" }}>
+                Circles (on placed rings only)
+              </div>
+
+              <label>Offset X (mm)</label>
+              <input
+                type="range"
+                min={-innerIDmm * 20}
+                max={innerIDmm * 20}
+                step={0.05}
+                value={circleOffsetX}
+                onChange={(e) => setCircleOffsetX(Number(e.target.value))}
+              />
+
+              <label>Offset Y (mm)</label>
+              <input
+                type="range"
+                min={-innerIDmm * 20}
+                max={innerIDmm * 20}
+                step={0.05}
+                value={circleOffsetY}
+                onChange={(e) => setCircleOffsetY(Number(e.target.value))}
+              />
+
+              <label>Scale</label>
+              <input
+                type="range"
+                min={0.2}
+                max={2.5}
+                step={0.01}
+                value={circleScale}
+                onChange={(e) => setCircleScale(Number(e.target.value))}
+              />
+            </div>
+
             <div
               style={{
                 marginTop: 4,
@@ -857,6 +1501,7 @@ arr.push({
               <div>Inner ID: {innerIDmm.toFixed(2)} mm</div>
               <div>Wire: {wireMm.toFixed(2)} mm</div>
               <div>AR ≈ {aspectRatio.toFixed(2)}</div>
+              <div>Zoom: {zoom.toFixed(2)}×</div>
             </div>
 
             {/* JSON / Ring Set controls */}
@@ -929,9 +1574,7 @@ arr.push({
               </div>
 
               <div style={{ marginTop: 4 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                  Load JSON File
-                </div>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>Load JSON File</div>
                 <input
                   type="file"
                   accept="application/json"
@@ -940,11 +1583,7 @@ arr.push({
                 />
                 <div style={{ opacity: 0.7, marginTop: 2 }}>
                   JSON structure:{" "}
-                  <code>
-                    innerDiameter, wireDiameter, centerSpacing, angleIn,
-                    angleOut
-                  </code>{" "}
-                  (same as the Tuner saves).
+                  <code>innerDiameter, wireDiameter, centerSpacing, angleIn, angleOut</code>
                 </div>
               </div>
             </div>
@@ -953,6 +1592,62 @@ arr.push({
               <button onClick={resetGeometryToDefaults} style={smallBtn}>
                 Reset Geometry
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* DIAGNOSTIC PANEL (copyable text) */}
+        {showDiagnostics && (
+          <div
+            style={{
+              position: "fixed",
+              left: 88,
+              top: 16,
+              width: 420,
+              maxHeight: "40vh",
+              background: "rgba(15,23,42,0.96)",
+              borderRadius: 12,
+              padding: 8,
+              border: "1px solid rgba(248,250,252,0.3)",
+              boxShadow: "0 10px 30px rgba(0,0,0,0.7)",
+              zIndex: 20,
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              fontFamily:
+                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+              fontSize: 11,
+              userSelect: "text",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <span style={{ fontWeight: 600 }}>Diagnostics (copy text)</span>
+              <button
+                style={{ ...smallBtn, flex: "none", padding: "2px 6px", fontSize: 10 }}
+                onClick={() => setDiagLog("")}
+              >
+                Clear
+              </button>
+            </div>
+
+            <div
+              style={{
+                whiteSpace: "pre",
+                overflowY: "auto",
+                borderRadius: 8,
+                background: "rgba(15,23,42,0.9)",
+                padding: 6,
+                border: "1px solid rgba(30,64,175,0.6)",
+                userSelect: "text",
+              }}
+            >
+              {diagLog || "Click on the canvas to log diagnostics..."}
             </div>
           </div>
         )}

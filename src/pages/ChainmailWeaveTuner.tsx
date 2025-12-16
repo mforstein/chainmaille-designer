@@ -1,19 +1,32 @@
 // ========================================
 // src/pages/ChainmailWeaveTuner.tsx (FINAL FIXED)
+// FIX: RingRenderer must be allowed to own the full viewport.
+// The old centering/scale wrapper was fighting RingRenderer’s own 100vw/100vh
+// sizing and camera math, causing “midline-only / clipped / offset” behavior
+// in some layouts.
 // ========================================
+
 import React, { useMemo, useState } from "react";
 import * as THREE from "three";
-import RingRenderer, {
-  computeRingVarsIndependent, // ✅ use new independent computation
-} from "../components/RingRenderer";
+import RingRenderer from "../components/RingRenderer";
+import { computeRingVarsIndependent } from "../utils/ringMath";
 import { DraggableCompassNav, DraggablePill } from "../App";
 
 // ========================================
 // CONSTANTS
 // ========================================
 const ID_OPTIONS = [
-  "7/64", "1/8", "9/64", "5/32", "3/16", "1/4",
-  "5/16", "3/8", "7/16", "1/2", "5/8",
+  "7/64",
+  "1/8",
+  "9/64",
+  "5/32",
+  "3/16",
+  "1/4",
+  "5/16",
+  "3/8",
+  "7/16",
+  "1/2",
+  "5/8",
 ];
 const WIRE_OPTIONS = [0.9, 1.2, 1.6, 2.0, 2.5, 3.0];
 
@@ -35,6 +48,14 @@ export default function ChainmailWeaveTuner() {
   const [status, setStatus] = useState<"valid" | "no_solution">("valid");
   const [showCompass, setShowCompass] = useState(false);
   const [version, setVersion] = useState(0); // 🔁 force rebuild key
+
+  // ============================================================
+  // Derived: AR display (use same authoritative math as renderer)
+  // ============================================================
+  const arDisplay = useMemo(() => {
+    const { ID_mm, WD_mm } = computeRingVarsIndependent(id, wire);
+    return (WD_mm > 0 ? ID_mm / WD_mm : 0).toFixed(2);
+  }, [id, wire]);
 
   // ============================================================
   // Generate rings whenever any geometry input changes
@@ -119,8 +140,31 @@ export default function ChainmailWeaveTuner() {
         background: "#0E0F12",
         color: "#dbe4ee",
         position: "relative",
+        overflow: "hidden", // ✅ keep renderer clean
       }}
     >
+      {/* ======================= */}
+      {/* Main Ring Renderer */}
+      {/* FIX: Give RingRenderer the full viewport instead of wrapping it
+          in a centered transform that fights its own 100vw/100vh sizing. */}
+      {/* ======================= */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          zIndex: 1,
+        }}
+      >
+        <RingRenderer
+          key={version} // 🔁 ensures full geometry rebuild on parameter change
+          rings={rings}
+          params={params}
+          paint={new Map()}
+          setPaint={() => {}}
+          activeColor="#FFFFFF"
+        />
+      </div>
+
       {/* ======================= */}
       {/* Top Control Panel */}
       {/* ======================= */}
@@ -139,6 +183,7 @@ export default function ChainmailWeaveTuner() {
           padding: "10px 12px",
           zIndex: 10,
           fontSize: 13,
+          backdropFilter: "blur(6px)",
         }}
       >
         <label>
@@ -238,8 +283,9 @@ export default function ChainmailWeaveTuner() {
           </select>
         </label>
 
-        <div style={{ marginLeft: 6, fontSize: 13 }}>
-          AR ≈ {(convertToMM(id) / wire).toFixed(2)}
+        {/* Keep helper visible, but display uses authoritative math */}
+        <div style={{ marginLeft: 6, fontSize: 13 }} title={`ID(mm) ≈ ${convertToMM(id).toFixed(3)}`}>
+          AR ≈ {arDisplay}
         </div>
 
         <button
@@ -256,27 +302,6 @@ export default function ChainmailWeaveTuner() {
         >
           Save
         </button>
-      </div>
-
-      {/* ======================= */}
-      {/* Main Ring Renderer */}
-      {/* ======================= */}
-      <div
-        style={{
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%,-48%) scale(1.35)",
-        }}
-      >
-        <RingRenderer
-          key={version} // 🔁 ensures full geometry rebuild on parameter change
-          rings={rings}
-          params={params}
-          paint={new Map()}
-          setPaint={() => {}}
-          activeColor="#FFFFFF"
-        />
       </div>
 
       {/* ======================= */}

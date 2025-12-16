@@ -649,29 +649,29 @@ const colorsPanel = useDraggable({
             🎨
           </button>
 
-          {paintActive && (
-            <>
-              <button
-                onClick={() => setIsErasing((v) => !v)}
-                style={{
-                  ...floatIconBtn,
-                  background: isErasing ? "#fbbf24" : "#1f2937",
-                }}
-                title="Eraser"
-              >
-                🧽
-              </button>
-              <button
-                onClick={clearAll}
-                style={{ ...floatIconBtn, background: "#ef4444" }}
-                title="Clear all"
-              >
-                🧹
-              </button>
-            </>
-          )}
+{paintActive && (
+  <>
+    <button
+      onClick={() => setIsErasing((v) => !v)}
+      style={{
+        ...floatIconBtn,
+        background: isErasing ? "#fbbf24" : "#1f2937",
+      }}
+      title="Eraser"
+    >
+      🧽
+    </button>
 
-          <button
+    <button
+      onClick={clearAll}
+      style={{ ...floatIconBtn, background: "#ef4444" }}
+      title="Clear all painted cells"
+    >
+      🧹
+    </button>
+  </>
+)}   
+       <button
             onClick={() => setShowImage((v) => !v)}
             style={{
               ...floatIconBtn,
