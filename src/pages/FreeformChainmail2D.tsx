@@ -225,7 +225,7 @@ const FreeformChainmail2D: React.FC = () => {
   const [showControls, setShowControls] = useState(false);
 
   // Diagnostics toggle + log
-  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(true);
+  const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
   const [diagLog, setDiagLog] = useState<string>("");
 
   // ====================================================
@@ -297,7 +297,7 @@ const FreeformChainmail2D: React.FC = () => {
   const [circleOffsetX, setCircleOffsetX] = useState(0); // mm
   const [circleOffsetY, setCircleOffsetY] = useState(0); // mm
   const [circleScale, setCircleScale] = useState(1.0);
-  const [hideCircles, setHideCircles] = useState(false);
+  const [hideCircles, setHideCircles] = useState(true);
 
   // ====================================================
   // HEX GRID HELPERS (row/col ↔ logical mm)
@@ -899,8 +899,9 @@ const logicalToRowColApprox = useCallback(
       const { sx, sy } = getCanvasPoint(e);
       const { lx, ly } = screenToWorld(sx, sy);
 
-      addDebugMarker(lx, ly);
-
+if (showDiagnostics) {
+  addDebugMarker(lx, ly);
+}
       const adjLx = lx - circleOffsetX;
       const adjLy = ly - circleOffsetY;
 
