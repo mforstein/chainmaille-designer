@@ -1,6 +1,6 @@
 // src/components/ErinPattern2D.tsx
-import React, { useState, useEffect, useRef } from "react";
-
+import { useState, useEffect, useRef } from "react";
+import { DraggableCompassNav, DraggablePill } from "../App";
 const PALETTE_24 = [
   "#000000", "#1f2937", "#6b7280", "#9ca3af", "#ffffff",
   "#991b1b", "#ef4444", "#f97316", "#f59e0b", "#eab308",
@@ -46,6 +46,8 @@ const ErinPattern2D: React.FC = () => {
   const [zoom, setZoom] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
+  const [showCompass, setShowCompass] = useState(false);
+
   const panStartRef = useRef<{ x: number; y: number } | null>(null);
   const panOrigRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
@@ -627,6 +629,11 @@ const colorsPanel = useDraggable({
           onMouseDown={toolsPanel.handleMouseDown}
           onTouchStart={toolsPanel.handleTouchStart}
         >
+          {showCompass && (
+    <DraggableCompassNav
+      onNavigate={() => setShowCompass(false)}
+    />
+)}
           <button
             style={{ ...floatIconBtn, background: "#2563eb" }}
             onClick={(e) => {
@@ -722,7 +729,16 @@ const colorsPanel = useDraggable({
           >
             🧰
           </button>
-        </div>
+          <button
+  style={floatIconBtn}
+  onClick={(e) => {
+    e.stopPropagation();
+    setShowCompass(v => !v);
+  }}
+>
+  🧭
+</button>
+                  </div>
 
         {/* 🎨 COLOR PANEL */}
         <div
@@ -891,6 +907,7 @@ const colorsPanel = useDraggable({
       </div>
     </>
   );
+  
 };
 
 // ------------------------------

@@ -212,6 +212,49 @@ function rgbToHex(r: number, g: number, b: number) {
 }
 
 // ============================================================
+// Fit camera to group (keeps panel from “disappearing” when scale changes)
+// - Only runs when NOT using externalViewState
+// - Updates both controls.target and the initial refs used by resetView()
+// ============================================================
+function fitCameraToObject(
+  camera: THREE.PerspectiveCamera,
+  controls: OrbitControls,
+  object: THREE.Object3D,
+  padding = 1.15
+) {
+  const box = new THREE.Box3().setFromObject(object);
+  if (!Number.isFinite(box.min.x) || !Number.isFinite(box.max.x)) return;
+
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const center = new THREE.Vector3();
+  box.getCenter(center);
+
+  // If everything is at a point, keep defaults
+  const maxDim = Math.max(size.x, size.y, size.z);
+  if (!Number.isFinite(maxDim) || maxDim <= 1e-6) {
+    controls.target.copy(center);
+    camera.lookAt(controls.target);
+    camera.updateProjectionMatrix();
+    controls.update();
+    return;
+  }
+
+  const fov = THREE.MathUtils.degToRad(camera.fov);
+  const dist = (maxDim * padding) / (2 * Math.tan(fov / 2));
+
+  controls.target.copy(center);
+
+  // Camera stays on +Z axis for “2D-ish” feel; distance is computed to fit
+  camera.position.set(center.x, center.y, center.z + dist);
+  camera.near = Math.max(0.01, dist / 5000);
+  camera.far = Math.max(100000, dist * 20);
+  camera.lookAt(controls.target);
+  camera.updateProjectionMatrix();
+  controls.update();
+}
+
+// ============================================================
 // MAIN COMPONENT
 // ============================================================
 const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer(
@@ -339,6 +382,23 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
 
       const colorHex = paintRef.current.get(key) ?? defaultHex;
       mat.color.set(colorHex);
+      mat.needsUpdate = true;
+    }
+  };
+
+  // ============================================================
+  // Helper — reset all mesh colors to default (used by clearPaint)
+  // ============================================================
+  const resetMeshColorsToDefault = () => {
+    const meshes = meshesRef.current;
+    if (!meshes || meshes.length === 0) return;
+
+    const defaultHex = paramsRef.current.ringColor || "#CCCCCC";
+    for (const mesh of meshes) {
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      if (!mat) continue;
+      mat.color.set(defaultHex);
+      mat.needsUpdate = true;
     }
   };
 
@@ -380,7 +440,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
       antialias: true,
       alpha: false,
       depth: true,
-      powerPreference: "low-power",
+      powerPreference: "high-performance",
     }) as WebGL2RenderingContext | null;
 
     const renderer = new THREE.WebGLRenderer({
@@ -388,7 +448,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
       context: gl ?? undefined,
       antialias: true,
       precision: "mediump",
-      powerPreference: "low-power",
+      powerPreference: "high-performance",
     });
 
     renderer.setSize(
@@ -397,16 +457,23 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
     );
     renderer.setClearColor(safeParams.bgColor, 1);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+
+    // ✅ Fix “colors not showing / looks wrong”: correct color pipeline
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.25;
+
     mount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // Lights
-    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-    const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+    // Lights (keep strong enough for MeshStandardMaterial colors to read)
+    scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+
+    const dir = new THREE.DirectionalLight(0xffffff, 1.15);
     dir.position.set(4, 6, 10);
     scene.add(dir);
 
-    const rim = new THREE.DirectionalLight(0xffffff, 0.5);
+    const rim = new THREE.DirectionalLight(0xffffff, 0.55);
     rim.position.set(-4, -6, -8);
     scene.add(rim);
 
@@ -432,17 +499,17 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
         // ✅ Pan allowed when paint is OFF and panEnabled is true
         controls.enablePan = panAllowed && !painting;
 
-// Always valid enums — behavior controlled elsewhere
-controls.mouseButtons = {
-  LEFT: THREE.MOUSE.PAN,
-  MIDDLE: THREE.MOUSE.DOLLY,
-  RIGHT: THREE.MOUSE.PAN,
-};
+        // Always valid enums — behavior controlled elsewhere
+        controls.mouseButtons = {
+          LEFT: THREE.MOUSE.PAN,
+          MIDDLE: THREE.MOUSE.DOLLY,
+          RIGHT: THREE.MOUSE.PAN,
+        };
 
-controls.touches = {
-  ONE: THREE.TOUCH.PAN,
-  TWO: THREE.TOUCH.DOLLY_PAN,
-};
+        controls.touches = {
+          ONE: THREE.TOUCH.PAN,
+          TWO: THREE.TOUCH.DOLLY_PAN,
+        };
       } else {
         // 🔓 UNLOCKED (3D)
         controls.enableRotate = true;
@@ -555,6 +622,7 @@ controls.touches = {
           mat.color.set(c);
         }
 
+        mat.needsUpdate = true;
         return next;
       });
     };
@@ -571,6 +639,11 @@ controls.touches = {
 
       e.preventDefault();
       isPainting = true;
+
+      try {
+        (renderer.domElement as any).setPointerCapture?.(e.pointerId);
+      } catch {}
+
       tryPaintRingAt(e.clientX, e.clientY);
     };
 
@@ -583,8 +656,11 @@ controls.touches = {
       tryPaintRingAt(e.clientX, e.clientY);
     };
 
-    const onPointerUp = () => {
+    const onPointerUp = (e: PointerEvent) => {
       isPainting = false;
+      try {
+        (renderer.domElement as any).releasePointerCapture?.(e.pointerId);
+      } catch {}
     };
 
     renderer.domElement.addEventListener("pointerdown", onPointerDown);
@@ -601,7 +677,6 @@ controls.touches = {
       // Keep OrbitControls mapping in sync with lock/paint/pan states
       syncControlsButtons();
 
-      // (controls.update is already called inside syncControlsButtons)
       renderer.render(scene, camera);
     };
     animate();
@@ -674,7 +749,7 @@ controls.touches = {
   }, [externalViewState]);
 
   // ============================================================
-  // Geometry Build (Rings) — FINAL, SAFE, CORRECT
+  // Geometry Build (Rings) — CHECKED-IN STYLE (non-instanced)
   // IMPORTANT: tilt is computed upstream; renderer never uses angleIn/out
   // ============================================================
   useEffect(() => {
@@ -683,15 +758,19 @@ controls.touches = {
 
     // ---------- Cleanup old group ----------
     if (groupRef.current) {
-      groupRef.current.traverse((o: any) => {
-        o.geometry?.dispose?.();
-        if (Array.isArray(o.material)) {
-          o.material.forEach((m: any) => m?.dispose?.());
-        } else {
-          o.material?.dispose?.();
-        }
-      });
-      scene.remove(groupRef.current);
+      try {
+        groupRef.current.traverse((o: any) => {
+          o.geometry?.dispose?.();
+          if (Array.isArray(o.material)) {
+            o.material.forEach((m: any) => m?.dispose?.());
+          } else {
+            o.material?.dispose?.();
+          }
+        });
+      } catch {}
+      try {
+        scene.remove(groupRef.current);
+      } catch {}
       meshesRef.current = [];
     }
 
@@ -715,6 +794,7 @@ controls.touches = {
 
       const geom = new THREE.TorusGeometry(ringRadius, tubeRadius, 32, 64);
 
+      // ✅ Make colors read strongly (and consistently) under toneMapping
       const mat = new THREE.MeshStandardMaterial({
         color: 0xffffff,
         metalness: 0.85,
@@ -737,6 +817,7 @@ controls.touches = {
       group.add(mesh);
       meshes.push(mesh);
 
+      // Chart labels preserved
       if ((r as any)._chartLabel) {
         const label = (r as any)._chartLabel as SpriteText;
         label.position.set(r.x, -r.y - WD * 4, r.z ?? 0);
@@ -752,8 +833,26 @@ controls.touches = {
 
     // Apply paint after building
     applyPaintToMeshes();
+
+    // ✅ Keep panel from “disappearing” after geometry rebuilds (unless externalViewState drives camera)
+    const cam = cameraRef.current;
+    const ctr = controlsRef.current;
+    if (cam && ctr && !externalViewState) {
+      fitCameraToObject(cam, ctr, group, 1.2);
+
+      // Update resetView anchors to match what is actually visible now
+      initialTargetRef.current.copy(ctr.target);
+      initialZRef.current = cam.position.z;
+    }
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rings, safeParams.innerDiameter, safeParams.wireDiameter, safeParams.ringColor]);
+  }, [
+    rings,
+    safeParams.innerDiameter,
+    safeParams.wireDiameter,
+    safeParams.ringColor,
+    externalViewState,
+  ]);
 
   // ============================================================
   // Keep mesh colors updated if paint changes (without rebuild)
@@ -880,6 +979,7 @@ controls.touches = {
           next.set(key, sampled);
           const mat = mesh.material as THREE.MeshStandardMaterial;
           mat?.color?.set(sampled);
+          if (mat) mat.needsUpdate = true;
         }
       }
 
@@ -905,8 +1005,14 @@ controls.touches = {
       const cam = cameraRef.current;
       const ctr = controlsRef.current;
       if (!cam || !ctr) return;
-      cam.position.set(0, 0, initialZRef.current);
+
+      cam.position.set(
+        initialTargetRef.current.x,
+        initialTargetRef.current.y,
+        initialZRef.current
+      );
       ctr.target.copy(initialTargetRef.current);
+
       cam.lookAt(ctr.target);
       cam.updateProjectionMatrix();
       ctr.update();
@@ -946,14 +1052,21 @@ controls.touches = {
       });
     },
 
-    clearPaint: () => setPaint(new Map()),
+    clearPaint: () => {
+      resetMeshColorsToDefault();
+      setPaint(new Map());
+    },
 
     lock2DView: () => {
       const cam = cameraRef.current;
       const ctr = controlsRef.current;
       if (!cam || !ctr) return;
 
-      cam.position.set(0, 0, initialZRef.current);
+      cam.position.set(
+        initialTargetRef.current.x,
+        initialTargetRef.current.y,
+        initialZRef.current
+      );
       ctr.target.copy(initialTargetRef.current);
 
       cam.lookAt(ctr.target);

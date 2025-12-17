@@ -27,7 +27,10 @@ import AtlasPalette from "./components/AtlasPalette";
 import RingSizeChart from "./pages/RingSizeChart";
 import ChainmailWeaveTuner from "./pages/ChainmailWeaveTuner";
 import ChainmailWeaveAtlas from "./pages/ChainmailWeaveAtlas";
-
+import { Routes, Route, Navigate } from "react-router-dom";
+import PasswordGate from "./pages/PasswordGate";
+import FreeformChainmail2D from "./pages/FreeformChainmail2D";
+import ErinPattern2D from "./pages/ErinPattern2D";
 // ---------- Types ----------
 export type SupplierId = "cmj" | "trl" | "mdz";
 type ColorMode = "solid" | "checker";
@@ -54,7 +57,23 @@ type PaintMap = Map<string, string | null>;
 
 // ---------- Utility ----------
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+function RequireDesignerAuth({ children }: { children: JSX.Element }) {
+  return localStorage.getItem("designerAuth") === "true"
+    ? children
+    : <Navigate to="/password" state={{ redirect: "/designer" }} />;
+}
 
+function RequireFreeformAuth({ children }: { children: JSX.Element }) {
+  return localStorage.getItem("freeformAuth") === "true"
+    ? children
+    : <Navigate to="/password" state={{ redirect: "/freeform" }} />;
+}
+
+function RequireErin2DAuth({ children }: { children: JSX.Element }) {
+  return localStorage.getItem("erin2DAuth") === "true"
+    ? children
+    : <Navigate to="/password" state={{ redirect: "/erin2d" }} />;
+}
 // ---------- Draggable Floating Pill ----------
 function DraggablePill({
   id,
@@ -1006,7 +1025,9 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
         <button onClick={() => go("/freeform")} title="Freeform" style={btnStyle}>
           ✨
         </button>
-
+<button onClick={() => go("/erin2d")} style={btnStyle}>
+  🪡
+</button>
         {/* 📊 Chart */}
         <button onClick={() => go("/chart")} title="Ring Chart" style={btnStyle}>
           📊
