@@ -1001,6 +1001,12 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
           🧩
         </button>
 
+        {/* ✨ Freeform Painter */}
+        {/* NOTE: if your route is different (ex: "/freeform2d"), change it here ONLY. */}
+        <button onClick={() => go("/freeform")} title="Freeform" style={btnStyle}>
+          ✨
+        </button>
+
         {/* 📊 Chart */}
         <button onClick={() => go("/chart")} title="Ring Chart" style={btnStyle}>
           📊
@@ -1015,9 +1021,11 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
         <button onClick={() => go("/atlas")} title="Weave Atlas" style={btnStyle}>
           🌐
         </button>
-	<button onClick={() => go("/blog-editor")} title="Blog" style={btnStyle}>
-  		🪶
-    </button>
+
+        {/* 🪶 Blog */}
+        <button onClick={() => go("/blog-editor")} title="Blog" style={btnStyle}>
+          🪶
+        </button>
       </div>
     </DraggablePill>
   );
@@ -1031,6 +1039,7 @@ const btnStyle: React.CSSProperties = {
   color: "#dbeafe",
   cursor: "pointer",
 };
+
 // ======================================
 // ✅ EXPORTS
 // ======================================

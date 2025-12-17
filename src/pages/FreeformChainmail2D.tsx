@@ -18,6 +18,9 @@ import {
 
 import * as THREE from "three";
 
+// ✅ Pull in the SAME floating pill + submenu system used by Designer
+import { DraggablePill, DraggableCompassNav } from "../App";
+
 // ======================================================
 // SAFETY STUBS (history integration preserved, no-ops here)
 // ======================================================
@@ -199,7 +202,7 @@ const ACTIVE_SET_KEY = "freeformActiveRingSetId";
 const FALLBACK_CAMERA_Z = 52;
 const FOV = 45;
 const MIN_ZOOM = 0.20; // allow wider zoom-out than before
-const MAX_ZOOM = 6.0;  // allow wider zoom-in than before
+const MAX_ZOOM = 6.0; // allow wider zoom-in than before
 
 // ======================================================
 // MAIN COMPONENT
@@ -227,6 +230,9 @@ const FreeformChainmail2D: React.FC = () => {
   // Diagnostics toggle + log
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
   const [diagLog, setDiagLog] = useState<string>("");
+
+  // ✅ Floating submenu (Designer pattern) — show/hide compass nav
+  const [showCompass, setShowCompass] = useState(false);
 
   // ====================================================
   // GEOMETRY (synced with Tuner)
@@ -297,7 +303,7 @@ const FreeformChainmail2D: React.FC = () => {
   const [circleOffsetX, setCircleOffsetX] = useState(0); // mm
   const [circleOffsetY, setCircleOffsetY] = useState(0); // mm
   const [circleScale, setCircleScale] = useState(1.0);
-  const [hideCircles, setHideCircles] = useState(true);
+  const [hideCircles, setHideCircles] = useState(true); // ✅ default OFF
 
   // ====================================================
   // HEX GRID HELPERS (row/col ↔ logical mm)
@@ -381,25 +387,26 @@ const FreeformChainmail2D: React.FC = () => {
     return { ox: cx, oy: cy };
   }, [rings.size, minRow, minCol, maxRow, maxCol, rcToLogical]);
 
-// ====================================================
-// TRUE HEX-GRID SNAP (point → row/col)
-// Inverse of rcToLogical() — ODD-ROW OFFSET GRID
-// ====================================================
-const logicalToRowColApprox = useCallback(
-  (lx: number, ly: number) => {
-    // Row comes directly from Y
-    const row = Math.round(ly / spacingY);
+  // ====================================================
+  // TRUE HEX-GRID SNAP (point → row/col)
+  // Inverse of rcToLogical() — ODD-ROW OFFSET GRID
+  // ====================================================
+  const logicalToRowColApprox = useCallback(
+    (lx: number, ly: number) => {
+      // Row comes directly from Y
+      const row = Math.round(ly / spacingY);
 
-    // Undo odd-row horizontal offset
-    const rowOffset = row & 1 ? centerSpacing / 2 : 0;
+      // Undo odd-row horizontal offset
+      const rowOffset = row & 1 ? centerSpacing / 2 : 0;
 
-    // Column from X
-    const col = Math.round((lx - rowOffset) / centerSpacing);
+      // Column from X
+      const col = Math.round((lx - rowOffset) / centerSpacing);
 
-    return { row, col };
-  },
-  [centerSpacing, spacingY]
-);
+      return { row, col };
+    },
+    [centerSpacing, spacingY]
+  );
+
   // ====================================================
   // ✅ Use RingRenderer camera for projection/unprojection
   // ====================================================
@@ -899,9 +906,11 @@ const logicalToRowColApprox = useCallback(
       const { sx, sy } = getCanvasPoint(e);
       const { lx, ly } = screenToWorld(sx, sy);
 
-if (showDiagnostics) {
-  addDebugMarker(lx, ly);
-}
+      // ✅ Debug markers ONLY when diagnostics is enabled
+      if (showDiagnostics) {
+        addDebugMarker(lx, ly);
+      }
+
       const adjLx = lx - circleOffsetX;
       const adjLy = ly - circleOffsetY;
 
@@ -969,12 +978,21 @@ if (showDiagnostics) {
 
       setRings(mapCopy);
       setNextClusterId(newClusterId);
+
+      // ✅ Diagnostics log only when enabled
+      if (showDiagnostics) {
+        setDiagLog((prev) => {
+          const line = `lx=${lx.toFixed(3)} ly=${ly.toFixed(3)} row=${bestRow} col=${bestCol}\n`;
+          return (prev || "") + line;
+        });
+      }
     },
     [
       panMode,
       getCanvasPoint,
       screenToWorld,
       addDebugMarker,
+      showDiagnostics,
       circleOffsetX,
       circleOffsetY,
       logicalToRowColApprox,
@@ -1061,7 +1079,8 @@ if (showDiagnostics) {
     reloadRingSets();
 
     const storedAuto = localStorage.getItem(AUTO_FOLLOW_KEY);
-    const auto = storedAuto === null ? true : storedAuto === "true" || storedAuto === "1";
+    const auto =
+      storedAuto === null ? true : storedAuto === "true" || storedAuto === "1";
     setAutoFollowTuner(auto);
 
     const storedActive = localStorage.getItem(ACTIVE_SET_KEY);
@@ -1101,51 +1120,57 @@ if (showDiagnostics) {
   // ====================================================
   // Manual JSON load
   // ====================================================
-  const handleFileJSONLoad = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleFileJSONLoad = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(String(ev.target?.result || "{}"));
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const data = JSON.parse(String(ev.target?.result || "{}"));
 
-        if (typeof data.innerDiameter === "number") setInnerIDmm(data.innerDiameter);
-        if (typeof data.wireDiameter === "number") setWireMm(data.wireDiameter);
-        if (typeof data.centerSpacing === "number") setCenterSpacing(data.centerSpacing);
-        if (typeof data.angleIn === "number") setAngleIn(data.angleIn);
-        if (typeof data.angleOut === "number") setAngleOut(data.angleOut);
+          if (typeof data.innerDiameter === "number")
+            setInnerIDmm(data.innerDiameter);
+          if (typeof data.wireDiameter === "number")
+            setWireMm(data.wireDiameter);
+          if (typeof data.centerSpacing === "number")
+            setCenterSpacing(data.centerSpacing);
+          if (typeof data.angleIn === "number") setAngleIn(data.angleIn);
+          if (typeof data.angleOut === "number") setAngleOut(data.angleOut);
 
-        const newId = data.id || `file:${file.name}`;
-        setActiveRingSetId(newId);
-        setAutoFollowTuner(false);
-      } catch (err) {
-        alert("Could not parse JSON file.");
-        console.error(err);
-      }
-    };
+          const newId = data.id || `file:${file.name}`;
+          setActiveRingSetId(newId);
+          setAutoFollowTuner(false);
+        } catch (err) {
+          alert("Could not parse JSON file.");
+          console.error(err);
+        }
+      };
 
-    reader.readAsText(file);
-  }, []);
+      reader.readAsText(file);
+    },
+    []
+  );
 
-// ====================================================
-// External view state passed to RingRenderer
-// IMPORTANT: must use SAME floating-origin pipeline as rings3D
-// ====================================================
-const externalViewState = useMemo(
-  () => {
-    // Convert logical pan center -> renderer world coords (shifted + y-inverted)
-    const worldPanX = panWorldX - logicalOrigin.ox;
-    const worldPanY = -(panWorldY - logicalOrigin.oy);
+  // ====================================================
+  // External view state passed to RingRenderer
+  // IMPORTANT: must use SAME floating-origin pipeline as rings3D
+  // ====================================================
+  const externalViewState = useMemo(
+    () => {
+      // Convert logical pan center -> renderer world coords (shifted + y-inverted)
+      const worldPanX = panWorldX - logicalOrigin.ox;
+      const worldPanY = -(panWorldY - logicalOrigin.oy);
 
-    return {
-      panX: worldPanX,
-      panY: worldPanY,
-      zoom,
-    };
-  },
-  [panWorldX, panWorldY, zoom, logicalOrigin.ox, logicalOrigin.oy]
-);
+      return {
+        panX: worldPanX,
+        panY: worldPanY,
+        zoom,
+      };
+    },
+    [panWorldX, panWorldY, zoom, logicalOrigin.ox, logicalOrigin.oy]
+  );
 
   // ====================================================
   // RENDER
@@ -1161,80 +1186,175 @@ const externalViewState = useMemo(
         color: "#e5e7eb",
         fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
         overflow: "hidden",
+        position: "relative",
       }}
     >
-      {/* LEFT TOOLBAR */}
-      <div
-        style={{
-          position: "fixed",
-          left: 0,
-          top: 0,
-          width: 72,
-          height: "100vh",
-          padding: 10,
-          display: "flex",
-          flexDirection: "column",
-          gap: 10,
-          background: "#020617",
-          borderRight: "1px solid rgba(148,163,184,0.2)",
-          zIndex: 10,
-        }}
-      >
-        <ToolButton
-          active={!eraseMode}
-          onClick={() => setEraseMode(false)}
-          title="Place / recolor ring"
-        >
-          🎨
-        </ToolButton>
-
-        <ToolButton
-          active={eraseMode}
-          onClick={() => setEraseMode(true)}
-          title="Erase ring"
-        >
-          🧽
-        </ToolButton>
-
-        <ToolButton
-          active={panMode}
-          onClick={() => setPanMode((v) => !v)}
-          title="Pan / Drag view"
-        >
-          ✋
-        </ToolButton>
-
-        <ToolButton
-          active={showControls}
-          onClick={() => setShowControls((v) => !v)}
-          title="Show geometry & JSON controls"
-        >
-          🧰
-        </ToolButton>
-
-        <ToolButton
-          active={showDiagnostics}
-          onClick={() => setShowDiagnostics((v) => !v)}
-          title="Toggle diagnostics (coords)"
-        >
-          📊
-        </ToolButton>
-
-        <ToolButton onClick={handleClear} title="Clear all">
-          🧹
-        </ToolButton>
-
+      {/* ============================= */}
+      {/* ✅ FLOATING TOOLBAR (Designer style) */}
+      {/* ============================= */}
+      <DraggablePill id="freeform-toolbar" defaultPosition={{ x: 20, y: 20 }}>
         <div
           style={{
-            marginTop: "auto",
-            fontSize: 10,
-            opacity: 0.7,
-            textAlign: "center",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            alignItems: "center",
+            width: 76,
+            padding: 10,
+            background: "#0f172a",
+            border: "1px solid #0b1020",
+            borderRadius: 20,
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+            userSelect: "none",
           }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
         >
-          Scroll / pinch = zoom
+          {/* ✨ Freeform (current page identity / optional quick close for submenu) */}
+          <ToolButton
+            active={true}
+            title="Freeform"
+            onClick={() => {
+              // keep as identity button; no-op or could toggle submenu
+              setShowCompass((v) => !v);
+            }}
+          >
+            ✨
+          </ToolButton>
+
+          <ToolButton
+            active={!eraseMode}
+            onClick={() => setEraseMode(false)}
+            title="Place / recolor ring"
+          >
+            🎨
+          </ToolButton>
+
+          <ToolButton
+            active={eraseMode}
+            onClick={() => setEraseMode(true)}
+            title="Erase ring"
+          >
+            🧽
+          </ToolButton>
+
+          <ToolButton
+            active={panMode}
+            onClick={() => setPanMode((v) => !v)}
+            title="Pan / Drag view"
+          >
+            ✋
+          </ToolButton>
+
+          <ToolButton
+            active={showControls}
+            onClick={() => setShowControls((v) => !v)}
+            title="Show geometry & JSON controls"
+          >
+            🧰
+          </ToolButton>
+
+          <ToolButton
+            active={showDiagnostics}
+            onClick={() => setShowDiagnostics((v) => !v)}
+            title="Toggle diagnostics (coords)"
+          >
+            📊
+          </ToolButton>
+
+          <ToolButton onClick={handleClear} title="Clear all">
+            🧹
+          </ToolButton>
+
+          <ToolButton
+            active={showCompass}
+            onClick={() => setShowCompass((v) => !v)}
+            title="Navigation Menu"
+          >
+            🧭
+          </ToolButton>
+
+          {/* ✅ emoji-only hint (no words) */}
+          <div
+            style={{
+              marginTop: 2,
+              fontSize: 16,
+              opacity: 0.7,
+              textAlign: "center",
+              userSelect: "none",
+            }}
+            title="Scroll / pinch to zoom"
+          >
+            🖱️🤏
+          </div>
         </div>
-      </div>
+      </DraggablePill>
+
+      {/* ============================= */}
+      {/* ✅ FLOATING COLOR PALETTE (Designer style) */}
+      {/* ============================= */}
+      <DraggablePill
+        id="freeform-palette"
+        defaultPosition={{ x: 20, y: window.innerHeight - 260 }}
+      >
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            alignItems: "center",
+            background: "rgba(17,24,39,0.96)",
+            border: "1px solid rgba(0,0,0,0.6)",
+            borderRadius: 14,
+            padding: 8,
+            boxShadow: "0 6px 18px rgba(0,0,0,0.45)",
+            userSelect: "none",
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+        >
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(8, 1fr)",
+              gap: 6,
+            }}
+          >
+            {PALETTE.map((c) => (
+              <button
+                key={c}
+                onClick={() => {
+                  setActiveColor(c);
+                  setEraseMode(false);
+                }}
+                title={c}
+                style={{
+                  width: 22,
+                  height: 22,
+                  borderRadius: 6,
+                  border:
+                    activeColor === c
+                      ? "2px solid #f9fafb"
+                      : "1px solid rgba(15,23,42,0.9)",
+                  background: c,
+                  cursor: "pointer",
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      </DraggablePill>
+
+      {/* ============================= */}
+      {/* ✅ SUBMENU / NAVIGATION (Designer style) */}
+      {/* ============================= */}
+      {showCompass && (
+        <DraggableCompassNav
+          onNavigate={() => {
+            setShowCompass(false);
+          }}
+        />
+      )}
 
       {/* MAIN WORK AREA */}
       <div
@@ -1243,7 +1363,6 @@ const externalViewState = useMemo(
           flex: 1,
           position: "relative",
           background: "#020617",
-          marginLeft: 72,
         }}
       >
         {/* 3D VIEW */}
@@ -1295,8 +1414,9 @@ const externalViewState = useMemo(
           }}
         />
 
-        {/* DEBUG CLICK MARKERS */}
-        {!hideCircles &&
+        {/* DEBUG CLICK MARKERS (ONLY WHEN DIAGNOSTICS ON, and circles visible) */}
+        {showDiagnostics &&
+          !hideCircles &&
           debugClicks.map((marker) => {
             const { wx, wy } = logicalToWorld(marker.lx, marker.ly);
             const { sx, sy } = worldToScreen(wx, wy);
@@ -1326,45 +1446,6 @@ const externalViewState = useMemo(
               </div>
             );
           })}
-
-        {/* COLOR PALETTE */}
-        <div
-          style={{
-            position: "fixed",
-            left: 88,
-            bottom: 16,
-            padding: 8,
-            borderRadius: 12,
-            background: "rgba(15,23,42,0.95)",
-            border: "1px solid rgba(148,163,184,0.3)",
-            display: "grid",
-            gridTemplateColumns: "repeat(8, 1fr)",
-            gap: 6,
-            zIndex: 11,
-          }}
-        >
-          {PALETTE.map((c) => (
-            <button
-              key={c}
-              onClick={() => {
-                setActiveColor(c);
-                setEraseMode(false);
-              }}
-              title={c}
-              style={{
-                width: 22,
-                height: 22,
-                borderRadius: 6,
-                border:
-                  activeColor === c
-                    ? "2px solid #f9fafb"
-                    : "1px solid rgba(15,23,42,0.9)",
-                background: c,
-                cursor: "pointer",
-              }}
-            />
-          ))}
-        </div>
 
         {/* RIGHT CONTROL PANEL */}
         {showControls && (
