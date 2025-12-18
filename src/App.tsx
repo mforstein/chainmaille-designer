@@ -1,42 +1,107 @@
 // ==============================
-// src/App.tsx (Merged Full Version, FIXED + COMPLETE)
+// src/App.tsx
+// Chainmaille Designer – BOM-Ready Root
+// ==============================
+//
+// PURPOSE
+// -------
+// This file is the application root and routing hub for:
+//
+// • Designer (3D chainmail builder)
+// • FreeformChainmail2D (paint-first workflow)
+// • ErinPattern2D (pattern-centric workflow)
+// • Ring Size Chart
+// • Weave Tuner
+//
+// BOM (Bill of Materials) SUPPORT
+// -------------------------------
+// This file defines the *canonical shared types* required for BOM calculation
+// across ALL pages. Each page (Designer, Freeform, Erin2D) will expose a
+// `getBOMRings()` adapter that converts its internal ring representation into
+// a normalized BOM ring list.
+//
+// A shared `bomCalculator.ts` will consume that normalized data and output:
+//
+// • Ring count totals
+// • Supplier breakdown
+// • Color/material breakdown
+// • Estimated weight
+// • Pack counts
+// • Printable purchase order
+//
+// IMPORTANT CONSTRAINTS
+// ---------------------
+// • Rendering logic MUST NOT be modified by BOM logic
+// • BOM logic MUST be read-only
+// • BOM must work regardless of page or renderer type
+// • No feature removal
+//
+// NORMALIZED BOM RING SHAPE
+// -------------------------
+// Every page must be able to produce:
+//
+// interface BOMRing {
+//   id: string;                 // stable per-ring id
+//   supplier: SupplierId;       // cmj | trl | mdz
+//   colorHex: string;           // resolved final color
+//   innerDiameter: number;      // mm
+//   wireDiameter: number;       // mm
+//   material?: string;          // optional (aluminum, steel, etc.)
+// }
+//
+// These are aggregated by bomCalculator.ts
+//
 // ==============================
 
-import React, { useRef, useState, useEffect, useMemo } from "react";
-import { Link } from "react-router-dom";
-import { ImageOverlayPanel, OverlayState } from "./components/ImageOverlayPanel";
-import { useNavigate } from "react-router-dom";
+import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
+import { Routes, Route, Navigate, useNavigate, Link } from "react-router-dom";
+import { calculateBOM } from "./BOM/bomCalculator";
 import "./index.css";
 import "./ui/ui-grid.css";
 
-// Renderer only
+// ==============================
+// Renderer
+// ==============================
 import RingRenderer, {
   RingRendererHandle,
 } from "./components/RingRenderer";
 
-// Geometry generators
+// ==============================
+// Geometry Generators
+// ==============================
 import {
   generateRings,
   generateRingsDesigner,
 } from "./components/ringGenerators";
 
+// ==============================
+// Shared UI + Data
+// ==============================
 import { MATERIALS, UNIVERSAL_COLORS } from "./utils/colors";
 import SupplierMenu from "./components/SupplierMenu";
 import AtlasPalette from "./components/AtlasPalette";
+import { ImageOverlayPanel, OverlayState } from "./components/ImageOverlayPanel";
 
+// ==============================
+// Pages
+// ==============================
 import RingSizeChart from "./pages/RingSizeChart";
 import ChainmailWeaveTuner from "./pages/ChainmailWeaveTuner";
 import ChainmailWeaveAtlas from "./pages/ChainmailWeaveAtlas";
-import { Routes, Route, Navigate } from "react-router-dom";
 import PasswordGate from "./pages/PasswordGate";
 import FreeformChainmail2D from "./pages/FreeformChainmail2D";
 import ErinPattern2D from "./pages/ErinPattern2D";
-// ---------- Types ----------
-export type SupplierId = "cmj" | "trl" | "mdz";
-type ColorMode = "solid" | "checker";
-type Unit = "mm" | "in";
 
-interface Params {
+// ==============================
+// BOM-RELATED SHARED TYPES
+// ==============================
+
+export type SupplierId = "cmj" | "trl" | "mdz";
+export type ColorMode = "solid" | "checker";
+export type Unit = "mm" | "in";
+
+// Canonical parameter block used by Designer + adapters
+export interface Params {
   rows: number;
   cols: number;
   innerDiameter: number;
@@ -53,10 +118,30 @@ interface Params {
   centerSpacing?: number;
 }
 
-type PaintMap = Map<string, string | null>;
+// Normalized BOM ring (used by bomCalculator.ts)
+export interface BOMRing {
+  id: string;
+  supplier: SupplierId;
+  colorHex: string;
+  innerDiameter: number;
+  wireDiameter: number;
+  material?: string;
+}
 
-// ---------- Utility ----------
-const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+// Paint map used by 3D Designer
+export type PaintMap = Map<string, string | null>;
+
+// ==============================
+// Utilities
+// ==============================
+
+export const clamp = (v: number, a: number, b: number) =>
+  Math.max(a, Math.min(b, v));
+
+// ==============================
+// Route Guards
+// ==============================
+
 function RequireDesignerAuth({ children }: { children: JSX.Element }) {
   return localStorage.getItem("designerAuth") === "true"
     ? children
@@ -74,7 +159,11 @@ function RequireErin2DAuth({ children }: { children: JSX.Element }) {
     ? children
     : <Navigate to="/password" state={{ redirect: "/erin2d" }} />;
 }
-// ---------- Draggable Floating Pill ----------
+
+// ==============================
+// Draggable Floating Pill (Shared UI)
+// ==============================
+
 function DraggablePill({
   id,
   defaultPosition = { x: 20, y: 20 },
@@ -88,6 +177,7 @@ function DraggablePill({
     const saved = localStorage.getItem(`pill-pos-${id}`);
     return saved ? JSON.parse(saved) : defaultPosition;
   });
+
   const draggingRef = useRef(false);
   const offsetRef = useRef({ x: 0, y: 0 });
 
@@ -95,10 +185,12 @@ function DraggablePill({
     draggingRef.current = true;
     offsetRef.current = { x: clientX - pos.x, y: clientY - pos.y };
   };
+
   const move = (clientX: number, clientY: number) => {
     if (!draggingRef.current) return;
     setPos({ x: clientX - offsetRef.current.x, y: clientY - offsetRef.current.y });
   };
+
   const stop = () => {
     draggingRef.current = false;
   };
@@ -107,7 +199,6 @@ function DraggablePill({
     localStorage.setItem(`pill-pos-${id}`, JSON.stringify(pos));
   }, [id, pos]);
 
-  // ✅ Prevent drag start on interactive elements
   const isInteractive = (el: EventTarget | null) => {
     if (!(el instanceof HTMLElement)) return false;
     return !!el.closest(
@@ -358,7 +449,54 @@ const liveParams = useMemo(
   // --- helper functions ---
   const toggleExclusive = (menu: "camera" | "controls") =>
     setActiveMenu((prev) => (prev === menu ? null : menu));
+  // ============================================================
+  // 🧾 BOM ADAPTER — Designer → BOMRing[]
+  // ============================================================
+  // Normalizes Designer state into a canonical BOM structure.
+  // Safe for:
+  // • BOM Panel
+  // • Print / Export
+  // • Cross-page BOM aggregation
+  // ============================================================
 
+const getBOMRings = useCallback((): BOMRing[] => {
+  if (!Array.isArray(rings)) return [];
+
+  const supplier: SupplierId = params.supplier;
+
+  const baseMaterial =
+    MATERIALS.find((m) => m.hex === params.ringColor)?.name ??
+    "Unknown";
+
+  return rings.map((ring) => {
+    // ✅ MUST MATCH RingRenderer EXACTLY
+    const key = `${ring.row},${ring.col}`;
+
+    const paintedColor = paint.get(key);
+
+    return {
+      id: key, // stable + matches paint system
+      supplier,
+      colorHex: paintedColor ?? params.ringColor,
+      innerDiameter: params.innerDiameter,
+      wireDiameter: params.wireDiameter,
+      material: baseMaterial,
+    };
+  });
+}, [
+  rings,
+  paint,
+  params.supplier,
+  params.ringColor,
+  params.innerDiameter,
+  params.wireDiameter,
+]);
+    // ==============================
+  // BOM Calculation (Read-Only)
+  // ==============================
+const bom = useMemo(() => {
+  return calculateBOM(getBOMRings());
+}, [getBOMRings]);
 // ============================================================
 // ✅ Lock/Unlock Rotation — independent from painting
 // ============================================================
@@ -381,7 +519,10 @@ const setLock = (locked: boolean) => {
     rendererRef.current?.clearPaint();
     setPaint(new Map());
   };
-
+  // ==============================
+  // BOM Panel State
+  // ==============================
+  const [showBOM, setShowBOM] = useState(false);
 // ============================================================
 // ✅ Apply Atlas — preserve paint & overlay
 // ============================================================
@@ -470,72 +611,73 @@ const applyAtlas = (e: any) => {
         </div>
 
         {/* --- Controls (▶) Menu — rows/cols dialog --- */}
-        {activeMenu === "controls" && (
-          <div
-            style={{
-              marginTop: 12,
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-              width: 160,
-              background: "#0b1324",
-              border: "1px solid #0b1020",
-              borderRadius: 16,
-              padding: 12,
-              color: "#ddd",
-              fontSize: 13,
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>Grid Size</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <label style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span>Columns:</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={200}
-                  value={params.cols}
-                  onChange={(e) => {
-                    const val = clamp(parseInt(e.target.value), 1, 200);
-                    setParams({ ...params, cols: val });
-                  }}
-                  style={{
-                    width: 80,
-                    textAlign: "right",
-                    background: "#111827",
-                    color: "#fff",
-                    border: "1px solid #222",
-                    borderRadius: 6,
-                  }}
-                />
-              </label>
-              <label style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                <span>Rows:</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={200}
-                  value={params.rows}
-                  onChange={(e) => {
-                    const val = clamp(parseInt(e.target.value), 1, 200);
-                    setParams({ ...params, rows: val });
-                  }}
-                  style={{
-                    width: 80,
-                    textAlign: "right",
-                    background: "#111827",
-                    color: "#fff",
-                    border: "1px solid #222",
-                    borderRadius: 6,
-                  }}
-                />
-              </label>
-            </div>
-          </div>
-        )}
+{activeMenu === "controls" && (
+  <div
+    style={{
+      marginTop: 12,
+      display: "flex",
+      flexDirection: "column",
+      gap: 10,
+      width: 160,
+      background: "#0b1324",
+      border: "1px solid #0b1020",
+      borderRadius: 16,
+      padding: 12,
+      color: "#ddd",
+      fontSize: 13,
+    }}
+    onMouseDown={(e) => e.stopPropagation()}
+    onTouchStart={(e) => e.stopPropagation()}
+  >
+    <div style={{ fontWeight: 700, marginBottom: 4 }}>Grid Size</div>
 
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <label style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+        <span>Columns:</span>
+        <input
+          type="number"
+          min={1}
+          max={200}
+          value={params.cols}
+          onChange={(e) => {
+            const val = clamp(parseInt(e.target.value), 1, 200);
+            setParams({ ...params, cols: val });
+          }}
+          style={{
+            width: 80,
+            textAlign: "right",
+            background: "#111827",
+            color: "#fff",
+            border: "1px solid #222",
+            borderRadius: 6,
+          }}
+        />
+      </label>
+
+      <label style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+        <span>Rows:</span>
+        <input
+          type="number"
+          min={1}
+          max={200}
+          value={params.rows}
+          onChange={(e) => {
+            const val = clamp(parseInt(e.target.value), 1, 200);
+            setParams({ ...params, rows: val });
+          }}
+          style={{
+            width: 80,
+            textAlign: "right",
+            background: "#111827",
+            color: "#fff",
+            border: "1px solid #222",
+            borderRadius: 6,
+          }}
+        />
+      </label>
+    </div>
+  </div>
+)}
         {/* --- Camera Tools Menu (Image overlay, paint, zoom, etc.) --- */}
         {activeMenu === "camera" && (
           <div
@@ -596,12 +738,6 @@ const applyAtlas = (e: any) => {
     🧽
   </IconBtn>
 )}  
-          <IconBtn tooltip="Zoom In" onClick={doZoomIn}>
-              ＋
-            </IconBtn>
-            <IconBtn tooltip="Zoom Out" onClick={doZoomOut}>
-              －
-            </IconBtn>
 
             <IconBtn tooltip="Reset View" onClick={doReset}>
               ↺
@@ -622,7 +758,12 @@ const applyAtlas = (e: any) => {
             <IconBtn tooltip="Supplier & Atlas" onClick={() => setShowMagnet((v) => !v)}>
               🧲
             </IconBtn>
-
+<IconBtn
+  tooltip="Bill of Materials"
+  onClick={() => setShowBOM((v) => !v)}
+>
+  🧾
+</IconBtn>
             <IconBtn tooltip="Navigation Menu" onClick={() => setShowCompass((v) => !v)}>
               🧭
             </IconBtn>
@@ -965,6 +1106,130 @@ setShowOverlayPanel(false);
 />
         </div>
       )}
+      
+{/* ==============================
+    🧾 Floating BOM Panel
+   ============================== */}
+{showBOM && (
+  <DraggablePill id="bom-panel" defaultPosition={{ x: 420, y: 120 }}>
+    <div
+      style={{
+        minWidth: 280,
+        maxWidth: 360,
+        background: "rgba(17,24,39,0.97)",
+        border: "1px solid rgba(0,0,0,.6)",
+        borderRadius: 14,
+        padding: 12,
+        color: "#e5e7eb",
+        fontSize: 13,
+        boxShadow: "0 12px 40px rgba(0,0,0,.45)",
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 8,
+        }}
+      >
+        <strong style={{ fontSize: 14 }}>🧾 Bill of Materials</strong>
+        <button
+          onClick={() => setShowBOM(false)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#9ca3af",
+            cursor: "pointer",
+            fontSize: 16,
+          }}
+        >
+          ✕
+        </button>
+      </div>
+
+{/* Summary */}
+<div style={{ marginBottom: 10 }}>
+  <div>
+    Rings: <strong>{bom?.summary?.totalRings ?? 0}</strong>
+  </div>
+  <div>
+    Colors: <strong>{bom?.summary?.uniqueColors ?? 0}</strong>
+  </div>
+  <div>
+    Total Weight:{" "}
+    <strong>
+      {(bom?.summary?.totalWeight ?? 0).toFixed(2)} g
+    </strong>
+  </div>
+</div>
+      {/* Color Breakdown */}
+      <div style={{ marginBottom: 10 }}>
+<strong>By Color</strong>
+{(bom?.lines ?? []).map((line) => (
+  <div
+    key={`${line.supplier}-${line.colorHex}`}
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginTop: 4,
+    }}
+  >
+    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <span
+        style={{
+          width: 12,
+          height: 12,
+          background: line.colorHex,
+          borderRadius: 3,
+          border: "1px solid #000",
+        }}
+      />
+      {line.colorHex}
+    </span>
+    <span>{line.ringCount}</span>
+  </div>
+))}
+      </div>
+
+      {/* Supplier Breakdown */}
+      <div style={{ marginBottom: 10 }}>
+        <strong>By Supplier</strong>
+  {(bom?.summary?.suppliers ?? []).map((s) => (
+  <div
+    key={s}
+    style={{ display: "flex", justifyContent: "space-between" }}
+  >
+    <span>{s.toUpperCase()}</span>
+    <span>
+      {(bom?.lines ?? [])
+        .filter((l) => l.supplier === s)
+        .reduce((sum, l) => sum + (l.ringCount ?? 0), 0)}
+    </span>
+  </div>
+))}
+</div>
+      {/* Print */}
+      <button
+        onClick={() => window.print()}
+        style={{
+          width: "100%",
+          marginTop: 8,
+          padding: "6px 8px",
+          borderRadius: 8,
+          background: "#2563eb",
+          color: "white",
+          border: "none",
+          cursor: "pointer",
+        }}
+      >
+        🖨 Print BOM
+      </button>
+    </div>
+  </DraggablePill>
+)}      
    {/* === Compass Navigation Panel === */}
 {showCompass && (
   <DraggableCompassNav
@@ -999,7 +1264,7 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
           gap: 8,
           background: "rgba(17,24,39,0.96)",
           border: "1px solid rgba(0,0,0,0.6)",
-          borderRadius: 14,
+          borderRadius: 12,
           padding: 10,
           boxShadow: "0 8px 22px rgba(0,0,0,0.45)",
           userSelect: "none",
