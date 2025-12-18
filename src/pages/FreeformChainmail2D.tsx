@@ -8,7 +8,7 @@
 import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import RingRenderer from "../components/RingRenderer";
-
+import { calculateBOM } from "../BOM/bomCalculator";
 import {
   WEAVE_SETTINGS_DEFAULT,
   RingMap,
@@ -19,7 +19,12 @@ import {
 import * as THREE from "three";
 
 // ✅ Pull in the SAME floating pill + submenu system used by Designer
-import { DraggablePill, DraggableCompassNav } from "../App";
+import {
+  DraggablePill,
+  DraggableCompassNav,
+  BOMRing,
+  SupplierId,
+} from "../App";
 
 // ======================================================
 // SAFETY STUBS (history integration preserved, no-ops here)
@@ -233,7 +238,6 @@ const FreeformChainmail2D: React.FC = () => {
 
   // ✅ Floating submenu (Designer pattern) — show/hide compass nav
   const [showCompass, setShowCompass] = useState(false);
-
   // ====================================================
   // GEOMETRY (synced with Tuner)
   // ====================================================
@@ -247,14 +251,43 @@ const FreeformChainmail2D: React.FC = () => {
     () => (wireMm > 0 ? innerIDmm / wireMm : 0),
     [innerIDmm, wireMm]
   );
+  // ============================================================
+  // 🧾 BOM ADAPTER — Freeform → BOMRing[]
+  // ============================================================
+  const getBOMRings = useCallback((): BOMRing[] => {
+    const supplier: SupplierId = "cmj";
 
+    const out: BOMRing[] = [];
+    rings.forEach((r: PlacedRing) => {
+      const id = `${r.row}:${r.col}`;
+      const colorHex = (r as any).color ?? "#ffffff";
+
+      out.push({
+        id,
+        supplier,
+        colorHex,
+        innerDiameter: innerIDmm,
+        wireDiameter: wireMm,
+        material: "Unknown",
+      });
+    });
+
+    return out;
+  }, [rings, innerIDmm, wireMm]);
   // ====================================================
   // RING SETS (from Tuner JSON)
   // ====================================================
   const [ringSets, setRingSets] = useState<RingSet[]>([]);
   const [activeRingSetId, setActiveRingSetId] = useState<string | null>(null);
   const [autoFollowTuner, setAutoFollowTuner] = useState<boolean>(true);
+  // ==============================
+  // BOM Panel State + Calculation
+  // ==============================
+  const [showBOM, setShowBOM] = useState(false);
 
+const bom = useMemo(() => {
+  return calculateBOM(getBOMRings());
+}, [getBOMRings]);
   // ====================================================
   // WEAVE GRID SETTINGS (for resolvePlacement)
   // ====================================================
@@ -1265,7 +1298,13 @@ const FreeformChainmail2D: React.FC = () => {
           <ToolButton onClick={handleClear} title="Clear all">
             🧹
           </ToolButton>
-
+          <ToolButton
+            active={showBOM}
+            onClick={() => setShowBOM((v) => !v)}
+            title="Bill of Materials"
+          >
+            🧾
+          </ToolButton>
           <ToolButton
             active={showCompass}
             onClick={() => setShowCompass((v) => !v)}
@@ -1446,7 +1485,133 @@ const FreeformChainmail2D: React.FC = () => {
               </div>
             );
           })}
+      {/* ==============================
+          🧾 Floating BOM Panel (Freeform)
+         ============================== */}
+      {showBOM && (
+        <DraggablePill id="freeform-bom-panel" defaultPosition={{ x: 420, y: 120 }}>
+          <div
+            style={{
+              minWidth: 280,
+              maxWidth: 360,
+              background: "rgba(17,24,39,0.97)",
+              border: "1px solid rgba(0,0,0,.6)",
+              borderRadius: 14,
+              padding: 12,
+              color: "#e5e7eb",
+              fontSize: 13,
+              boxShadow: "0 12px 40px rgba(0,0,0,.45)",
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <strong style={{ fontSize: 14 }}>🧾 Bill of Materials</strong>
+              <button
+                onClick={() => setShowBOM(false)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#9ca3af",
+                  cursor: "pointer",
+                  fontSize: 16,
+                }}
+              >
+                ✕
+              </button>
+            </div>
 
+{/* Summary */}
+<div style={{ marginBottom: 10 }}>
+  <div>
+    Rings: <strong>{bom?.summary?.totalRings ?? 0}</strong>
+  </div>
+  <div>
+    Colors: <strong>{bom?.summary?.uniqueColors ?? 0}</strong>
+  </div>
+  <div>
+    Total Weight:{" "}
+    <strong>
+      {(bom?.summary?.totalWeight ?? 0).toFixed(2)} g
+    </strong>
+  </div>
+</div>
+
+            {/* Color Breakdown */}
+            <div style={{ marginBottom: 10 }}>
+   <strong>By Color</strong>
+{(bom?.lines ?? []).map((line) => (
+  <div
+    key={`${line.supplier}-${line.colorHex}`}
+    style={{
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginTop: 4,
+    }}
+  >
+    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      <span
+        style={{
+          width: 12,
+          height: 12,
+          background: line.colorHex,
+          borderRadius: 3,
+          border: "1px solid #000",
+        }}
+      />
+      {line.colorHex}
+    </span>
+    <span>{line.ringCount}</span>
+  </div>
+))}
+            </div>
+
+            {/* Supplier Breakdown */}
+            <div style={{ marginBottom: 10 }}>
+              <strong>By Supplier</strong>
+{(bom?.summary?.suppliers ?? []).map((s) => (
+  <div
+    key={s}
+    style={{ display: "flex", justifyContent: "space-between" }}
+  >
+    <span>{s.toUpperCase()}</span>
+    <span>
+      {(bom?.lines ?? [])
+        .filter((l) => l.supplier === s)
+        .reduce((sum, l) => sum + (l.ringCount ?? 0), 0)}
+    </span>
+  </div>
+))}
+            </div>
+
+            {/* Print */}
+            <button
+              onClick={() => window.print()}
+              style={{
+                width: "100%",
+                marginTop: 8,
+                padding: "6px 8px",
+                borderRadius: 8,
+                background: "#2563eb",
+                color: "white",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              🖨 Print BOM
+            </button>
+          </div>
+        </DraggablePill>
+      )}
         {/* RIGHT CONTROL PANEL */}
         {showControls && (
           <div
