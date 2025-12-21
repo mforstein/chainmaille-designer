@@ -5,18 +5,22 @@ type MaybePromise<T> = T | Promise<T>;
 interface Props {
   /**
    * Return the JSON-serializable project payload.
-   * (We handle the file prompt + download here.)
+   * (The component handles file naming + download.)
    */
   onSave: () => MaybePromise<any>;
 
-  /** Receive parsed JSON payload from a chosen file. */
+  /**
+   * Receive parsed JSON payload from a chosen file.
+   */
   onLoad: (data: any) => void;
 
-  /** Optional default filename (without .json). */
+  /**
+   * Optional default filename (without .json).
+   */
   defaultFileName?: string;
 }
 
-const btn: React.CSSProperties = {
+const btnStyle: React.CSSProperties = {
   width: 44,
   height: 44,
   borderRadius: 12,
@@ -25,7 +29,7 @@ const btn: React.CSSProperties = {
   cursor: "pointer",
   background: "#0f172a",
   color: "#e5e7eb",
-  boxShadow: "0 6px 18px rgba(0,0,0,.25)",
+  boxShadow: "0 6px 18px rgba(0,0,0,0.25)",
 };
 
 export default function ProjectSaveLoadButtons({
@@ -35,14 +39,14 @@ export default function ProjectSaveLoadButtons({
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const doSave = async () => {
+  const handleSave = async () => {
     try {
-      const suggested = `${defaultFileName}-${new Date()
+      const suggestedName = `${defaultFileName}-${new Date()
         .toISOString()
         .slice(0, 10)}`;
 
-      const name = window.prompt("Save project as:", suggested);
-      if (!name) return;
+      const fileName = window.prompt("Save project as:", suggestedName);
+      if (!fileName) return;
 
       const payload = await onSave();
       const json = JSON.stringify(payload, null, 2);
@@ -52,11 +56,13 @@ export default function ProjectSaveLoadButtons({
 
       const a = document.createElement("a");
       a.href = url;
-      a.download = name.toLowerCase().endsWith(".json") ? name : `${name}.json`;
+      a.download = fileName.toLowerCase().endsWith(".json")
+        ? fileName
+        : `${fileName}.json`;
+
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error("❌ Save failed:", err);
@@ -64,29 +70,50 @@ export default function ProjectSaveLoadButtons({
     }
   };
 
-  const doLoad = () => {
+  const handleLoadClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      onLoad(json);
+    } catch (err) {
+      console.error("❌ Load failed:", err);
+      alert("Invalid or corrupted project file.");
+    } finally {
+      // Allow reloading the same file
+      e.currentTarget.value = "";
+    }
   };
 
   return (
     <>
       <button
-        style={btn}
+        type="button"
+        style={btnStyle}
         title="Save Project"
         onClick={(e) => {
           e.stopPropagation();
-          doSave();
+          handleSave();
         }}
       >
         💾
       </button>
 
       <button
-        style={btn}
+        type="button"
+        style={btnStyle}
         title="Load Project"
         onClick={(e) => {
           e.stopPropagation();
-          doLoad();
+          handleLoadClick();
         }}
       >
         📂
@@ -97,22 +124,7 @@ export default function ProjectSaveLoadButtons({
         type="file"
         accept=".json,application/json"
         style={{ display: "none" }}
-        onChange={async (e) => {
-          const file = e.target.files?.[0];
-          if (!file) return;
-
-          try {
-            const text = await file.text();
-            const json = JSON.parse(text);
-            onLoad(json);
-          } catch (err) {
-            console.error("❌ Load failed:", err);
-            alert("Invalid or corrupted project file.");
-          } finally {
-            // allow loading the same file twice
-            e.currentTarget.value = "";
-          }
-        }}
+        onChange={handleFileChange}
       />
     </>
   );
