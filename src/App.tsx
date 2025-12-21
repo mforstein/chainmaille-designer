@@ -1503,8 +1503,8 @@ function App() {
 // ======================================
 // ✅ EXPORTS
 // ======================================
-export { DraggableCompassNav, DraggablePill, App };
-export default ChainmailDesigner;
+export { DraggableCompassNav, DraggablePill };
+export default App;
 
 // NOTE: generateRingsDesigner is intentionally imported as part of your geometry suite.
 // It remains available for future generator selection without deleting features.
