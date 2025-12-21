@@ -62,17 +62,12 @@ import "./ui/ui-grid.css";
 // ==============================
 // Renderer
 // ==============================
-import RingRenderer, {
-  RingRendererHandle,
-} from "./components/RingRenderer";
+import RingRenderer, { RingRendererHandle } from "./components/RingRenderer";
 
 // ==============================
 // Geometry Generators
 // ==============================
-import {
-  generateRings,
-  generateRingsDesigner,
-} from "./components/ringGenerators";
+import { generateRings, generateRingsDesigner } from "./components/ringGenerators";
 
 // ==============================
 // Shared UI + Data
@@ -81,6 +76,7 @@ import { MATERIALS, UNIVERSAL_COLORS } from "./utils/colors";
 import SupplierMenu from "./components/SupplierMenu";
 import AtlasPalette from "./components/AtlasPalette";
 import { ImageOverlayPanel, OverlayState } from "./components/ImageOverlayPanel";
+import ProjectSaveLoadButtons from "./components/ProjectSaveLoadButtons";
 
 // ==============================
 // Pages
@@ -135,29 +131,34 @@ export type PaintMap = Map<string, string | null>;
 // Utilities
 // ==============================
 
-export const clamp = (v: number, a: number, b: number) =>
-  Math.max(a, Math.min(b, v));
+export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
 // ==============================
 // Route Guards
 // ==============================
 
 function RequireDesignerAuth({ children }: { children: JSX.Element }) {
-  return localStorage.getItem("designerAuth") === "true"
-    ? children
-    : <Navigate to="/password" state={{ redirect: "/designer" }} />;
+  return localStorage.getItem("designerAuth") === "true" ? (
+    children
+  ) : (
+    <Navigate to="/password" state={{ redirect: "/designer" }} />
+  );
 }
 
 function RequireFreeformAuth({ children }: { children: JSX.Element }) {
-  return localStorage.getItem("freeformAuth") === "true"
-    ? children
-    : <Navigate to="/password" state={{ redirect: "/freeform" }} />;
+  return localStorage.getItem("freeformAuth") === "true" ? (
+    children
+  ) : (
+    <Navigate to="/password" state={{ redirect: "/freeform" }} />
+  );
 }
 
 function RequireErin2DAuth({ children }: { children: JSX.Element }) {
-  return localStorage.getItem("erin2DAuth") === "true"
-    ? children
-    : <Navigate to="/password" state={{ redirect: "/erin2d" }} />;
+  return localStorage.getItem("erin2DAuth") === "true" ? (
+    children
+  ) : (
+    <Navigate to="/password" state={{ redirect: "/erin2d" }} />
+  );
 }
 
 // ==============================
@@ -201,9 +202,7 @@ function DraggablePill({
 
   const isInteractive = (el: EventTarget | null) => {
     if (!(el instanceof HTMLElement)) return false;
-    return !!el.closest(
-      "button, input, select, textarea, label, a, [role='button'], [role='slider']"
-    );
+    return !!el.closest("button, input, select, textarea, label, a, [role='button'], [role='slider']");
   };
 
   return (
@@ -273,17 +272,15 @@ const IconBtn: React.FC<
   </div>
 );
 
-
 // ==============================================
 // === CHAINMAIL DESIGNER COMPONENT STARTS HERE ===
 // ==============================================
 function ChainmailDesigner() {
-
-
   // 🧩 All your useState hooks go here — top level
   const [showOverlayPanel, setShowOverlayPanel] = useState(false);
-const [debugVisible, setDebugVisible] = useState(false);
-const [debugMessage, setDebugMessage] = useState("");
+  const [debugVisible, setDebugVisible] = useState(false);
+  const [debugMessage, setDebugMessage] = useState("");
+
   const [params, setParams] = useState<Params>(() => {
     const saved = localStorage.getItem("cmd.params");
     const def: Params = {
@@ -349,62 +346,69 @@ const [debugMessage, setDebugMessage] = useState("");
       window.removeEventListener("weave-updated", loadWeave);
     };
   }, []);
-const rings = useMemo(() => {
-  if (!lastWeave) {
-    // 🧱 fallback: use params only
+
+  // ============================================================
+  // ✅ RINGS — Uses tuned weave geometry when present
+  // ✅ (Dependencies include params geometry so manual edits rebuild)
+  // ============================================================
+  const rings = useMemo(() => {
+    if (!lastWeave) {
+      // 🧱 fallback: use params only
+      return generateRings({
+        rows: params.rows,
+        cols: params.cols,
+        innerDiameter: params.innerDiameter,
+        wireDiameter: params.wireDiameter,
+        centerSpacing: params.centerSpacing ?? 7.5,
+        angleIn: 25,
+        angleOut: -25,
+      });
+    }
+
+    // ============================================================
+    // ✅ Use tuned weave's actual geometry (ID, WD, spacing, angles)
+    // ============================================================
+    const ID_mm =
+      Number.isFinite(lastWeave.innerDiameter) && lastWeave.innerDiameter > 0
+        ? lastWeave.innerDiameter
+        : params.innerDiameter;
+
+    const WD_mm =
+      Number.isFinite(lastWeave.wireDiameter) && lastWeave.wireDiameter > 0
+        ? lastWeave.wireDiameter
+        : params.wireDiameter;
+
+    const spacing =
+      lastWeave.centerSpacing ??
+      (Array.isArray(lastWeave.layout) ? lastWeave.layout[0]?.centerSpacing : undefined) ??
+      params.centerSpacing ??
+      7.5;
+
+    const angleIn = Number.isFinite(lastWeave.angleIn) ? lastWeave.angleIn : 25;
+    const angleOut = Number.isFinite(lastWeave.angleOut) ? lastWeave.angleOut : -25;
+
+    // ============================================================
+    // ✅ Generate correct geometry
+    // ============================================================
     return generateRings({
       rows: params.rows,
       cols: params.cols,
-      innerDiameter: params.innerDiameter,
-      wireDiameter: params.wireDiameter,
-      centerSpacing: params.centerSpacing ?? 7.5,
-      angleIn: 25,
-      angleOut: -25,
+      innerDiameter: ID_mm,
+      wireDiameter: WD_mm,
+      centerSpacing: spacing,
+      angleIn,
+      angleOut,
+      layout: lastWeave.layout ?? [],
     });
-  }
+  }, [
+    params.rows,
+    params.cols,
+    params.innerDiameter,
+    params.wireDiameter,
+    params.centerSpacing,
+    lastWeave,
+  ]);
 
-  // ============================================================
-  // ✅ Use tuned weave's actual geometry (ID, WD, spacing, angles)
-  // ============================================================
-  const ID_mm =
-    Number.isFinite(lastWeave.innerDiameter) && lastWeave.innerDiameter > 0
-      ? lastWeave.innerDiameter
-      : params.innerDiameter;
-
-  const WD_mm =
-    Number.isFinite(lastWeave.wireDiameter) && lastWeave.wireDiameter > 0
-      ? lastWeave.wireDiameter
-      : params.wireDiameter;
-
-  const spacing =
-    lastWeave.centerSpacing ??
-    (Array.isArray(lastWeave.layout)
-      ? lastWeave.layout[0]?.centerSpacing
-      : undefined) ??
-    params.centerSpacing ??
-    7.5;
-
-  const angleIn = Number.isFinite(lastWeave.angleIn)
-    ? lastWeave.angleIn
-    : 25;
-  const angleOut = Number.isFinite(lastWeave.angleOut)
-    ? lastWeave.angleOut
-    : -25;
-
-  // ============================================================
-  // ✅ Generate correct geometry
-  // ============================================================
-  return generateRings({
-    rows: params.rows,
-    cols: params.cols,
-    innerDiameter: ID_mm,
-    wireDiameter: WD_mm,
-    centerSpacing: spacing,
-    angleIn,
-    angleOut,
-    layout: lastWeave.layout ?? [],
-  });
-}, [params.rows, params.cols, lastWeave]);
   // --- derive safeParams ---
   const safeParams = {
     rows: params?.rows ?? 1,
@@ -414,41 +418,43 @@ const rings = useMemo(() => {
     ringColor: params?.ringColor ?? "#CCCCCC",
     bgColor: params?.bgColor ?? "#0F1115",
     centerSpacing:
-      lastWeave?.layout?.centerSpacing ??
-      (Array.isArray(lastWeave?.layout)
-        ? lastWeave.layout[0]?.centerSpacing
-        : undefined) ??
+      (Array.isArray(lastWeave?.layout) ? lastWeave?.layout?.[0]?.centerSpacing : undefined) ??
       lastWeave?.centerSpacing ??
       params?.centerSpacing ??
       7.5,
   };
-// --- ensure param object updates identity on each value change ---
-const liveParams = useMemo(
-  () => ({
-    rows: safeParams.rows,
-    cols: safeParams.cols,
-    innerDiameter: safeParams.innerDiameter,
-    wireDiameter: safeParams.wireDiameter,
-    ringColor: safeParams.ringColor,
-    bgColor: safeParams.bgColor,
-    centerSpacing: safeParams.centerSpacing,
-  }),
-  [
-    safeParams.rows,
-    safeParams.cols,
-    safeParams.innerDiameter,
-    safeParams.wireDiameter,
-    safeParams.ringColor,
-    safeParams.bgColor,
-    safeParams.centerSpacing,
-  ]
-);
+
+  // --- ensure param object updates identity on each value change ---
+  const liveParams = useMemo(
+    () => ({
+      rows: safeParams.rows,
+      cols: safeParams.cols,
+      innerDiameter: safeParams.innerDiameter,
+      wireDiameter: safeParams.wireDiameter,
+      ringColor: safeParams.ringColor,
+      bgColor: safeParams.bgColor,
+      centerSpacing: safeParams.centerSpacing,
+    }),
+    [
+      safeParams.rows,
+      safeParams.cols,
+      safeParams.innerDiameter,
+      safeParams.wireDiameter,
+      safeParams.ringColor,
+      safeParams.bgColor,
+      safeParams.centerSpacing,
+    ]
+  );
+
   // --- derive color mode ---
   const effectiveColor = eraseMode ? params.ringColor : activeColor;
 
   // --- helper functions ---
   const toggleExclusive = (menu: "camera" | "controls") =>
     setActiveMenu((prev) => (prev === menu ? null : menu));
+
+  const [rendererKey, setRendererKey] = useState(0);
+
   // ============================================================
   // 🧾 BOM ADAPTER — Designer → BOMRing[]
   // ============================================================
@@ -458,60 +464,59 @@ const liveParams = useMemo(
   // • Print / Export
   // • Cross-page BOM aggregation
   // ============================================================
+  const getBOMRings = useCallback((): BOMRing[] => {
+    if (!Array.isArray(rings)) return [];
 
-const getBOMRings = useCallback((): BOMRing[] => {
-  if (!Array.isArray(rings)) return [];
+    const supplier: SupplierId = params.supplier;
 
-  const supplier: SupplierId = params.supplier;
+    const baseMaterial = MATERIALS.find((m) => m.hex === params.ringColor)?.name ?? "Unknown";
 
-  const baseMaterial =
-    MATERIALS.find((m) => m.hex === params.ringColor)?.name ??
-    "Unknown";
+    return rings.map((ring: any) => {
+      // ✅ MUST MATCH RingRenderer EXACTLY
+      const key = `${ring.row},${ring.col}`;
+      const paintedColor = paint.get(key);
 
-  return rings.map((ring) => {
-    // ✅ MUST MATCH RingRenderer EXACTLY
-    const key = `${ring.row},${ring.col}`;
+      return {
+        id: key, // stable + matches paint system
+        supplier,
+        colorHex: paintedColor ?? params.ringColor,
+        innerDiameter: params.innerDiameter,
+        wireDiameter: params.wireDiameter,
+        material: baseMaterial,
+      };
+    });
+  }, [
+    rings,
+    paint,
+    params.supplier,
+    params.ringColor,
+    params.innerDiameter,
+    params.wireDiameter,
+  ]);
 
-    const paintedColor = paint.get(key);
-
-    return {
-      id: key, // stable + matches paint system
-      supplier,
-      colorHex: paintedColor ?? params.ringColor,
-      innerDiameter: params.innerDiameter,
-      wireDiameter: params.wireDiameter,
-      material: baseMaterial,
-    };
-  });
-}, [
-  rings,
-  paint,
-  params.supplier,
-  params.ringColor,
-  params.innerDiameter,
-  params.wireDiameter,
-]);
-    // ==============================
+  // ==============================
   // BOM Calculation (Read-Only)
   // ==============================
-const bom = useMemo(() => {
-  return calculateBOM(getBOMRings());
-}, [getBOMRings]);
-// ============================================================
-// ✅ Lock/Unlock Rotation — independent from painting
-// ============================================================
-const setLock = (locked: boolean) => {
-  setRotationLocked(locked);
-  rendererRef.current?.forceLockRotation?.(locked);
+  const bom = useMemo(() => {
+    return calculateBOM(getBOMRings());
+  }, [getBOMRings]);
 
-  // Lock camera only when explicitly locking back to 2D
-  if (locked) {
-    rendererRef.current?.lock2DView?.();
-  }
+  // ============================================================
+  // ✅ Lock/Unlock Rotation — independent from painting
+  // ============================================================
+  const setLock = (locked: boolean) => {
+    setRotationLocked(locked);
+    rendererRef.current?.forceLockRotation?.(locked);
 
-  // ✅ Do not toggle paint here — independent systems
-  console.log(`🔒 3D Rotation ${locked ? "locked (2D)" : "unlocked (free rotation)"}`);
-};
+    // Lock camera only when explicitly locking back to 2D
+    if (locked) {
+      rendererRef.current?.lock2DView?.();
+    }
+
+    // ✅ Do not toggle paint here — independent systems
+    console.log(`🔒 3D Rotation ${locked ? "locked (2D)" : "unlocked (free rotation)"}`);
+  };
+
   const doZoomIn = () => rendererRef.current?.zoomIn();
   const doZoomOut = () => rendererRef.current?.zoomOut();
   const doReset = () => rendererRef.current?.resetView();
@@ -519,57 +524,98 @@ const setLock = (locked: boolean) => {
     rendererRef.current?.clearPaint();
     setPaint(new Map());
   };
+
   // ==============================
   // BOM Panel State
   // ==============================
   const [showBOM, setShowBOM] = useState(false);
-// ============================================================
-// ✅ Apply Atlas — preserve paint & overlay
-// ============================================================
-const applyAtlas = (e: any) => {
-  const AR = e.innerDiameter / e.wireDiameter;
 
-  setParams((prev) => ({
-    ...prev,
-    innerDiameter: e.innerDiameter,
-    wireDiameter: e.wireDiameter,
-    centerSpacing: e.centerSpacing,
-    ringSpec: `ID ${e.innerDiameter.toFixed(2)} mm / WD ${e.wireDiameter.toFixed(2)} mm (AR≈${AR.toFixed(2)})`,
-  }));
+  // ============================================================
+  // 💾 SAVE / LOAD — DESIGNER PAGE (NO NEW FILES)
+  // ============================================================
+  const saveDesignerProject = useCallback(() => {
+    return {
+      type: "designer",
+      version: 1,
+      params,
+      paint: Array.from(paint.entries()),
+      metadata: {
+        page: "designer",
+        createdAt: Date.now(),
+      },
+    };
+  }, [params, paint]);
 
-  // ✅ Preserve current paint + overlay
-  localStorage.setItem("chainmailSelected", JSON.stringify(e));
-  window.dispatchEvent(new Event("weave-updated"));
-  setShowMagnet(false);
+  const loadDesignerProject = useCallback((data: any) => {
+    if (!data || data.type !== "designer") {
+      alert("❌ Not a Designer project file");
+      return;
+    }
 
-  console.log("🧲 Material/Weave updated — paint and overlay preserved.");
-};
+    setRendererKey((k) => k + 1);
+
+    if (data.params) {
+      setParams((prev) => ({ ...prev, ...data.params }));
+    }
+
+    if (Array.isArray(data.paint)) {
+      setPaint(new Map<string, string | null>(data.paint));
+    }
+
+    console.log("✅ Designer project loaded");
+  }, []);
+
+  // ============================================================
+  // ✅ Apply Atlas — preserve paint & overlay
+  // ============================================================
+  const applyAtlas = (e: any) => {
+    const AR = e.innerDiameter / e.wireDiameter;
+
+    setParams((prev) => ({
+      ...prev,
+      innerDiameter: e.innerDiameter,
+      wireDiameter: e.wireDiameter,
+      centerSpacing: e.centerSpacing,
+      ringSpec: `ID ${e.innerDiameter.toFixed(2)} mm / WD ${e.wireDiameter.toFixed(
+        2
+      )} mm (AR≈${AR.toFixed(2)})`,
+    }));
+
+    // ✅ Preserve current paint + overlay
+    localStorage.setItem("chainmailSelected", JSON.stringify(e));
+    window.dispatchEvent(new Event("weave-updated"));
+    setShowMagnet(false);
+
+    console.log("🧲 Material/Weave updated — paint and overlay preserved.");
+  };
+
   // --- render ---
   return (
     <div style={{ width: "100vw", height: "100vh", background: "#0E0F12" }}>
-{/* Fullscreen 3D Canvas */}
-<div
-  style={{
-    position: "absolute",
-    inset: 0,
-    width: "100vw",
-    height: "100vh",
-    pointerEvents: "auto",
-  }}
->
-  <RingRenderer
-    ref={rendererRef}
-    rings={rings}
-    params={liveParams}
-    paint={paint}
-    setPaint={setPaint}
-    initialPaintMode={paintMode}
-    initialEraseMode={eraseMode}
-    initialRotationLocked={rotationLocked}
-    activeColor={effectiveColor}
-    overlay={overlayState}
-  />
-</div>
+      {/* Fullscreen 3D Canvas */}
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100vw",
+          height: "100vh",
+          pointerEvents: "auto",
+        }}
+      >
+        <RingRenderer
+          key={rendererKey}
+          ref={rendererRef}
+          rings={rings}
+          params={liveParams}
+          paint={paint}
+          setPaint={setPaint}
+          initialPaintMode={paintMode}
+          initialEraseMode={eraseMode}
+          initialRotationLocked={rotationLocked}
+          activeColor={effectiveColor}
+          overlay={overlayState}
+        />
+      </div>
 
       {/* === Left Toolbar (emoji pill) === */}
       <DraggablePill id="camera-pill" defaultPosition={{ x: 20, y: 20 }}>
@@ -611,73 +657,74 @@ const applyAtlas = (e: any) => {
         </div>
 
         {/* --- Controls (▶) Menu — rows/cols dialog --- */}
-{activeMenu === "controls" && (
-  <div
-    style={{
-      marginTop: 12,
-      display: "flex",
-      flexDirection: "column",
-      gap: 10,
-      width: 160,
-      background: "#0b1324",
-      border: "1px solid #0b1020",
-      borderRadius: 16,
-      padding: 12,
-      color: "#ddd",
-      fontSize: 13,
-    }}
-    onMouseDown={(e) => e.stopPropagation()}
-    onTouchStart={(e) => e.stopPropagation()}
-  >
-    <div style={{ fontWeight: 700, marginBottom: 4 }}>Grid Size</div>
+        {activeMenu === "controls" && (
+          <div
+            style={{
+              marginTop: 12,
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+              width: 160,
+              background: "#0b1324",
+              border: "1px solid #0b1020",
+              borderRadius: 16,
+              padding: 12,
+              color: "#ddd",
+              fontSize: 13,
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Grid Size</div>
 
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <label style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-        <span>Columns:</span>
-        <input
-          type="number"
-          min={1}
-          max={200}
-          value={params.cols}
-          onChange={(e) => {
-            const val = clamp(parseInt(e.target.value), 1, 200);
-            setParams({ ...params, cols: val });
-          }}
-          style={{
-            width: 80,
-            textAlign: "right",
-            background: "#111827",
-            color: "#fff",
-            border: "1px solid #222",
-            borderRadius: 6,
-          }}
-        />
-      </label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span>Columns:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={params.cols}
+                  onChange={(e) => {
+                    const val = clamp(parseInt(e.target.value), 1, 200);
+                    setParams({ ...params, cols: val });
+                  }}
+                  style={{
+                    width: 80,
+                    textAlign: "right",
+                    background: "#111827",
+                    color: "#fff",
+                    border: "1px solid #222",
+                    borderRadius: 6,
+                  }}
+                />
+              </label>
 
-      <label style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-        <span>Rows:</span>
-        <input
-          type="number"
-          min={1}
-          max={200}
-          value={params.rows}
-          onChange={(e) => {
-            const val = clamp(parseInt(e.target.value), 1, 200);
-            setParams({ ...params, rows: val });
-          }}
-          style={{
-            width: 80,
-            textAlign: "right",
-            background: "#111827",
-            color: "#fff",
-            border: "1px solid #222",
-            borderRadius: 6,
-          }}
-        />
-      </label>
-    </div>
-  </div>
-)}
+              <label style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <span>Rows:</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={params.rows}
+                  onChange={(e) => {
+                    const val = clamp(parseInt(e.target.value), 1, 200);
+                    setParams({ ...params, rows: val });
+                  }}
+                  style={{
+                    width: 80,
+                    textAlign: "right",
+                    background: "#111827",
+                    color: "#fff",
+                    border: "1px solid #222",
+                    borderRadius: 6,
+                  }}
+                />
+              </label>
+            </div>
+          </div>
+        )}
+
         {/* --- Camera Tools Menu (Image overlay, paint, zoom, etc.) --- */}
         {activeMenu === "camera" && (
           <div
@@ -697,47 +744,62 @@ const applyAtlas = (e: any) => {
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
-<IconBtn
-  tooltip="Image Overlay"
-  onClick={(e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    setShowOverlayPanel((v) => !v);
-  }}
->
-  🖼️
-</IconBtn>
+            <ProjectSaveLoadButtons
+              onSave={saveDesignerProject}
+              onLoad={loadDesignerProject}
+              defaultFileName="chainmail-designer"
+            />
 
-<IconBtn
-  tooltip="Paint Mode"
-  active={paintMode}
-  onClick={() => {
-    const next = !paintMode;
-    setPaintMode(next);
+            <div
+              style={{
+                width: "100%",
+                height: 1,
+                background: "rgba(255,255,255,0.08)",
+                margin: "6px 0",
+              }}
+            />
 
-    setTimeout(() => {
-      rendererRef.current?.setPaintMode?.(next);
-      rendererRef.current?.setEraseMode?.(false);
-      rendererRef.current?.setPanEnabled?.(!next);
-    }, 0);
-  }}
->
-  🎨
-</IconBtn>
+            <IconBtn
+              tooltip="Image Overlay"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setShowOverlayPanel((v) => !v);
+              }}
+            >
+              🖼️
+            </IconBtn>
 
-{paintMode && (
-  <IconBtn
-    tooltip="Erase Mode"
-    active={eraseMode}
-    onClick={() => {
-      const next = !eraseMode;
-      setEraseMode(next);
-      rendererRef.current?.setEraseMode?.(next);
-    }}
-  >
-    🧽
-  </IconBtn>
-)}  
+            <IconBtn
+              tooltip="Paint Mode"
+              active={paintMode}
+              onClick={() => {
+                const next = !paintMode;
+                setPaintMode(next);
+
+                setTimeout(() => {
+                  rendererRef.current?.setPaintMode?.(next);
+                  rendererRef.current?.setEraseMode?.(false);
+                  rendererRef.current?.setPanEnabled?.(!next);
+                }, 0);
+              }}
+            >
+              🎨
+            </IconBtn>
+
+            {paintMode && (
+              <IconBtn
+                tooltip="Erase Mode"
+                active={eraseMode}
+                onClick={() => {
+                  const next = !eraseMode;
+                  setEraseMode(next);
+                  rendererRef.current?.setEraseMode?.(next);
+                }}
+              >
+                🧽
+              </IconBtn>
+            )}
 
             <IconBtn tooltip="Reset View" onClick={doReset}>
               ↺
@@ -758,59 +820,58 @@ const applyAtlas = (e: any) => {
             <IconBtn tooltip="Supplier & Atlas" onClick={() => setShowMagnet((v) => !v)}>
               🧲
             </IconBtn>
-<IconBtn
-  tooltip="Bill of Materials"
-  onClick={() => setShowBOM((v) => !v)}
->
-  🧾
-</IconBtn>
+
+            <IconBtn tooltip="Bill of Materials" onClick={() => setShowBOM((v) => !v)}>
+              🧾
+            </IconBtn>
+
             <IconBtn tooltip="Navigation Menu" onClick={() => setShowCompass((v) => !v)}>
               🧭
             </IconBtn>
           </div>
         )}
 
-{/* ✅ Fixed Base Material Label (Stacked, Wrapped & Centered) */}
-{/* ✅ Compact Base Material Label (Fixed number display) */}
-<div
-  onClick={() => setShowMaterialPalette((v) => !v)}
-  style={{
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    textAlign: "center",
-    gap: 2,
-    padding: "4px 2px",
-    fontSize: 11,
-    color: "#f1f5f9",
-    marginTop: 6,
-    maxWidth: 80,
-    lineHeight: 1.25,
-    userSelect: "none",
-    cursor: "pointer",
-    whiteSpace: "normal",
-    wordBreak: "break-word",
-    overflowWrap: "break-word",
-    margin: "8px auto 0",
-  }}
-  title="Click to choose base material"
->
-  <div style={{ fontWeight: 600, fontSize: 12 }}>
-    {MATERIALS.find((m) => m.hex === params.ringColor)?.name || "Base Material"}
-  </div>
-  <div
-    style={{ fontSize: 10, color: "#9ca3af" }}
-    dangerouslySetInnerHTML={{
-      __html: params.ringSpec
-        ? params.ringSpec
-            .replace(/\s*\/\s*/g, "<br/>")     // put each spec on its own line
-            .replace(/\s*mm/g, " mm")          // spacing before mm
-            .replace(/\s*\(AR/g, "<br/>(AR")   // AR on new line
-        : "ID — mm<br/>WD — mm<br/>(AR≈—)",
-    }}
-  />
-</div>
+        {/* ✅ Fixed Base Material Label (Stacked, Wrapped & Centered) */}
+        {/* ✅ Compact Base Material Label (Fixed number display) */}
+        <div
+          onClick={() => setShowMaterialPalette((v) => !v)}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            textAlign: "center",
+            gap: 2,
+            padding: "4px 2px",
+            fontSize: 11,
+            color: "#f1f5f9",
+            marginTop: 6,
+            maxWidth: 80,
+            lineHeight: 1.25,
+            userSelect: "none",
+            cursor: "pointer",
+            whiteSpace: "normal",
+            wordBreak: "break-word",
+            overflowWrap: "break-word",
+            margin: "8px auto 0",
+          }}
+          title="Click to choose base material"
+        >
+          <div style={{ fontWeight: 600, fontSize: 12 }}>
+            {MATERIALS.find((m) => m.hex === params.ringColor)?.name || "Base Material"}
+          </div>
+          <div
+            style={{ fontSize: 10, color: "#9ca3af" }}
+            dangerouslySetInnerHTML={{
+              __html: params.ringSpec
+                ? params.ringSpec
+                    .replace(/\s*\/\s*/g, "<br/>") // put each spec on its own line
+                    .replace(/\s*mm/g, " mm") // spacing before mm
+                    .replace(/\s*\(AR/g, "<br/>(AR") // AR on new line
+                : "ID — mm<br/>WD — mm<br/>(AR≈—)",
+            }}
+          />
+        </div>
       </DraggablePill>
 
       {/* === Draggable Universal Color Palette === */}
@@ -832,13 +893,7 @@ const applyAtlas = (e: any) => {
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(8, 1fr)",
-                gap: 5,
-              }}
-            >
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 5 }}>
               {UNIVERSAL_COLORS.map((hex) => (
                 <div
                   key={hex}
@@ -880,16 +935,8 @@ const applyAtlas = (e: any) => {
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
-            <div style={{ fontWeight: 700, fontSize: 13, color: "#ddd" }}>
-              Base Material
-            </div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(3, 1fr)",
-                gap: 6,
-              }}
-            >
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#ddd" }}>Base Material</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
               {MATERIALS.map((mat) => (
                 <div
                   key={mat.name}
@@ -903,10 +950,7 @@ const applyAtlas = (e: any) => {
                     height: 32,
                     borderRadius: 6,
                     background: mat.hex === "transparent" ? "none" : mat.hex,
-                    border:
-                      params.ringColor === mat.hex
-                        ? "2px solid white"
-                        : "1px solid #444",
+                    border: params.ringColor === mat.hex ? "2px solid white" : "1px solid #444",
                     cursor: "pointer",
                     display: "flex",
                     alignItems: "center",
@@ -958,98 +1002,101 @@ const applyAtlas = (e: any) => {
               }}
             >
               <SupplierMenu
-onApplyPalette={(sel: any) => {
-  // 🧩 Handle Default Case — Apply real default values and force rebuild
-  const isDefault =
-    sel?.name === "Default" ||
-    sel?.id === "default" ||
-    sel?.color === "Default Colors" ||
-    sel?.material === "Default";
+                onApplyPalette={(sel: any) => {
+                  // 🧩 Handle Default Case — Apply real default values and force rebuild
+                  const isDefault =
+                    sel?.name === "Default" ||
+                    sel?.id === "default" ||
+                    sel?.color === "Default Colors" ||
+                    sel?.material === "Default";
 
-  if (isDefault) {
-    const defaultWeave = {
-      id: "default",
-      name: "Default",
-      innerDiameter: 7.94,
-      wireDiameter: 1.6,
-      centerSpacing: 7.5,
-      angleIn: 25,
-      angleOut: -25,
-      layout: [],
-      status: "valid",
-    };
+                  if (isDefault) {
+                    const defaultWeave = {
+                      id: "default",
+                      name: "Default",
+                      innerDiameter: 7.94,
+                      wireDiameter: 1.6,
+                      centerSpacing: 7.5,
+                      angleIn: 25,
+                      angleOut: -25,
+                      layout: [],
+                      status: "valid",
+                    };
 
-    localStorage.setItem("chainmailSelected", JSON.stringify(defaultWeave));
-    localStorage.setItem(
-      "cmd.params",
-      JSON.stringify({
-        rows: 20,
-        cols: 20,
-        innerDiameter: 7.94,
-        wireDiameter: 1.6,
-        centerSpacing: 7.5,
-      })
-    );
+                    localStorage.setItem("chainmailSelected", JSON.stringify(defaultWeave));
+                    localStorage.setItem(
+                      "cmd.params",
+                      JSON.stringify({
+                        rows: 20,
+                        cols: 20,
+                        innerDiameter: 7.94,
+                        wireDiameter: 1.6,
+                        centerSpacing: 7.5,
+                      })
+                    );
 
-    setLastWeave(defaultWeave);
-    setParams((prev) => ({
-      ...prev,
-      innerDiameter: 7.94,
-      wireDiameter: 1.6,
-      centerSpacing: 7.5,
-    }));
+                    setLastWeave(defaultWeave);
+                    setParams((prev) => ({
+                      ...prev,
+                      innerDiameter: 7.94,
+                      wireDiameter: 1.6,
+                      centerSpacing: 7.5,
+                    }));
 
-    window.dispatchEvent(new Event("weave-updated"));
-    console.log("✅ Default weave applied and geometry rebuilt");
-    return;
-  }
+                    window.dispatchEvent(new Event("weave-updated"));
+                    console.log("✅ Default weave applied and geometry rebuilt");
+                    return;
+                  }
 
-  // 🧩 Otherwise, apply selected weave as before
-  const colorHex =
-    sel.color && sel.color !== "Default Colors"
-      ? typeof sel.color === "string" && sel.color.startsWith("#")
-        ? sel.color
-        : params.ringColor
-      : params.ringColor;
+                  // 🧩 Otherwise, apply selected weave as before
+                  const colorHex =
+                    sel.color && sel.color !== "Default Colors"
+                      ? typeof sel.color === "string" && sel.color.startsWith("#")
+                        ? sel.color
+                        : params.ringColor
+                      : params.ringColor;
 
-  const parseNumber = (v: any) => {
-    if (v == null) return NaN;
-    if (typeof v === "number") return v;
-    if (typeof v === "string") {
-      const m = v.match(/-?\d+(\.\d+)?/);
-      return m ? parseFloat(m[0]) : NaN;
-    }
-    return NaN;
-  };
+                  // colorHex retained (feature parity) even if not used directly here
+                  void colorHex;
 
-  // ✅ Defensive checks so undefined props don’t crash
-  const ID = parseNumber(sel?.innerDiameter ?? sel?.ringID);
-  const WD = parseNumber(sel?.wireDiameter ?? sel?.wireGauge);
-  const spacing = parseNumber(sel?.centerSpacing) || params.centerSpacing;
+                  const parseNumber = (v: any) => {
+                    if (v == null) return NaN;
+                    if (typeof v === "number") return v;
+                    if (typeof v === "string") {
+                      const m = v.match(/-?\d+(\.\d+)?/);
+                      return m ? parseFloat(m[0]) : NaN;
+                    }
+                    return NaN;
+                  };
 
-  const weave = {
-    id: sel?.name ?? sel?.id ?? "unnamed",
-    name: sel?.name ?? sel?.material ?? "Unnamed",
-    innerDiameter: ID,
-    wireDiameter: WD,
-    centerSpacing: spacing,
-    angleIn: sel?.angleIn ?? 25,
-    angleOut: sel?.angleOut ?? -25,
-    layout: sel?.layout ?? [],
-    status: sel?.status ?? "valid",
-  };
+                  // ✅ Defensive checks so undefined props don’t crash
+                  const ID = parseNumber(sel?.innerDiameter ?? sel?.ringID);
+                  const WD = parseNumber(sel?.wireDiameter ?? sel?.wireGauge);
+                  const spacing = parseNumber(sel?.centerSpacing) || params.centerSpacing;
 
-  localStorage.setItem("chainmailSelected", JSON.stringify(weave));
-  setLastWeave(weave);
-  setParams((prev) => ({
-    ...prev,
-    innerDiameter: ID,
-    wireDiameter: WD,
-    centerSpacing: spacing,
-  }));
+                  const weave = {
+                    id: sel?.name ?? sel?.id ?? "unnamed",
+                    name: sel?.name ?? sel?.material ?? "Unnamed",
+                    innerDiameter: ID,
+                    wireDiameter: WD,
+                    centerSpacing: spacing,
+                    angleIn: sel?.angleIn ?? 25,
+                    angleOut: sel?.angleOut ?? -25,
+                    layout: sel?.layout ?? [],
+                    status: sel?.status ?? "valid",
+                  };
 
-  window.dispatchEvent(new Event("weave-updated"));
-}}
+                  localStorage.setItem("chainmailSelected", JSON.stringify(weave));
+                  setLastWeave(weave);
+                  setParams((prev) => ({
+                    ...prev,
+                    innerDiameter: ID,
+                    wireDiameter: WD,
+                    centerSpacing: spacing,
+                  }));
+
+                  window.dispatchEvent(new Event("weave-updated"));
+                }}
               />
             </div>
 
@@ -1068,7 +1115,6 @@ onApplyPalette={(sel: any) => {
         </div>
       )}
 
-
       {/* === Image Overlay Panel === */}
       {showOverlayPanel && (
         <div
@@ -1086,159 +1132,156 @@ onApplyPalette={(sel: any) => {
             boxShadow: "0 20px 60px rgba(0,0,0,.7)",
           }}
         >
-<ImageOverlayPanel
-  onApply={async (overlay) => {
-    // 1️⃣ Update overlay preview plane (as before)
-setOverlayState(overlay);
+          <ImageOverlayPanel
+            onApply={async (overlay) => {
+              // 1️⃣ Update overlay preview plane (as before)
+              setOverlayState(overlay);
 
-try {
-  await rendererRef.current?.applyOverlayToRings?.(overlay);
-  setDebugMessage("✅ Overlay image successfully applied to rings!");
-  setDebugVisible(true);
-} catch (err) {
-  console.error("❌ applyOverlayToRings failed:", err);
-  setDebugMessage("⚠️ Failed to apply overlay to rings. Check console.");
-  setDebugVisible(true);
-}
+              try {
+                await rendererRef.current?.applyOverlayToRings?.(overlay);
+                setDebugMessage("✅ Overlay image successfully applied to rings!");
+                setDebugVisible(true);
+              } catch (err) {
+                console.error("❌ applyOverlayToRings failed:", err);
+                setDebugMessage("⚠️ Failed to apply overlay to rings. Check console.");
+                setDebugVisible(true);
+              }
 
-setShowOverlayPanel(false);
-  }}
-/>
+              setShowOverlayPanel(false);
+            }}
+          />
         </div>
       )}
-      
-{/* ==============================
-    🧾 Floating BOM Panel
-   ============================== */}
-{showBOM && (
-  <DraggablePill id="bom-panel" defaultPosition={{ x: 420, y: 120 }}>
-    <div
-      style={{
-        minWidth: 280,
-        maxWidth: 360,
-        background: "rgba(17,24,39,0.97)",
-        border: "1px solid rgba(0,0,0,.6)",
-        borderRadius: 14,
-        padding: 12,
-        color: "#e5e7eb",
-        fontSize: 13,
-        boxShadow: "0 12px 40px rgba(0,0,0,.45)",
-      }}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 8,
-        }}
-      >
-        <strong style={{ fontSize: 14 }}>🧾 Bill of Materials</strong>
-        <button
-          onClick={() => setShowBOM(false)}
-          style={{
-            background: "none",
-            border: "none",
-            color: "#9ca3af",
-            cursor: "pointer",
-            fontSize: 16,
+
+      {/* ==============================
+          🧾 Floating BOM Panel
+         ============================== */}
+      {showBOM && (
+        <DraggablePill id="bom-panel" defaultPosition={{ x: 420, y: 120 }}>
+          <div
+            style={{
+              minWidth: 280,
+              maxWidth: 360,
+              background: "rgba(17,24,39,0.97)",
+              border: "1px solid rgba(0,0,0,.6)",
+              borderRadius: 14,
+              padding: 12,
+              color: "#e5e7eb",
+              fontSize: 13,
+              boxShadow: "0 12px 40px rgba(0,0,0,.45)",
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <strong style={{ fontSize: 14 }}>🧾 Bill of Materials</strong>
+              <button
+                onClick={() => setShowBOM(false)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#9ca3af",
+                  cursor: "pointer",
+                  fontSize: 16,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Summary */}
+            <div style={{ marginBottom: 10 }}>
+              <div>
+                Rings: <strong>{bom?.summary?.totalRings ?? 0}</strong>
+              </div>
+              <div>
+                Colors: <strong>{bom?.summary?.uniqueColors ?? 0}</strong>
+              </div>
+              <div>
+                Total Weight:{" "}
+                <strong>{(bom?.summary?.totalWeight ?? 0).toFixed(2)} g</strong>
+              </div>
+            </div>
+
+            {/* Color Breakdown */}
+            <div style={{ marginBottom: 10 }}>
+              <strong>By Color</strong>
+              {(bom?.lines ?? []).map((line: any) => (
+                <div
+                  key={`${line.supplier}-${line.colorHex}`}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginTop: 4,
+                  }}
+                >
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span
+                      style={{
+                        width: 12,
+                        height: 12,
+                        background: line.colorHex,
+                        borderRadius: 3,
+                        border: "1px solid #000",
+                      }}
+                    />
+                    {line.colorHex}
+                  </span>
+                  <span>{line.ringCount}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Supplier Breakdown */}
+            <div style={{ marginBottom: 10 }}>
+              <strong>By Supplier</strong>
+              {(bom?.summary?.suppliers ?? []).map((s: any) => (
+                <div key={s} style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>{String(s).toUpperCase()}</span>
+                  <span>
+                    {(bom?.lines ?? [])
+                      .filter((l: any) => l.supplier === s)
+                      .reduce((sum: number, l: any) => sum + (l.ringCount ?? 0), 0)}
+                  </span>
+                </div>
+              ))}
+            </div>
+
+            {/* Print */}
+            <button
+              onClick={() => window.print()}
+              style={{
+                width: "100%",
+                marginTop: 8,
+                padding: "6px 8px",
+                borderRadius: 8,
+                background: "#2563eb",
+                color: "white",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              🖨 Print BOM
+            </button>
+          </div>
+        </DraggablePill>
+      )}
+
+      {/* === Compass Navigation Panel === */}
+      {showCompass && (
+        <DraggableCompassNav
+          onNavigate={() => {
+            setShowCompass(false);
           }}
-        >
-          ✕
-        </button>
-      </div>
-
-{/* Summary */}
-<div style={{ marginBottom: 10 }}>
-  <div>
-    Rings: <strong>{bom?.summary?.totalRings ?? 0}</strong>
-  </div>
-  <div>
-    Colors: <strong>{bom?.summary?.uniqueColors ?? 0}</strong>
-  </div>
-  <div>
-    Total Weight:{" "}
-    <strong>
-      {(bom?.summary?.totalWeight ?? 0).toFixed(2)} g
-    </strong>
-  </div>
-</div>
-      {/* Color Breakdown */}
-      <div style={{ marginBottom: 10 }}>
-<strong>By Color</strong>
-{(bom?.lines ?? []).map((line) => (
-  <div
-    key={`${line.supplier}-${line.colorHex}`}
-    style={{
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      marginTop: 4,
-    }}
-  >
-    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <span
-        style={{
-          width: 12,
-          height: 12,
-          background: line.colorHex,
-          borderRadius: 3,
-          border: "1px solid #000",
-        }}
-      />
-      {line.colorHex}
-    </span>
-    <span>{line.ringCount}</span>
-  </div>
-))}
-      </div>
-
-      {/* Supplier Breakdown */}
-      <div style={{ marginBottom: 10 }}>
-        <strong>By Supplier</strong>
-  {(bom?.summary?.suppliers ?? []).map((s) => (
-  <div
-    key={s}
-    style={{ display: "flex", justifyContent: "space-between" }}
-  >
-    <span>{s.toUpperCase()}</span>
-    <span>
-      {(bom?.lines ?? [])
-        .filter((l) => l.supplier === s)
-        .reduce((sum, l) => sum + (l.ringCount ?? 0), 0)}
-    </span>
-  </div>
-))}
-</div>
-      {/* Print */}
-      <button
-        onClick={() => window.print()}
-        style={{
-          width: "100%",
-          marginTop: 8,
-          padding: "6px 8px",
-          borderRadius: 8,
-          background: "#2563eb",
-          color: "white",
-          border: "none",
-          cursor: "pointer",
-        }}
-      >
-        🖨 Print BOM
-      </button>
-    </div>
-  </DraggablePill>
-)}      
-   {/* === Compass Navigation Panel === */}
-{showCompass && (
-  <DraggableCompassNav
-    onNavigate={() => {
-      setShowCompass(false);
-    }}
-  />
-)} 
-    
+        />
+      )}
     </div>
   );
 } // ✅ ChainmailDesigner ends here
@@ -1272,11 +1315,7 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
         onMouseDown={(e) => e.stopPropagation()}
       >
         {/* 🏠 Home Page */}
-        <button
-          onClick={() => go("/wovenrainbowsbyerin")}
-          title="Erin’s Home"
-          style={btnStyle}
-        >
+        <button onClick={() => go("/wovenrainbowsbyerin")} title="Erin’s Home" style={btnStyle}>
           🏠
         </button>
 
@@ -1290,9 +1329,11 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
         <button onClick={() => go("/freeform")} title="Freeform" style={btnStyle}>
           ✨
         </button>
-<button onClick={() => go("/erin2d")} style={btnStyle}>
-  🪡
-</button>
+
+        <button onClick={() => go("/erin2d")} style={btnStyle}>
+          🪡
+        </button>
+
         {/* 📊 Chart */}
         <button onClick={() => go("/chart")} title="Ring Chart" style={btnStyle}>
           📊
@@ -1326,8 +1367,147 @@ const btnStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
+// ==============================================
+// 🏠 Simple Home / Landing (keeps routing hub in App.tsx)
+// ==============================================
+function Home() {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#0E0F12",
+        color: "#e5e7eb",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+      }}
+    >
+      <div
+        style={{
+          width: "min(900px, 100%)",
+          background: "rgba(17,24,39,0.6)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 18,
+          padding: 20,
+          boxShadow: "0 12px 40px rgba(0,0,0,.45)",
+        }}
+      >
+        <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>
+          Woven Rainbows by Erin — Chainmaille Tools
+        </div>
+        <div style={{ color: "#9ca3af", marginBottom: 16 }}>
+          Choose a workspace:
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+          <Link to="/designer" style={homeLinkStyle}>
+            🧩 Designer (3D)
+          </Link>
+          <Link to="/freeform" style={homeLinkStyle}>
+            ✨ Freeform 2D
+          </Link>
+          <Link to="/erin2d" style={homeLinkStyle}>
+            🪡 Erin 2D Pattern
+          </Link>
+          <Link to="/chart" style={homeLinkStyle}>
+            📊 Ring Size Chart
+          </Link>
+          <Link to="/tuner" style={homeLinkStyle}>
+            ⚙️ Weave Tuner
+          </Link>
+          <Link to="/atlas" style={homeLinkStyle}>
+            🌐 Weave Atlas
+          </Link>
+        </div>
+
+        <div style={{ marginTop: 14, color: "#9ca3af", fontSize: 12 }}>
+          Tip: Use 🧭 inside Designer to jump between pages.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const homeLinkStyle: React.CSSProperties = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "12px 14px",
+  borderRadius: 12,
+  textDecoration: "none",
+  color: "#dbeafe",
+  background: "rgba(15, 23, 42, 0.85)",
+  border: "1px solid rgba(255,255,255,0.08)",
+  boxShadow: "0 8px 20px rgba(0,0,0,.35)",
+};
+
+// ==============================================
+// ✅ APP ROOT — Routing Hub (NO FEATURE REMOVAL)
+// ==============================================
+function App() {
+  return (
+    <Routes>
+      {/* Landing */}
+      <Route path="/" element={<Navigate to="/wovenrainbowsbyerin" replace />} />
+      <Route path="/wovenrainbowsbyerin" element={<Home />} />
+
+      {/* Auth Gate */}
+      <Route path="/password" element={<PasswordGate />} />
+
+      {/* Designer */}
+      <Route
+        path="/designer"
+        element={
+          <RequireDesignerAuth>
+            <ChainmailDesigner />
+          </RequireDesignerAuth>
+        }
+      />
+
+      {/* Freeform */}
+      <Route
+        path="/freeform"
+        element={
+          <RequireFreeformAuth>
+            <FreeformChainmail2D />
+          </RequireFreeformAuth>
+        }
+      />
+
+      {/* Erin 2D */}
+      <Route
+        path="/erin2d"
+        element={
+          <RequireErin2DAuth>
+            <ErinPattern2D />
+          </RequireErin2DAuth>
+        }
+      />
+
+      {/* Ring chart */}
+      <Route path="/chart" element={<RingSizeChart />} />
+
+      {/* Tuner */}
+      <Route path="/tuner" element={<ChainmailWeaveTuner />} />
+
+      {/* Atlas */}
+      <Route path="/atlas" element={<ChainmailWeaveAtlas />} />
+
+      {/* Fallback */}
+      <Route path="*" element={<Navigate to="/wovenrainbowsbyerin" replace />} />
+    </Routes>
+  );
+}
+
 // ======================================
 // ✅ EXPORTS
 // ======================================
-export { DraggableCompassNav, DraggablePill };
+export { DraggableCompassNav, DraggablePill, App };
 export default ChainmailDesigner;
+
+// NOTE: generateRingsDesigner is intentionally imported as part of your geometry suite.
+// It remains available for future generator selection without deleting features.
+// (If your TS config has noUnusedLocals=true and this import is unused in your project,
+// you can switch the Designer generator selection in ONE place without removing any UI.)
+void generateRingsDesigner;

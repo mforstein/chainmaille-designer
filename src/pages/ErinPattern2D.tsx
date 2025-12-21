@@ -1,6 +1,7 @@
 // src/components/ErinPattern2D.tsx
 import { useState, useEffect, useRef } from "react";
 import { DraggableCompassNav, DraggablePill } from "../App";
+import ProjectSaveLoadButtons from "../components/ProjectSaveLoadButtons";
 const PALETTE_24 = [
   "#000000", "#1f2937", "#6b7280", "#9ca3af", "#ffffff",
   "#991b1b", "#ef4444", "#f97316", "#f59e0b", "#eab308",
@@ -230,7 +231,108 @@ const ErinPattern2D: React.FC = () => {
 
     ctx.restore();
   };
+type Erin2DProject = {
+  type: "erin2d";
+  version: 1;
+  cells: [string, string][];
+  settings: {
+    cols: number;
+    rows: number;
+    majorAxis: number;
+    minorAxis: number;
+    wireD: number;
+    spacingX: number;
+    spacingY: number;
+    offsetX: number;
+    offsetY: number;
+    rowOffsetX: number;
+    rowOffsetY: number;
+    scale: number;
+    hitRadiusFactor: number;
+    hitOffsetX: number;
+    hitOffsetY: number;
+    showLines: boolean;
+    showImage: boolean;
+  };
+  view: {
+    zoom: number;
+    panX: number;
+    panY: number;
+  };
+  metadata: {
+    createdAt: number;
+  };
+};
 
+const savePatternProject = () : Erin2DProject => {
+  return {
+    type: "erin2d",
+    version: 1,
+    cells: Array.from(cells.entries()),
+    settings: {
+      cols,
+      rows,
+      majorAxis,
+      minorAxis,
+      wireD,
+      spacingX,
+      spacingY,
+      offsetX,
+      offsetY,
+      rowOffsetX,
+      rowOffsetY,
+      scale,
+      hitRadiusFactor,
+      hitOffsetX,
+      hitOffsetY,
+      showLines,
+      showImage,
+    },
+    view: { zoom, panX, panY },
+    metadata: { createdAt: Date.now() },
+  };
+};
+
+const loadPatternProject = (data: any) => {
+  if (!data || data.type !== "erin2d") {
+    alert("❌ Not an Erin 2D project file");
+    return;
+  }
+  if (!Array.isArray(data.cells)) {
+    alert("❌ Invalid project (cells missing)");
+    return;
+  }
+
+  setCells(new Map(data.cells));
+
+  const s = data.settings ?? {};
+  setCols(s.cols ?? cols);
+  setRows(s.rows ?? rows);
+  setMajorAxis(s.majorAxis ?? majorAxis);
+  setMinorAxis(s.minorAxis ?? minorAxis);
+  setWireD(s.wireD ?? wireD);
+  setSpacingX(s.spacingX ?? spacingX);
+  setSpacingY(s.spacingY ?? spacingY);
+  setOffsetX(s.offsetX ?? offsetX);
+  setOffsetY(s.offsetY ?? offsetY);
+  setRowOffsetX(s.rowOffsetX ?? rowOffsetX);
+  setRowOffsetY(s.rowOffsetY ?? rowOffsetY);
+  setScale(s.scale ?? scale);
+
+  setHitRadiusFactor(s.hitRadiusFactor ?? hitRadiusFactor);
+  setHitOffsetX(s.hitOffsetX ?? hitOffsetX);
+  setHitOffsetY(s.hitOffsetY ?? hitOffsetY);
+
+  setShowLines(!!s.showLines);
+  setShowImage(s.showImage !== false);
+
+  const v = data.view ?? {};
+  setZoom(v.zoom ?? 1);
+  setPanX(v.panX ?? 0);
+  setPanY(v.panY ?? 0);
+
+  console.log("✅ Erin 2D project loaded");
+};
   // ------------------------------
   // Redraw effect (HiDPI + transparent)
   // ------------------------------
@@ -265,14 +367,16 @@ const ErinPattern2D: React.FC = () => {
   ]);
   
 
-  // convert screen → canvas coordinates considering zoom/pan
-  const screenToCanvas = (clientX: number, clientY: number) => {
-    const canvas = canvasRef.current!;
-    const rect = canvas.getBoundingClientRect();
-    const x = (clientX - rect.left) / zoom;
-    const y = (clientY - rect.top) / zoom;
-    return { x, y };
-  };
+const screenToCanvas = (clientX: number, clientY: number) => {
+  const canvas = canvasRef.current!;
+  const rect = canvas.getBoundingClientRect();
+
+  // IMPORTANT: include panX/panY because the whole layer is translated
+  const x = (clientX - rect.left - panX) / zoom;
+  const y = (clientY - rect.top - panY) / zoom;
+
+  return { x, y };
+};
 
   // ------------------------------
   // Force redraw helper (Safari fix)
@@ -354,92 +458,19 @@ const ErinPattern2D: React.FC = () => {
 // ✅ Touch / Pinch Zoom (centered + fully iOS Safari compatible)
 // ------------------------------
 const lastDist = useRef<number | null>(null);
-const pinchStartZoom = useRef<number>(zoom);
+const pinchStartZoom = useRef<number>(1);
 
-const handleTouchMove = (e: React.TouchEvent) => {
-  if (e.touches.length === 2) {
-    e.preventDefault();
-    const t1 = e.touches.item(0)!; const t2 = e.touches.item(1)!;
+// keep latest values in refs to avoid stale closures
+const zoomRef = useRef(zoom);
+const panXRef = useRef(panX);
+const panYRef = useRef(panY);
 
-    const dx = t1.clientX - t2.clientX;
-    const dy = t1.clientY - t2.clientY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    // Midpoint between fingers
-    const midX = (t1.clientX + t2.clientX) / 2;
-    const midY = (t1.clientY + t2.clientY) / 2;
-
-    if (lastDist.current == null) {
-      lastDist.current = dist;
-      pinchStartZoom.current = zoom;
-      return;
-    }
-
-    const scaleFactor = dist / lastDist.current;
-    const nextZoom = Math.max(0.3, Math.min(5, pinchStartZoom.current * scaleFactor));
-
-    const rect = interactionRef.current!.getBoundingClientRect();
-    const cx = midX - rect.left;
-    const cy = midY - rect.top;
-
-    const worldX = (cx - panX) / zoom;
-    const worldY = (cy - panY) / zoom;
-    const newPanX = cx - worldX * nextZoom;
-    const newPanY = cy - worldY * nextZoom;
-
-    setZoom(nextZoom);
-    setPanX(newPanX);
-    setPanY(newPanY);
-    requestAnimationFrame(forceRedraw);
-  } else if (e.touches.length === 1 && !paintActive) {
-    e.preventDefault();
-    const t = e.touches[0];
-    if (panStartRef.current) {
-      const dx = t.clientX - panStartRef.current.x;
-      const dy = t.clientY - panStartRef.current.y;
-      setPanX(panOrigRef.current.x + dx);
-      setPanY(panOrigRef.current.y + dy);
-    }
-  } else if (e.touches.length === 1 && paintActive && isPainting) {
-    e.preventDefault();
-    const t = e.touches[0];
-    const { x, y } = screenToCanvas(t.clientX, t.clientY);
-    const c = Math.round((x - offsetX) / spacingX);
-    const r = Math.round((y - offsetY) / spacingY);
-    if (r < 0 || r >= rows || c < 0 || c >= cols) return;
-    const key = `${r}-${c}`;
-    const next = new Map(cells);
-    if (isErasing) next.delete(key);
-    else next.set(key, selectedColor);
-    setCells(next);
-  }
-};
-
-const handleTouchEnd = (e: React.TouchEvent) => {
-  if (e.touches.length < 2) {
-    lastDist.current = null;
-  }
-  setIsPainting(false);
-  panStartRef.current = null;
-};
-
-// ------------------------------
-// 🩹 Ensure non-passive listeners (Safari requires it for preventDefault())
-// ------------------------------
 useEffect(() => {
-  const el = interactionRef.current;
-  if (!el) return;
+  zoomRef.current = zoom;
+  panXRef.current = panX;
+  panYRef.current = panY;
+}, [zoom, panX, panY]);
 
-  const touchMove = (ev: TouchEvent) => handleTouchMove(ev as any);
-  const touchEnd = (ev: TouchEvent) => handleTouchEnd(ev as any);
-  el.addEventListener("touchmove", touchMove, { passive: false });
-  el.addEventListener("touchend", touchEnd, { passive: false });
-
-  return () => {
-    el.removeEventListener("touchmove", touchMove);
-    el.removeEventListener("touchend", touchEnd);
-  };
-}, [handleTouchMove]);
 // ------------------------------
 // ✅ Handle Canvas Click (paint or erase cell)
 // ------------------------------
@@ -512,7 +543,77 @@ const handleWheel = (e: React.WheelEvent) => {
     a.click();
     URL.revokeObjectURL(url);
   };
+// ------------------------------
+// ✅ Touch / Pinch Zoom (single canonical implementation)
+// ------------------------------
+const handleTouchMove = (e: React.TouchEvent) => {
+  if (e.touches.length === 2) {
+    e.preventDefault();
 
+    const t1 = e.touches[0];
+    const t2 = e.touches[1];
+
+    const dx = t1.clientX - t2.clientX;
+    const dy = t1.clientY - t2.clientY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (lastDist.current == null) {
+      lastDist.current = dist;
+      pinchStartZoom.current = zoom;
+      return;
+    }
+
+    const scaleFactor = dist / lastDist.current;
+    const nextZoom = Math.max(0.3, Math.min(5, pinchStartZoom.current * scaleFactor));
+
+    const rect = interactionRef.current!.getBoundingClientRect();
+    const midX = (t1.clientX + t2.clientX) / 2 - rect.left;
+    const midY = (t1.clientY + t2.clientY) / 2 - rect.top;
+
+    const worldX = (midX - panX) / zoom;
+    const worldY = (midY - panY) / zoom;
+
+    setZoom(nextZoom);
+    setPanX(midX - worldX * nextZoom);
+    setPanY(midY - worldY * nextZoom);
+
+    return;
+  }
+
+  // one-finger pan
+  if (e.touches.length === 1 && !paintActive) {
+    e.preventDefault();
+    const t = e.touches[0];
+    if (panStartRef.current) {
+      setPanX(panOrigRef.current.x + (t.clientX - panStartRef.current.x));
+      setPanY(panOrigRef.current.y + (t.clientY - panStartRef.current.y));
+    }
+  }
+
+  // one-finger paint
+  if (e.touches.length === 1 && paintActive && isPainting) {
+    e.preventDefault();
+    const t = e.touches[0];
+    const { x, y } = screenToCanvas(t.clientX, t.clientY);
+
+    const c = Math.round((x - offsetX) / spacingX);
+    const r = Math.round((y - offsetY) / spacingY);
+    if (r < 0 || r >= rows || c < 0 || c >= cols) return;
+
+    setCells(prev => {
+      const next = new Map(prev);
+      if (isErasing) next.delete(`${r}-${c}`);
+      else next.set(`${r}-${c}`, selectedColor);
+      return next;
+    });
+  }
+};
+
+const handleTouchEnd = () => {
+  lastDist.current = null;
+  setIsPainting(false);
+  panStartRef.current = null;
+};
   // ------------------------------
   // Draggable helper hook
   // ------------------------------
@@ -707,8 +808,13 @@ const colorsPanel = useDraggable({
           >
             🖨️
           </button>
-
-          <button
+<ProjectSaveLoadButtons
+  onSave={savePatternProject}
+  onLoad={(json) => {
+    if (!window.confirm("Load project and replace current work?")) return;
+    loadPatternProject(json);
+  }}
+/>          <button
             onClick={() => setShowHitGrid((v) => !v)}
             style={{
               ...floatIconBtn,

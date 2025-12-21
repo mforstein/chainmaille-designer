@@ -70,16 +70,16 @@ export function resolvePlacement(
   gridX: number,
   gridY: number,
   rings: RingMap,
-  nextClusterId: number,
+  nextCluster: number,
   color: string,
   settings: { spacingX: number; spacingY: number; wireD: number }
-): { ring: PlacedRing; newClusterId: number } {
-  // Snap nearest hex cell
+): { ring: PlacedRing; newCluster: number } {
+  // Snap to nearest hex cell
   const { row, col } = snapToHexCell(gridX, gridY);
 
   const key = `${row}-${col}`;
 
-  // If the ring already exists → recolor (cluster stays same)
+  // If the ring already exists → recolor, keep its cluster
   const existing = rings.get(key);
   if (existing) {
     return {
@@ -89,20 +89,20 @@ export function resolvePlacement(
         color,
         cluster: existing.cluster,
       },
-      newClusterId: nextClusterId,
+      newCluster: nextCluster, // cluster counter unchanged
     };
   }
 
-  // New ring placement
+  // New ring placement → consume nextCluster
   const ring: PlacedRing = {
     row,
     col,
     color,
-    cluster: nextClusterId,
+    cluster: nextCluster,
   };
 
   return {
     ring,
-    newClusterId: nextClusterId + 1,
+    newCluster: nextCluster + 1,
   };
 }
