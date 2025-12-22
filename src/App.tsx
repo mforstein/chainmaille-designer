@@ -1509,18 +1509,7 @@ function RequireErin2DAuth({ children }: { children: JSX.Element }) {
 
   return children;
 }
-function HomeGate() {
-  const unlocked =
-    localStorage.getItem("designerAuth") === "true" &&
-    localStorage.getItem("freeformAuth") === "true" &&
-    localStorage.getItem("erin2DAuth") === "true";
 
-  if (!unlocked) {
-    return <PasswordGate />;
-  }
-
-  return <Home />;
-}
 // ==============================================
 // ✅ APP ROOT — Routing Hub (NO FEATURE REMOVAL)
 // ==============================================

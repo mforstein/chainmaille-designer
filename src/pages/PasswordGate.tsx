@@ -1,12 +1,21 @@
+// ======================================================
+// src/pages/PasswordGate.tsx — Single Password Gate
+// ======================================================
+
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 
-export default function PasswordGate() {
+type PasswordGateProps = {
+  onSuccess?: () => void;
+};
+
+export default function PasswordGate({ onSuccess }: PasswordGateProps) {
   const [input, setInput] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Where to go after successful unlock
   const redirect =
     (location.state as any)?.redirect || "/workspace";
 
@@ -15,14 +24,20 @@ export default function PasswordGate() {
     const code = input.trim().toUpperCase();
 
     if (code === "ERIN50") {
+      // 🔓 unlock all tools (shared session)
       localStorage.setItem("designerAuth", "true");
       localStorage.setItem("freeformAuth", "true");
       localStorage.setItem("erin2DAuth", "true");
 
+      // Optional inline success hook
+      onSuccess?.();
+
+      // Route-based navigation
       navigate(redirect, { replace: true });
-    } else {
-      setError("Incorrect password. Please try again.");
+      return;
     }
+
+    setError("Incorrect password. Please try again.");
   };
 
   return (
@@ -67,6 +82,7 @@ export default function PasswordGate() {
             border: "1px solid #374151",
             background: "#1F2937",
             color: "white",
+            fontSize: 16,
           }}
         />
 
@@ -80,13 +96,14 @@ export default function PasswordGate() {
             padding: "10px",
             fontWeight: "bold",
             cursor: "pointer",
+            fontSize: 16,
           }}
         >
           Enter
         </button>
 
         {error && (
-          <p style={{ color: "#F87171" }}>
+          <p style={{ color: "#F87171", marginTop: 4 }}>
             {error}
           </p>
         )}
