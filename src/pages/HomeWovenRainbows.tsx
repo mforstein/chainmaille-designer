@@ -304,22 +304,26 @@ useEffect(() => {
             Chainmaille Designer tool — created to help you visualize and plan
             your next woven artwork.
           </p>
-          <button
-            onClick={() => navigate("/wovenrainbowsbyerin/login")}
-            style={{
-              background: "#2563eb",
-              color: "#fff",
-              border: "none",
-              padding: "12px 24px",
-              borderRadius: 10,
-              cursor: "pointer",
-              fontSize: "1.1rem",
-              fontWeight: 600,
-              boxShadow: "0 4px 14px rgba(37,99,235,0.4)",
-            }}
-          >
-            🧩 Access Designer
-          </button>
+<button
+  onClick={() =>
+    navigate("/wovenrainbowsbyerin/login", {
+      state: { redirect: "/workspace" },
+    })
+  }
+  style={{
+    background: "#2563eb",
+    color: "#fff",
+    border: "none",
+    padding: "12px 24px",
+    borderRadius: 10,
+    cursor: "pointer",
+    fontSize: "1.1rem",
+    fontWeight: 600,
+    boxShadow: "0 4px 14px rgba(37,99,235,0.4)",
+  }}
+>
+  🧩 Access Designer
+</button>
         </div>
       </div>
       {/* ======= Hidden Feather (Easter Egg Blog Access) ======= */}

@@ -58,7 +58,7 @@ import { Routes, Route, Navigate, useNavigate, Link } from "react-router-dom";
 import { calculateBOM } from "./BOM/bomCalculator";
 import "./index.css";
 import "./ui/ui-grid.css";
-
+import HomeWovenRainbows from "./pages/HomeWovenRainbows";
 // ==============================
 // Renderer
 // ==============================
@@ -87,6 +87,7 @@ import ChainmailWeaveAtlas from "./pages/ChainmailWeaveAtlas";
 import PasswordGate from "./pages/PasswordGate";
 import FreeformChainmail2D from "./pages/FreeformChainmail2D";
 import ErinPattern2D from "./pages/ErinPattern2D";
+import { hasAuth } from "./auth/useAuth";
 
 // ==============================
 // BOM-RELATED SHARED TYPES
@@ -132,32 +133,18 @@ export type PaintMap = Map<string, string | null>;
 // ==============================
 
 export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+function PasswordGateWrapper({ onUnlock }: { onUnlock: () => void }) {
+  return (
+    <PasswordGate
+      onSuccess={() => {
+        // 🔓 unlock everything once
+        localStorage.setItem("designerAuth", "true");
+        localStorage.setItem("freeformAuth", "true");
+        localStorage.setItem("erin2DAuth", "true");
 
-// ==============================
-// Route Guards
-// ==============================
-
-function RequireDesignerAuth({ children }: { children: JSX.Element }) {
-  return localStorage.getItem("designerAuth") === "true" ? (
-    children
-  ) : (
-    <Navigate to="/password" state={{ redirect: "/designer" }} />
-  );
-}
-
-function RequireFreeformAuth({ children }: { children: JSX.Element }) {
-  return localStorage.getItem("freeformAuth") === "true" ? (
-    children
-  ) : (
-    <Navigate to="/password" state={{ redirect: "/freeform" }} />
-  );
-}
-
-function RequireErin2DAuth({ children }: { children: JSX.Element }) {
-  return localStorage.getItem("erin2DAuth") === "true" ? (
-    children
-  ) : (
-    <Navigate to="/password" state={{ redirect: "/erin2d" }} />
+        onUnlock();
+      }}
+    />
   );
 }
 
@@ -1292,11 +1279,10 @@ function ChainmailDesigner() {
 function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
   const navigate = useNavigate();
 
-  const go = (path: string) => {
-    navigate(path);
-    if (onNavigate) onNavigate();
-  };
-
+const go = (path: string) => {
+  navigate(path, { replace: true });
+  if (onNavigate) onNavigate();
+};
   return (
     <DraggablePill id="compass-nav" defaultPosition={{ x: 140, y: 140 }}>
       <div
@@ -1366,11 +1352,41 @@ const btnStyle: React.CSSProperties = {
   color: "#dbeafe",
   cursor: "pointer",
 };
+function WorkspaceGate() {
+  const unlocked =
+    localStorage.getItem("designerAuth") === "true" &&
+    localStorage.getItem("freeformAuth") === "true" &&
+    localStorage.getItem("erin2DAuth") === "true";
 
+  if (!unlocked) {
+    return <Navigate to="/wovenrainbowsbyerin" replace />;
+  }
+
+  return <WorkspaceHome />;
+}
 // ==============================================
 // 🏠 Simple Home / Landing (keeps routing hub in App.tsx)
 // ==============================================
-function Home() {
+function WorkspaceHome() {
+  const [unlocked, setUnlocked] = React.useState(
+    () =>
+      localStorage.getItem("designerAuth") === "true" &&
+      localStorage.getItem("freeformAuth") === "true" &&
+      localStorage.getItem("erin2DAuth") === "true"
+  );
+
+  // 🔐 Show password first
+  if (!unlocked) {
+    return (
+      <PasswordGateWrapper
+        onUnlock={() => {
+          setUnlocked(true);
+        }}
+      />
+    );
+  }
+
+  // ✅ AFTER password — show original home page UI
   return (
     <div
       style={{
@@ -1396,11 +1412,18 @@ function Home() {
         <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>
           Woven Rainbows by Erin — Chainmaille Tools
         </div>
+
         <div style={{ color: "#9ca3af", marginBottom: 16 }}>
           Choose a workspace:
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 12,
+          }}
+        >
           <Link to="/designer" style={homeLinkStyle}>
             🧩 Designer (3D)
           </Link>
@@ -1441,70 +1464,133 @@ const homeLinkStyle: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,0.08)",
   boxShadow: "0 8px 20px rgba(0,0,0,.35)",
 };
+function RequireDesignerAuth({ children }: { children: JSX.Element }) {
+  const authed = localStorage.getItem("designerAuth") === "true";
 
+  if (!authed) {
+    return (
+      <Navigate
+        to="/password"
+        state={{ redirect: "/designer" }}
+        replace
+      />
+    );
+  }
+
+  return children;
+}
+function RequireFreeformAuth({ children }: { children: JSX.Element }) {
+  const authed = localStorage.getItem("freeformAuth") === "true";
+
+  if (!authed) {
+    return (
+      <Navigate
+        to="/password"
+        state={{ redirect: "/freeform" }}
+        replace
+      />
+    );
+  }
+
+  return children;
+}
+function RequireErin2DAuth({ children }: { children: JSX.Element }) {
+  const authed = localStorage.getItem("erin2DAuth") === "true";
+
+  if (!authed) {
+    return (
+      <Navigate
+        to="/password"
+        state={{ redirect: "/erin2d" }}
+        replace
+      />
+    );
+  }
+
+  return children;
+}
+function HomeGate() {
+  const unlocked =
+    localStorage.getItem("designerAuth") === "true" &&
+    localStorage.getItem("freeformAuth") === "true" &&
+    localStorage.getItem("erin2DAuth") === "true";
+
+  if (!unlocked) {
+    return <PasswordGate />;
+  }
+
+  return <Home />;
+}
 // ==============================================
 // ✅ APP ROOT — Routing Hub (NO FEATURE REMOVAL)
 // ==============================================
 function App() {
   return (
-    <Routes>
-      {/* Landing */}
-      <Route path="/" element={<Navigate to="/wovenrainbowsbyerin" replace />} />
-      <Route path="/wovenrainbowsbyerin" element={<Home />} />
+<Routes>
+  {/* Public landing */}
+  <Route
+    path="/wovenrainbowsbyerin"
+    element={<HomeWovenRainbows />}
+  />
 
-      {/* Auth Gate */}
-      <Route path="/password" element={<PasswordGate />} />
+  {/* Password page */}
+  <Route
+    path="/wovenrainbowsbyerin/login"
+    element={<PasswordGate />}
+  />
 
-      {/* Designer */}
-      <Route
-        path="/designer"
-        element={
-          <RequireDesignerAuth>
-            <ChainmailDesigner />
-          </RequireDesignerAuth>
-        }
-      />
+  {/* Workspace chooser (post-auth) */}
+  <Route
+    path="/workspace"
+    element={<WorkspaceHome />}   // <-- your current chooser page
+  />
 
-      {/* Freeform */}
-      <Route
-        path="/freeform"
-        element={
-          <RequireFreeformAuth>
-            <FreeformChainmail2D />
-          </RequireFreeformAuth>
-        }
-      />
+  {/* Designer tools (still protected individually) */}
+  <Route
+    path="/designer/*"
+    element={
+      <RequireDesignerAuth>
+        <ChainmailDesigner />
+      </RequireDesignerAuth>
+    }
+  />
 
-      {/* Erin 2D */}
-      <Route
-        path="/erin2d"
-        element={
-          <RequireErin2DAuth>
-            <ErinPattern2D />
-          </RequireErin2DAuth>
-        }
-      />
+  <Route
+    path="/freeform"
+    element={
+      <RequireFreeformAuth>
+        <FreeformChainmail2D />
+      </RequireFreeformAuth>
+    }
+  />
 
-      {/* Ring chart */}
-      <Route path="/chart" element={<RingSizeChart />} />
+  <Route
+    path="/erin2d"
+    element={
+      <RequireErin2DAuth>
+        <ErinPattern2D />
+      </RequireErin2DAuth>
+    }
+  />
+{/* ✅ PUBLIC TOOLS — NO AUTH */}
+<Route path="/chart" element={<RingSizeChart />} />
+<Route path="/tuner" element={<ChainmailWeaveTuner />} />
+<Route path="/atlas" element={<ChainmailWeaveAtlas />} />
+  {/* Fallback */}
+  <Route
+    path="*"
+    element={<Navigate to="/wovenrainbowsbyerin" replace />}
+  />
+</Routes>
 
-      {/* Tuner */}
-      <Route path="/tuner" element={<ChainmailWeaveTuner />} />
-
-      {/* Atlas */}
-      <Route path="/atlas" element={<ChainmailWeaveAtlas />} />
-
-      {/* Fallback */}
-      <Route path="*" element={<Navigate to="/wovenrainbowsbyerin" replace />} />
-    </Routes>
   );
 }
 
 // ======================================
 // ✅ EXPORTS
 // ======================================
-export { DraggableCompassNav, DraggablePill, App };
-export default ChainmailDesigner;
+export { DraggableCompassNav, DraggablePill };
+export default App;
 
 // NOTE: generateRingsDesigner is intentionally imported as part of your geometry suite.
 // It remains available for future generator selection without deleting features.

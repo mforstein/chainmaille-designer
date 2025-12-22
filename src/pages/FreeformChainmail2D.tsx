@@ -847,9 +847,9 @@ const color = (r as any).color ?? "#ffffff";
       const { wx, wy } = logicalToWorld(lx, ly);
       const { sx, sy } = worldToScreen(wx, wy);
 
-      const effInner = getEffectiveInnerRadiusMm(r.row);
-      const baseRmm = Math.max(effInner - wireMm * 0.5, effInner * 0.3);
-      const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
+const effInner = getEffectiveInnerRadiusMm(r.row);
+const baseRmm = effInner; // ← FIX
+const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
 
       ctx.beginPath();
       ctx.arc(sx, sy, rPx, 0, Math.PI * 2);
@@ -1529,10 +1529,7 @@ const color = (r as any).color ?? "#ffffff";
 
       const effectiveInnerRadiusMm = getEffectiveInnerRadiusMm(approxRow);
 
-      const baseCircleRmm = Math.max(
-        effectiveInnerRadiusMm - wireMm * 0.5,
-        effectiveInnerRadiusMm * 0.3
-      );
+const baseCircleRmm = effectiveInnerRadiusMm; // ← FIX
 
       const hitRadiusPx =
         projectRingRadiusPx(adjLx, adjLy, baseCircleRmm * circleScale) * 1.05;
