@@ -23,7 +23,8 @@ const BlogEditor: React.FC = () => {
       .then((data) => {
         if (Array.isArray(data)) {
           const sorted = [...data].sort(
-            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            (a, b) =>
+              new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
           );
           setEntries(sorted);
         }
@@ -76,7 +77,13 @@ const BlogEditor: React.FC = () => {
       }}
     >
       {/* ======= Navigation ======= */}
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginBottom: 20,
+        }}
+      >
         <h1 style={{ fontSize: "1.8rem", fontWeight: 700 }}>🪶 Blog Editor</h1>
         <button
           onClick={() => navigate("/wovenrainbowsbyerin")}
@@ -111,7 +118,9 @@ const BlogEditor: React.FC = () => {
           marginInline: "auto",
         }}
       >
-        <h2 style={{ fontSize: "1.3rem", marginBottom: 10 }}>✍️ Add New Post</h2>
+        <h2 style={{ fontSize: "1.3rem", marginBottom: 10 }}>
+          ✍️ Add New Post
+        </h2>
         <textarea
           value={newContent}
           onChange={(e) => setNewContent(e.target.value)}
@@ -187,8 +196,7 @@ const BlogEditor: React.FC = () => {
                 }}
               >
                 <span>
-                  — {entry.author},{" "}
-                  {new Date(entry.timestamp).toLocaleString()}
+                  — {entry.author}, {new Date(entry.timestamp).toLocaleString()}
                 </span>
                 <button
                   onClick={() => handleDelete(i)}

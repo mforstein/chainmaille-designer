@@ -50,7 +50,29 @@ tsconfig.tsbuildinfo
 # =========================
 /public/wovenrainbows_listings_local_backup.json
 /public/wovenrainbows_listings_local.json
+# =========================
+# Env & secrets
+# =========================
+.env
+.env.*.local
+*.pem
+*.key
+*.crt
 
+# =========================
+# Tooling caches
+# =========================
+.eslintcache
+.vite
+.turbo
+.pnpm-store
+coverage
+.nyc_output
+
+# =========================
+# Hosting (optional)
+# =========================
+.vercel
 
 
 

@@ -10,15 +10,15 @@ export interface Params {
   rows: number;
   cols: number;
   innerDiameter: number; // mm
-  wireDiameter: number;  // mm
-  overlapX: number;      // 0..1 visual overlap scalar
-  overlapY: number;      // 0..1 visual overlap scalar
+  wireDiameter: number; // mm
+  overlapX: number; // 0..1 visual overlap scalar
+  overlapY: number; // 0..1 visual overlap scalar
   colorMode: ColorMode;
-  ringColor: string;     // default ring metal color hex
-  altColor: string;      // "checker" alt color
-  bgColor: string;       // background grid color
+  ringColor: string; // default ring metal color hex
+  altColor: string; // "checker" alt color
+  bgColor: string; // background grid color
   supplier: SupplierId;
-  ringSpec: string;      // friendly label
+  ringSpec: string; // friendly label
   unit: Unit;
 }
 
@@ -44,6 +44,7 @@ export interface Supplier {
 export type PaintMap = Map<string, string | null>;
 
 export const keyAt = (r: number, c: number) => `${r},${c}`;
-export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+export const clamp = (v: number, a: number, b: number) =>
+  Math.max(a, Math.min(b, v));
 export const mmToIn = (mm: number) => mm / 25.4;
 export const inToMm = (inch: number) => inch * 25.4;

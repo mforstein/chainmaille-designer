@@ -123,7 +123,9 @@ export default function ChainmailWeaveTuner() {
       savedAt: new Date().toISOString(),
     };
 
-    const existing = JSON.parse(localStorage.getItem("chainmailMatrix") || "[]");
+    const existing = JSON.parse(
+      localStorage.getItem("chainmailMatrix") || "[]",
+    );
     const updated = [...existing.filter((e: any) => e.id !== entry.id), entry];
     localStorage.setItem("chainmailMatrix", JSON.stringify(updated, null, 2));
     alert(`✅ Saved ${entry.id} (${status})`);
@@ -284,7 +286,10 @@ export default function ChainmailWeaveTuner() {
         </label>
 
         {/* Keep helper visible, but display uses authoritative math */}
-        <div style={{ marginLeft: 6, fontSize: 13 }} title={`ID(mm) ≈ ${convertToMM(id).toFixed(3)}`}>
+        <div
+          style={{ marginLeft: 6, fontSize: 13 }}
+          title={`ID(mm) ≈ ${convertToMM(id).toFixed(3)}`}
+        >
           AR ≈ {arDisplay}
         </div>
 

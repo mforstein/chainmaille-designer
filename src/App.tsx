@@ -53,12 +53,19 @@
 //
 // ==============================
 
-import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
+import React, {
+  useRef,
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+} from "react";
 import { Routes, Route, Navigate, useNavigate, Link } from "react-router-dom";
 import { calculateBOM } from "./BOM/bomCalculator";
 import "./index.css";
 import "./ui/ui-grid.css";
 import HomeWovenRainbows from "./pages/HomeWovenRainbows";
+
 // ==============================
 // Renderer
 // ==============================
@@ -67,7 +74,10 @@ import RingRenderer, { RingRendererHandle } from "./components/RingRenderer";
 // ==============================
 // Geometry Generators
 // ==============================
-import { generateRings, generateRingsDesigner } from "./components/ringGenerators";
+import {
+  generateRings,
+  generateRingsDesigner,
+} from "./components/ringGenerators";
 
 // ==============================
 // Shared UI + Data
@@ -75,9 +85,13 @@ import { generateRings, generateRingsDesigner } from "./components/ringGenerator
 import { MATERIALS, UNIVERSAL_COLORS } from "./utils/colors";
 import SupplierMenu from "./components/SupplierMenu";
 import AtlasPalette from "./components/AtlasPalette";
-import { ImageOverlayPanel, OverlayState } from "./components/ImageOverlayPanel";
+import {
+  ImageOverlayPanel,
+  OverlayState,
+} from "./components/ImageOverlayPanel";
 import ProjectSaveLoadButtons from "./components/ProjectSaveLoadButtons";
-
+import FinalizeAndExportPanel from "./components/FinalizeAndExportPanel";
+import type { ExportRing, PaletteAssignment } from "./types/project";
 // ==============================
 // Pages
 // ==============================
@@ -87,8 +101,7 @@ import ChainmailWeaveAtlas from "./pages/ChainmailWeaveAtlas";
 import PasswordGate from "./pages/PasswordGate";
 import FreeformChainmail2D from "./pages/FreeformChainmail2D";
 import ErinPattern2D from "./pages/ErinPattern2D";
-import { hasAuth } from "./auth/useAuth";
-
+import BOMButtons from "./components/BOMButtons";
 // ==============================
 // BOM-RELATED SHARED TYPES
 // ==============================
@@ -115,13 +128,22 @@ export interface Params {
   centerSpacing?: number;
 }
 
-// Normalized BOM ring (used by bomCalculator.ts)
+export type ColorId = string; // stable identity: `${supplier}:${sku}`
+
 export interface BOMRing {
-  id: string;
-  supplier: SupplierId;
+  id: string; // per-ring stable id (row,col)
+  supplier: SupplierId; // cmj | trl | mdz
+
+  // 🔑 NEW — identity for BOM & ordering
+  colorId?: ColorId; // supplier+sku identity (optional here)
+  sku?: string; // supplier SKU / order code (optional)
+
+  // 🎨 Display
   colorHex: string;
-  innerDiameter: number;
-  wireDiameter: number;
+
+  // 📐 Geometry
+  innerDiameter: number; // mm
+  wireDiameter: number; // mm
   material?: string;
 }
 
@@ -132,7 +154,9 @@ export type PaintMap = Map<string, string | null>;
 // Utilities
 // ==============================
 
-export const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+export const clamp = (v: number, a: number, b: number) =>
+  Math.max(a, Math.min(b, v));
+
 function PasswordGateWrapper({ onUnlock }: { onUnlock: () => void }) {
   return (
     <PasswordGate
@@ -176,7 +200,10 @@ function DraggablePill({
 
   const move = (clientX: number, clientY: number) => {
     if (!draggingRef.current) return;
-    setPos({ x: clientX - offsetRef.current.x, y: clientY - offsetRef.current.y });
+    setPos({
+      x: clientX - offsetRef.current.x,
+      y: clientY - offsetRef.current.y,
+    });
   };
 
   const stop = () => {
@@ -189,7 +216,9 @@ function DraggablePill({
 
   const isInteractive = (el: EventTarget | null) => {
     if (!(el instanceof HTMLElement)) return false;
-    return !!el.closest("button, input, select, textarea, label, a, [role='button'], [role='slider']");
+    return !!el.closest(
+      "button, input, select, textarea, label, a, [role='button'], [role='slider']",
+    );
   };
 
   return (
@@ -232,7 +261,10 @@ function DraggablePill({
 
 // ---------------- Icon Button ----------------
 const IconBtn: React.FC<
-  React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean; tooltip?: string }
+  React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    active?: boolean;
+    tooltip?: string;
+  }
 > = ({ active, tooltip, children, ...rest }) => (
   <div style={{ position: "relative", width: 40, height: 40 }}>
     <button
@@ -267,6 +299,50 @@ function ChainmailDesigner() {
   const [showOverlayPanel, setShowOverlayPanel] = useState(false);
   const [debugVisible, setDebugVisible] = useState(false);
   const [debugMessage, setDebugMessage] = useState("");
+  const [finalizeOpen, setFinalizeOpen] = useState(false);
+  const [assignment, setAssignment] = useState<PaletteAssignment | null>(null);
+
+  // Interactive tool state (was referenced but missing in your last paste)
+  const [paintMode, setPaintMode] = useState(true);
+  const [eraseMode, setEraseMode] = useState(false);
+  const [rotationLocked, setRotationLocked] = useState(true);
+  const [activeColor, setActiveColor] = useState("#8F00FF");
+  const [activeMenu, setActiveMenu] = useState<"camera" | "controls" | null>(
+    null,
+  );
+  const [showMagnet, setShowMagnet] = useState(false);
+  const [showMaterialPalette, setShowMaterialPalette] = useState(false);
+  const [showCompass, setShowCompass] = useState(false);
+  const [overlayState, setOverlayState] = useState<OverlayState | null>(null);
+
+  // renderer handle (ONE declaration only, outside JSX)
+  const rendererRef = useRef<RingRendererHandle | null>(null);
+
+  const [lastWeave, setLastWeave] = useState<any | null>(null);
+
+  // --- load saved weave on mount ---
+  useEffect(() => {
+    const loadWeave = () => {
+      try {
+        const selected = JSON.parse(
+          localStorage.getItem("chainmailSelected") || "null",
+        );
+        if (selected) return setLastWeave(selected);
+        const all = JSON.parse(localStorage.getItem("chainmailMatrix") || "[]");
+        if (Array.isArray(all) && all.length) setLastWeave(all[all.length - 1]);
+        else setLastWeave(null);
+      } catch {
+        setLastWeave(null);
+      }
+    };
+    loadWeave();
+    window.addEventListener("storage", loadWeave);
+    window.addEventListener("weave-updated", loadWeave);
+    return () => {
+      window.removeEventListener("storage", loadWeave);
+      window.removeEventListener("weave-updated", loadWeave);
+    };
+  }, []);
 
   const [params, setParams] = useState<Params>(() => {
     const saved = localStorage.getItem("cmd.params");
@@ -299,44 +375,24 @@ function ChainmailDesigner() {
     return saved ? new Map(JSON.parse(saved)) : new Map();
   });
 
-  const [paintMode, setPaintMode] = useState(true);
-  const [eraseMode, setEraseMode] = useState(false);
-  const [rotationLocked, setRotationLocked] = useState(true);
-  const [activeColor, setActiveColor] = useState("#8F00FF");
-  const [activeMenu, setActiveMenu] = useState<"camera" | "controls" | null>(null);
-  const [showMagnet, setShowMagnet] = useState(false);
-  const [showMaterialPalette, setShowMaterialPalette] = useState(false);
-  const [showCompass, setShowCompass] = useState(false);
-  const [overlayState, setOverlayState] = useState<OverlayState | null>(null);
-
-  const rendererRef = useRef<RingRendererHandle | null>(null);
-  const [lastWeave, setLastWeave] = useState<any | null>(null);
-
-  // --- load saved weave on mount ---
+  // persist params & paint updates
   useEffect(() => {
-    const loadWeave = () => {
-      try {
-        const selected = JSON.parse(localStorage.getItem("chainmailSelected") || "null");
-        if (selected) return setLastWeave(selected);
-        const all = JSON.parse(localStorage.getItem("chainmailMatrix") || "[]");
-        if (Array.isArray(all) && all.length) setLastWeave(all[all.length - 1]);
-        else setLastWeave(null);
-      } catch {
-        setLastWeave(null);
-      }
-    };
-    loadWeave();
-    window.addEventListener("storage", loadWeave);
-    window.addEventListener("weave-updated", loadWeave);
-    return () => {
-      window.removeEventListener("storage", loadWeave);
-      window.removeEventListener("weave-updated", loadWeave);
-    };
-  }, []);
+    try {
+      localStorage.setItem("cmd.params", JSON.stringify(params));
+    } catch {}
+  }, [params]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        "cmd.paint",
+        JSON.stringify(Array.from(paint.entries())),
+      );
+    } catch {}
+  }, [paint]);
 
   // ============================================================
   // ✅ RINGS — Uses tuned weave geometry when present
-  // ✅ (Dependencies include params geometry so manual edits rebuild)
   // ============================================================
   const rings = useMemo(() => {
     if (!lastWeave) {
@@ -352,9 +408,7 @@ function ChainmailDesigner() {
       });
     }
 
-    // ============================================================
-    // ✅ Use tuned weave's actual geometry (ID, WD, spacing, angles)
-    // ============================================================
+    // ✅ Use tuned weave's actual geometry
     const ID_mm =
       Number.isFinite(lastWeave.innerDiameter) && lastWeave.innerDiameter > 0
         ? lastWeave.innerDiameter
@@ -367,16 +421,17 @@ function ChainmailDesigner() {
 
     const spacing =
       lastWeave.centerSpacing ??
-      (Array.isArray(lastWeave.layout) ? lastWeave.layout[0]?.centerSpacing : undefined) ??
+      (Array.isArray(lastWeave.layout)
+        ? lastWeave.layout[0]?.centerSpacing
+        : undefined) ??
       params.centerSpacing ??
       7.5;
 
     const angleIn = Number.isFinite(lastWeave.angleIn) ? lastWeave.angleIn : 25;
-    const angleOut = Number.isFinite(lastWeave.angleOut) ? lastWeave.angleOut : -25;
+    const angleOut = Number.isFinite(lastWeave.angleOut)
+      ? lastWeave.angleOut
+      : -25;
 
-    // ============================================================
-    // ✅ Generate correct geometry
-    // ============================================================
     return generateRings({
       rows: params.rows,
       cols: params.cols,
@@ -405,7 +460,9 @@ function ChainmailDesigner() {
     ringColor: params?.ringColor ?? "#CCCCCC",
     bgColor: params?.bgColor ?? "#0F1115",
     centerSpacing:
-      (Array.isArray(lastWeave?.layout) ? lastWeave?.layout?.[0]?.centerSpacing : undefined) ??
+      (Array.isArray(lastWeave?.layout)
+        ? lastWeave?.layout?.[0]?.centerSpacing
+        : undefined) ??
       lastWeave?.centerSpacing ??
       params?.centerSpacing ??
       7.5,
@@ -430,7 +487,7 @@ function ChainmailDesigner() {
       safeParams.ringColor,
       safeParams.bgColor,
       safeParams.centerSpacing,
-    ]
+    ],
   );
 
   // --- derive color mode ---
@@ -445,26 +502,19 @@ function ChainmailDesigner() {
   // ============================================================
   // 🧾 BOM ADAPTER — Designer → BOMRing[]
   // ============================================================
-  // Normalizes Designer state into a canonical BOM structure.
-  // Safe for:
-  // • BOM Panel
-  // • Print / Export
-  // • Cross-page BOM aggregation
-  // ============================================================
   const getBOMRings = useCallback((): BOMRing[] => {
     if (!Array.isArray(rings)) return [];
 
     const supplier: SupplierId = params.supplier;
-
-    const baseMaterial = MATERIALS.find((m) => m.hex === params.ringColor)?.name ?? "Unknown";
+    const baseMaterial =
+      MATERIALS.find((m) => m.hex === params.ringColor)?.name ?? "Unknown";
 
     return rings.map((ring: any) => {
-      // ✅ MUST MATCH RingRenderer EXACTLY
       const key = `${ring.row},${ring.col}`;
       const paintedColor = paint.get(key);
 
       return {
-        id: key, // stable + matches paint system
+        id: key,
         supplier,
         colorHex: paintedColor ?? params.ringColor,
         innerDiameter: params.innerDiameter,
@@ -480,13 +530,126 @@ function ChainmailDesigner() {
     params.innerDiameter,
     params.wireDiameter,
   ]);
+  // ⬇️ keep the import: type { ExportRing } from "./types/project";
 
+  const exportRings = useMemo<ExportRing[]>(() => {
+    if (!Array.isArray(rings)) return [];
+
+    const cs = safeParams.centerSpacing ?? 7.5; // mm grid spacing
+    const ID = safeParams.innerDiameter;
+    const WD = safeParams.wireDiameter;
+
+    return (rings as any[]).map((ring) => {
+      const row = ring.row ?? 0;
+      const col = ring.col ?? 0;
+      const key = `${row},${col}`;
+      const colorHex = paint.get(key) ?? params.ringColor;
+
+      return {
+        key, // "row,col"
+        x_mm: col * cs, // mm coords
+        y_mm: row * cs, // mm coords
+        innerDiameter_mm: ID, // mm
+        wireDiameter_mm: WD, // mm
+        colorHex,
+      };
+    });
+  }, [
+    rings,
+    paint,
+    params.ringColor,
+    safeParams.centerSpacing,
+    safeParams.innerDiameter,
+    safeParams.wireDiameter,
+  ]);
   // ==============================
   // BOM Calculation (Read-Only)
   // ==============================
   const bom = useMemo(() => {
     return calculateBOM(getBOMRings());
   }, [getBOMRings]);
+
+  const designerExportRings = useMemo(
+    () => getBOMRings().map((r) => ({ colorHex: r.colorHex })),
+    [getBOMRings],
+  );
+
+  const designerBOMMeta = useMemo(
+    () => ({
+      title: "Designer — Color BOM",
+      supplier: (params.supplier ?? "trl").toUpperCase(),
+      ringSizeLabel:
+        params.ringSpec ||
+        `${params.innerDiameter}mm / ${params.wireDiameter}mm`,
+      material:
+        MATERIALS.find((m) => m.hex === params.ringColor)?.name ??
+        "Anodized Aluminum",
+      packSize: 1500,
+      background: "#0b1220",
+      textColor: "#e5e7eb",
+    }),
+    [
+      params.supplier,
+      params.ringSpec,
+      params.innerDiameter,
+      params.wireDiameter,
+      params.ringColor,
+    ],
+  );
+
+  // Composited 2D capture to avoid black WebGL exports
+  const getDesignerCanvas = useCallback((): HTMLCanvasElement | null => {
+    const glCanvas =
+      (rendererRef.current as any)?.getCanvas?.() ??
+      (rendererRef.current as any)?.domElement ??
+      null;
+
+    const src: HTMLCanvasElement | null =
+      glCanvas ??
+      (() => {
+        const list = Array.from(
+          document.querySelectorAll("canvas"),
+        ) as HTMLCanvasElement[];
+        const webgl = list.find((c) => {
+          try {
+            return !!(
+              c.getContext("webgl2") ||
+              c.getContext("webgl") ||
+              c.getContext("experimental-webgl")
+            );
+          } catch {
+            return false;
+          }
+        });
+        return (
+          webgl ??
+          list
+            .filter((c) => c.width > 0 && c.height > 0)
+            .sort((a, b) => b.width * b.height - a.width * a.height)[0] ??
+          null
+        );
+      })();
+
+    if (!src) return null;
+
+    const out = document.createElement("canvas");
+    out.width = Math.max(1, src.width);
+    out.height = Math.max(1, src.height);
+
+    const ctx = out.getContext("2d", { alpha: false });
+    if (!ctx) return null;
+
+    // match Designer bg
+    ctx.fillStyle = "#0F1115";
+    ctx.fillRect(0, 0, out.width, out.height);
+
+    try {
+      ctx.drawImage(src, 0, 0, out.width, out.height);
+    } catch {
+      return null;
+    }
+    return out;
+  }, []);
 
   // ============================================================
   // ✅ Lock/Unlock Rotation — independent from painting
@@ -495,13 +658,12 @@ function ChainmailDesigner() {
     setRotationLocked(locked);
     rendererRef.current?.forceLockRotation?.(locked);
 
-    // Lock camera only when explicitly locking back to 2D
     if (locked) {
       rendererRef.current?.lock2DView?.();
     }
-
-    // ✅ Do not toggle paint here — independent systems
-    console.log(`🔒 3D Rotation ${locked ? "locked (2D)" : "unlocked (free rotation)"}`);
+    console.log(
+      `🔒 3D Rotation ${locked ? "locked (2D)" : "unlocked (free rotation)"}`,
+    );
   };
 
   const doZoomIn = () => rendererRef.current?.zoomIn();
@@ -564,7 +726,7 @@ function ChainmailDesigner() {
       wireDiameter: e.wireDiameter,
       centerSpacing: e.centerSpacing,
       ringSpec: `ID ${e.innerDiameter.toFixed(2)} mm / WD ${e.wireDiameter.toFixed(
-        2
+        2,
       )} mm (AR≈${AR.toFixed(2)})`,
     }));
 
@@ -665,7 +827,13 @@ function ChainmailDesigner() {
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Grid Size</div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <label style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+              <label
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 8,
+                }}
+              >
                 <span>Columns:</span>
                 <input
                   type="number"
@@ -687,7 +855,13 @@ function ChainmailDesigner() {
                 />
               </label>
 
-              <label style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+              <label
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  gap: 8,
+                }}
+              >
                 <span>Rows:</span>
                 <input
                   type="number"
@@ -793,7 +967,9 @@ function ChainmailDesigner() {
             </IconBtn>
 
             <IconBtn
-              tooltip={rotationLocked ? "Unlock 3D Rotation" : "Lock to Flat 2D"}
+              tooltip={
+                rotationLocked ? "Unlock 3D Rotation" : "Lock to Flat 2D"
+              }
               onClick={() => setLock(!rotationLocked)}
               active={!rotationLocked}
             >
@@ -804,15 +980,31 @@ function ChainmailDesigner() {
               🧹
             </IconBtn>
 
-            <IconBtn tooltip="Supplier & Atlas" onClick={() => setShowMagnet((v) => !v)}>
+            <IconBtn
+              tooltip="Supplier & Atlas"
+              onClick={() => setShowMagnet((v) => !v)}
+            >
               🧲
             </IconBtn>
 
-            <IconBtn tooltip="Bill of Materials" onClick={() => setShowBOM((v) => !v)}>
+            <IconBtn
+              tooltip="Bill of Materials"
+              onClick={() => setShowBOM((v) => !v)}
+            >
               🧾
             </IconBtn>
 
-            <IconBtn tooltip="Navigation Menu" onClick={() => setShowCompass((v) => !v)}>
+            <IconBtn
+              tooltip="Finalize & Export (PDF / CSV / Map / Preview)"
+              onClick={() => setFinalizeOpen(true)}
+            >
+              📦
+            </IconBtn>
+
+            <IconBtn
+              tooltip="Navigation Menu"
+              onClick={() => setShowCompass((v) => !v)}
+            >
               🧭
             </IconBtn>
           </div>
@@ -845,16 +1037,17 @@ function ChainmailDesigner() {
           title="Click to choose base material"
         >
           <div style={{ fontWeight: 600, fontSize: 12 }}>
-            {MATERIALS.find((m) => m.hex === params.ringColor)?.name || "Base Material"}
+            {MATERIALS.find((m) => m.hex === params.ringColor)?.name ||
+              "Base Material"}
           </div>
           <div
             style={{ fontSize: 10, color: "#9ca3af" }}
             dangerouslySetInnerHTML={{
               __html: params.ringSpec
                 ? params.ringSpec
-                    .replace(/\s*\/\s*/g, "<br/>") // put each spec on its own line
-                    .replace(/\s*mm/g, " mm") // spacing before mm
-                    .replace(/\s*\(AR/g, "<br/>(AR") // AR on new line
+                    .replace(/\s*\/\s*/g, "<br/>")
+                    .replace(/\s*mm/g, " mm")
+                    .replace(/\s*\(AR/g, "<br/>(AR")
                 : "ID — mm<br/>WD — mm<br/>(AR≈—)",
             }}
           />
@@ -863,7 +1056,10 @@ function ChainmailDesigner() {
 
       {/* === Draggable Universal Color Palette === */}
       {paintMode && (
-        <DraggablePill id="color-palette" defaultPosition={{ x: 20, y: window.innerHeight - 260 }}>
+        <DraggablePill
+          id="color-palette"
+          defaultPosition={{ x: 20, y: window.innerHeight - 260 }}
+        >
           <div
             style={{
               display: "flex",
@@ -880,7 +1076,13 @@ function ChainmailDesigner() {
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 5 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(8, 1fr)",
+                gap: 5,
+              }}
+            >
               {UNIVERSAL_COLORS.map((hex) => (
                 <div
                   key={hex}
@@ -890,9 +1092,13 @@ function ChainmailDesigner() {
                     width: 22,
                     height: 22,
                     borderRadius: 5,
-                    border: activeColor === hex ? "2px solid white" : "1px solid #333",
+                    border:
+                      activeColor === hex
+                        ? "2px solid white"
+                        : "1px solid #333",
                     cursor: "pointer",
-                    transform: activeColor === hex ? "scale(1.15)" : "scale(1.0)",
+                    transform:
+                      activeColor === hex ? "scale(1.15)" : "scale(1.0)",
                     transition: "transform 0.1s ease, border 0.2s ease",
                   }}
                   title={hex}
@@ -905,7 +1111,10 @@ function ChainmailDesigner() {
 
       {/* === Quick Base Material Palette === */}
       {showMaterialPalette && (
-        <DraggablePill id="material-selector" defaultPosition={{ x: 120, y: 80 }}>
+        <DraggablePill
+          id="material-selector"
+          defaultPosition={{ x: 120, y: 80 }}
+        >
           <div
             style={{
               background: "rgba(17,24,39,0.96)",
@@ -922,8 +1131,16 @@ function ChainmailDesigner() {
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
-            <div style={{ fontWeight: 700, fontSize: 13, color: "#ddd" }}>Base Material</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#ddd" }}>
+              Base Material
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, 1fr)",
+                gap: 6,
+              }}
+            >
               {MATERIALS.map((mat) => (
                 <div
                   key={mat.name}
@@ -937,7 +1154,10 @@ function ChainmailDesigner() {
                     height: 32,
                     borderRadius: 6,
                     background: mat.hex === "transparent" ? "none" : mat.hex,
-                    border: params.ringColor === mat.hex ? "2px solid white" : "1px solid #444",
+                    border:
+                      params.ringColor === mat.hex
+                        ? "2px solid white"
+                        : "1px solid #444",
                     cursor: "pointer",
                     display: "flex",
                     alignItems: "center",
@@ -990,7 +1210,6 @@ function ChainmailDesigner() {
             >
               <SupplierMenu
                 onApplyPalette={(sel: any) => {
-                  // 🧩 Handle Default Case — Apply real default values and force rebuild
                   const isDefault =
                     sel?.name === "Default" ||
                     sel?.id === "default" ||
@@ -1010,7 +1229,10 @@ function ChainmailDesigner() {
                       status: "valid",
                     };
 
-                    localStorage.setItem("chainmailSelected", JSON.stringify(defaultWeave));
+                    localStorage.setItem(
+                      "chainmailSelected",
+                      JSON.stringify(defaultWeave),
+                    );
                     localStorage.setItem(
                       "cmd.params",
                       JSON.stringify({
@@ -1019,7 +1241,7 @@ function ChainmailDesigner() {
                         innerDiameter: 7.94,
                         wireDiameter: 1.6,
                         centerSpacing: 7.5,
-                      })
+                      }),
                     );
 
                     setLastWeave(defaultWeave);
@@ -1031,19 +1253,19 @@ function ChainmailDesigner() {
                     }));
 
                     window.dispatchEvent(new Event("weave-updated"));
-                    console.log("✅ Default weave applied and geometry rebuilt");
+                    console.log(
+                      "✅ Default weave applied and geometry rebuilt",
+                    );
                     return;
                   }
 
-                  // 🧩 Otherwise, apply selected weave as before
                   const colorHex =
                     sel.color && sel.color !== "Default Colors"
-                      ? typeof sel.color === "string" && sel.color.startsWith("#")
+                      ? typeof sel.color === "string" &&
+                        sel.color.startsWith("#")
                         ? sel.color
                         : params.ringColor
                       : params.ringColor;
-
-                  // colorHex retained (feature parity) even if not used directly here
                   void colorHex;
 
                   const parseNumber = (v: any) => {
@@ -1056,10 +1278,10 @@ function ChainmailDesigner() {
                     return NaN;
                   };
 
-                  // ✅ Defensive checks so undefined props don’t crash
                   const ID = parseNumber(sel?.innerDiameter ?? sel?.ringID);
                   const WD = parseNumber(sel?.wireDiameter ?? sel?.wireGauge);
-                  const spacing = parseNumber(sel?.centerSpacing) || params.centerSpacing;
+                  const spacing =
+                    parseNumber(sel?.centerSpacing) || params.centerSpacing;
 
                   const weave = {
                     id: sel?.name ?? sel?.id ?? "unnamed",
@@ -1073,7 +1295,10 @@ function ChainmailDesigner() {
                     status: sel?.status ?? "valid",
                   };
 
-                  localStorage.setItem("chainmailSelected", JSON.stringify(weave));
+                  localStorage.setItem(
+                    "chainmailSelected",
+                    JSON.stringify(weave),
+                  );
                   setLastWeave(weave);
                   setParams((prev) => ({
                     ...prev,
@@ -1115,25 +1340,26 @@ function ChainmailDesigner() {
             borderRadius: 16,
             padding: 20,
             border: "1px solid #1f2937",
-            zIndex: 100001, // 🔥 higher than everything else
+            zIndex: 100001,
             boxShadow: "0 20px 60px rgba(0,0,0,.7)",
           }}
         >
           <ImageOverlayPanel
             onApply={async (overlay) => {
-              // 1️⃣ Update overlay preview plane (as before)
               setOverlayState(overlay);
-
               try {
                 await rendererRef.current?.applyOverlayToRings?.(overlay);
-                setDebugMessage("✅ Overlay image successfully applied to rings!");
+                setDebugMessage(
+                  "✅ Overlay image successfully applied to rings!",
+                );
                 setDebugVisible(true);
               } catch (err) {
                 console.error("❌ applyOverlayToRings failed:", err);
-                setDebugMessage("⚠️ Failed to apply overlay to rings. Check console.");
+                setDebugMessage(
+                  "⚠️ Failed to apply overlay to rings. Check console.",
+                );
                 setDebugVisible(true);
               }
-
               setShowOverlayPanel(false);
             }}
           />
@@ -1209,7 +1435,9 @@ function ChainmailDesigner() {
                     marginTop: 4,
                   }}
                 >
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  >
                     <span
                       style={{
                         width: 12,
@@ -1230,12 +1458,18 @@ function ChainmailDesigner() {
             <div style={{ marginBottom: 10 }}>
               <strong>By Supplier</strong>
               {(bom?.summary?.suppliers ?? []).map((s: any) => (
-                <div key={s} style={{ display: "flex", justifyContent: "space-between" }}>
+                <div
+                  key={s}
+                  style={{ display: "flex", justifyContent: "space-between" }}
+                >
                   <span>{String(s).toUpperCase()}</span>
                   <span>
                     {(bom?.lines ?? [])
                       .filter((l: any) => l.supplier === s)
-                      .reduce((sum: number, l: any) => sum + (l.ringCount ?? 0), 0)}
+                      .reduce(
+                        (sum: number, l: any) => sum + (l.ringCount ?? 0),
+                        0,
+                      )}
                   </span>
                 </div>
               ))}
@@ -1269,6 +1503,17 @@ function ChainmailDesigner() {
           }}
         />
       )}
+
+      {finalizeOpen && (
+        <FinalizeAndExportPanel
+          rings={exportRings}
+          initialAssignment={assignment}
+          onAssignmentChange={setAssignment}
+          getRendererCanvas={getDesignerCanvas}
+          onClose={() => setFinalizeOpen(false)}
+          mapMode="grid" // ✅ Designer wants the grid map
+        />
+      )}
     </div>
   );
 } // ✅ ChainmailDesigner ends here
@@ -1279,10 +1524,11 @@ function ChainmailDesigner() {
 function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
   const navigate = useNavigate();
 
-const go = (path: string) => {
-  navigate(path, { replace: true });
-  if (onNavigate) onNavigate();
-};
+  const go = (path: string) => {
+    navigate(path, { replace: true });
+    if (onNavigate) onNavigate();
+  };
+
   return (
     <DraggablePill id="compass-nav" defaultPosition={{ x: 140, y: 140 }}>
       <div
@@ -1301,18 +1547,29 @@ const go = (path: string) => {
         onMouseDown={(e) => e.stopPropagation()}
       >
         {/* 🏠 Home Page */}
-        <button onClick={() => go("/wovenrainbowsbyerin")} title="Erin’s Home" style={btnStyle}>
+        <button
+          onClick={() => go("/wovenrainbowsbyerin")}
+          title="Erin’s Home"
+          style={btnStyle}
+        >
           🏠
         </button>
 
         {/* 🧩 Designer */}
-        <button onClick={() => go("/designer")} title="Designer" style={btnStyle}>
+        <button
+          onClick={() => go("/designer")}
+          title="Designer"
+          style={btnStyle}
+        >
           🧩
         </button>
 
         {/* ✨ Freeform Painter */}
-        {/* NOTE: if your route is different (ex: "/freeform2d"), change it here ONLY. */}
-        <button onClick={() => go("/freeform")} title="Freeform" style={btnStyle}>
+        <button
+          onClick={() => go("/freeform")}
+          title="Freeform"
+          style={btnStyle}
+        >
           ✨
         </button>
 
@@ -1321,22 +1578,38 @@ const go = (path: string) => {
         </button>
 
         {/* 📊 Chart */}
-        <button onClick={() => go("/chart")} title="Ring Chart" style={btnStyle}>
+        <button
+          onClick={() => go("/chart")}
+          title="Ring Chart"
+          style={btnStyle}
+        >
           📊
         </button>
 
         {/* ⚙️ Tuner */}
-        <button onClick={() => go("/tuner")} title="Weave Tuner" style={btnStyle}>
+        <button
+          onClick={() => go("/tuner")}
+          title="Weave Tuner"
+          style={btnStyle}
+        >
           ⚙️
         </button>
 
         {/* 🌐 Atlas */}
-        <button onClick={() => go("/atlas")} title="Weave Atlas" style={btnStyle}>
+        <button
+          onClick={() => go("/atlas")}
+          title="Weave Atlas"
+          style={btnStyle}
+        >
           🌐
         </button>
 
         {/* 🪶 Blog */}
-        <button onClick={() => go("/blog-editor")} title="Blog" style={btnStyle}>
+        <button
+          onClick={() => go("/blog-editor")}
+          title="Blog"
+          style={btnStyle}
+        >
           🪶
         </button>
       </div>
@@ -1352,6 +1625,7 @@ const btnStyle: React.CSSProperties = {
   color: "#dbeafe",
   cursor: "pointer",
 };
+
 function WorkspaceGate() {
   const unlocked =
     localStorage.getItem("designerAuth") === "true" &&
@@ -1364,6 +1638,7 @@ function WorkspaceGate() {
 
   return <WorkspaceHome />;
 }
+
 // ==============================================
 // 🏠 Simple Home / Landing (keeps routing hub in App.tsx)
 // ==============================================
@@ -1372,10 +1647,9 @@ function WorkspaceHome() {
     () =>
       localStorage.getItem("designerAuth") === "true" &&
       localStorage.getItem("freeformAuth") === "true" &&
-      localStorage.getItem("erin2DAuth") === "true"
+      localStorage.getItem("erin2DAuth") === "true",
   );
 
-  // 🔐 Show password first
   if (!unlocked) {
     return (
       <PasswordGateWrapper
@@ -1386,7 +1660,6 @@ function WorkspaceHome() {
     );
   }
 
-  // ✅ AFTER password — show original home page UI
   return (
     <div
       style={{
@@ -1464,49 +1737,46 @@ const homeLinkStyle: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,0.08)",
   boxShadow: "0 8px 20px rgba(0,0,0,.35)",
 };
+
 function RequireDesignerAuth({ children }: { children: JSX.Element }) {
   const authed = localStorage.getItem("designerAuth") === "true";
-
   if (!authed) {
     return (
       <Navigate
-        to="/password"
+        to="/wovenrainbowsbyerin/login"
         state={{ redirect: "/designer" }}
         replace
       />
     );
   }
-
   return children;
 }
+
 function RequireFreeformAuth({ children }: { children: JSX.Element }) {
   const authed = localStorage.getItem("freeformAuth") === "true";
-
   if (!authed) {
     return (
       <Navigate
-        to="/password"
+        to="/wovenrainbowsbyerin/login"
         state={{ redirect: "/freeform" }}
         replace
       />
     );
   }
-
   return children;
 }
+
 function RequireErin2DAuth({ children }: { children: JSX.Element }) {
   const authed = localStorage.getItem("erin2DAuth") === "true";
-
   if (!authed) {
     return (
       <Navigate
-        to="/password"
+        to="/wovenrainbowsbyerin/login"
         state={{ redirect: "/erin2d" }}
         replace
       />
     );
   }
-
   return children;
 }
 
@@ -1515,63 +1785,55 @@ function RequireErin2DAuth({ children }: { children: JSX.Element }) {
 // ==============================================
 function App() {
   return (
-<Routes>
-  {/* Public landing */}
-  <Route
-    path="/wovenrainbowsbyerin"
-    element={<HomeWovenRainbows />}
-  />
+    <Routes>
+      {/* Public landing */}
+      <Route path="/wovenrainbowsbyerin" element={<HomeWovenRainbows />} />
 
-  {/* Password page */}
-  <Route
-    path="/wovenrainbowsbyerin/login"
-    element={<PasswordGate />}
-  />
+      {/* Password page */}
+      <Route path="/wovenrainbowsbyerin/login" element={<PasswordGate />} />
 
-  {/* Workspace chooser (post-auth) */}
-  <Route
-    path="/workspace"
-    element={<WorkspaceHome />}   // <-- your current chooser page
-  />
+      {/* Workspace chooser (post-auth) */}
+      <Route path="/workspace" element={<WorkspaceHome />} />
 
-  {/* Designer tools (still protected individually) */}
-  <Route
-    path="/designer/*"
-    element={
-      <RequireDesignerAuth>
-        <ChainmailDesigner />
-      </RequireDesignerAuth>
-    }
-  />
+      {/* Designer tools (still protected individually) */}
+      <Route
+        path="/designer/*"
+        element={
+          <RequireDesignerAuth>
+            <ChainmailDesigner />
+          </RequireDesignerAuth>
+        }
+      />
 
-  <Route
-    path="/freeform"
-    element={
-      <RequireFreeformAuth>
-        <FreeformChainmail2D />
-      </RequireFreeformAuth>
-    }
-  />
+      <Route
+        path="/freeform"
+        element={
+          <RequireFreeformAuth>
+            <FreeformChainmail2D />
+          </RequireFreeformAuth>
+        }
+      />
 
-  <Route
-    path="/erin2d"
-    element={
-      <RequireErin2DAuth>
-        <ErinPattern2D />
-      </RequireErin2DAuth>
-    }
-  />
-{/* ✅ PUBLIC TOOLS — NO AUTH */}
-<Route path="/chart" element={<RingSizeChart />} />
-<Route path="/tuner" element={<ChainmailWeaveTuner />} />
-<Route path="/atlas" element={<ChainmailWeaveAtlas />} />
-  {/* Fallback */}
-  <Route
-    path="*"
-    element={<Navigate to="/wovenrainbowsbyerin" replace />}
-  />
-</Routes>
+      <Route
+        path="/erin2d"
+        element={
+          <RequireErin2DAuth>
+            <ErinPattern2D />
+          </RequireErin2DAuth>
+        }
+      />
 
+      {/* ✅ PUBLIC TOOLS — NO AUTH */}
+      <Route path="/chart" element={<RingSizeChart />} />
+      <Route path="/tuner" element={<ChainmailWeaveTuner />} />
+      <Route path="/atlas" element={<ChainmailWeaveAtlas />} />
+
+      {/* Fallback */}
+      <Route
+        path="*"
+        element={<Navigate to="/wovenrainbowsbyerin" replace />}
+      />
+    </Routes>
   );
 }
 
@@ -1581,8 +1843,6 @@ function App() {
 export { DraggableCompassNav, DraggablePill };
 export default App;
 
-// NOTE: generateRingsDesigner is intentionally imported as part of your geometry suite.
-// It remains available for future generator selection without deleting features.
-// (If your TS config has noUnusedLocals=true and this import is unused in your project,
-// you can switch the Designer generator selection in ONE place without removing any UI.)
+// Keep generator import live for future switching.
 void generateRingsDesigner;
+void BOMButtons;

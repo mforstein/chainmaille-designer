@@ -1,18 +1,21 @@
 // ======================================================
 // src/pages/FreeformChainmail2D.tsx
-// Freeform 3D painter using Erin-style hex grid + hit logic.
-// Rings and hit-circles share ONE projection pipeline.
-// RingRenderer itself is unchanged.
-//
-// UPDATE: Rectangle + Circle selection tools for en-masse placement/erase.
-// - Drag a rectangle (📐) or circle (⭕) to add rings in bulk (or erase if 🧽 on).
-// - Selection overlay drawn on the interaction canvas (no new renderer changes).
-// - Keeps ALL existing features (BOM, tuner sync, pan/zoom, diagnostics, circles, etc.)
 // ======================================================
 
-import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
+import React, {
+  useRef,
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+} from "react";
 import { useNavigate } from "react-router-dom";
+import * as THREE from "three";
+
 import RingRenderer from "../components/RingRenderer";
+import FinalizeAndExportPanel from "../components/FinalizeAndExportPanel";
+import ProjectSaveLoadButtons from "../components/ProjectSaveLoadButtons";
+
 import { calculateBOM } from "../BOM/bomCalculator";
 import {
   WEAVE_SETTINGS_DEFAULT,
@@ -21,11 +24,21 @@ import {
   resolvePlacement,
 } from "../utils/e4in1Placement";
 
-import * as THREE from "three";
+import { DraggablePill, DraggableCompassNav } from "../App";
+import type { BOMRing, SupplierId } from "../App";
+import BOMButtons from "../components/BOMButtons";
+import type { ExportRing, PaletteAssignment } from "../types/project";
+// ⬇️ ADD THIS BLOCK HERE (after imports, before SAFETY STUBS)
+declare global {
+  interface Window {
+    getBOMRings?: () => BOMRing[];
+  }
+}
 
-// ✅ Pull in the SAME floating pill + submenu system used by Designer
-import { DraggablePill, DraggableCompassNav, BOMRing, SupplierId } from "../App";
-import ProjectSaveLoadButtons from "../components/ProjectSaveLoadButtons";
+// Safe default so App.tsx won't crash if it calls early
+if (typeof window !== "undefined" && !window.getBOMRings) {
+  window.getBOMRings = () => [];
+}
 // ======================================================
 // SAFETY STUBS (history integration preserved, no-ops here)
 // ======================================================
@@ -200,6 +213,15 @@ const SliderRow: React.FC<{
   </div>
 );
 
+const freeformBOMMeta = {
+  title: "Freeform — Color BOM",
+  supplier: "TRL",
+  ringSizeLabel: `5/16"`,
+  material: "Anodized Aluminum",
+  packSize: 1500,
+  background: "#0b1220",
+  textColor: "#e5e7eb",
+};
 // ======================================================
 // ICONS (Selection tools) — MUST NOT BE INSIDE HOOKS
 // ======================================================
@@ -266,7 +288,16 @@ const FreeformChainmail2D: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null); // interaction + selection overlay
   const hitCanvasRef = useRef<HTMLCanvasElement | null>(null); // overlay circles
   const ringRendererRef = useRef<any>(null);
-
+  // Finalize & Export (must be inside the component)
+  const [finalizeOpen, setFinalizeOpen] = useState(false);
+  const [assignment, setAssignment] = useState<PaletteAssignment | null>(() => {
+    try {
+      const raw = localStorage.getItem("freeform.paletteAssignment");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
   // ====================================================
   // PLACED RINGS
   // ====================================================
@@ -296,7 +327,9 @@ const FreeformChainmail2D: React.FC = () => {
   const selectionRef = useRef<SelectionDrag | null>(null);
 
   // authoritative selected ring keys: `${row}-${col}`
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   // Optional: show a lightweight selection stats line (kept inside diag log)
   const [lastSelectionCount, setLastSelectionCount] = useState<number>(0);
@@ -312,32 +345,8 @@ const FreeformChainmail2D: React.FC = () => {
 
   const aspectRatio = useMemo(
     () => (wireMm > 0 ? innerIDmm / wireMm : 0),
-    [innerIDmm, wireMm]
+    [innerIDmm, wireMm],
   );
-
-  // ============================================================
-  // 🧾 BOM ADAPTER — Freeform → BOMRing[]
-  // ============================================================
-  const getBOMRings = useCallback((): BOMRing[] => {
-    const supplier: SupplierId = "cmj";
-
-    const out: BOMRing[] = [];
-    rings.forEach((r: PlacedRing) => {
-      const id = `${r.row}:${r.col}`;
-      const colorHex = (r as any).color ?? "#ffffff";
-
-      out.push({
-        id,
-        supplier,
-        colorHex,
-        innerDiameter: innerIDmm,
-        wireDiameter: wireMm,
-        material: "Unknown",
-      });
-    });
-
-    return out;
-  }, [rings, innerIDmm, wireMm]);
 
   // ====================================================
   // RING SETS (from Tuner JSON)
@@ -345,15 +354,6 @@ const FreeformChainmail2D: React.FC = () => {
   const [ringSets, setRingSets] = useState<RingSet[]>([]);
   const [activeRingSetId, setActiveRingSetId] = useState<string | null>(null);
   const [autoFollowTuner, setAutoFollowTuner] = useState<boolean>(true);
-
-  // ==============================
-  // BOM Panel State + Calculation
-  // ==============================
-  const [showBOM, setShowBOM] = useState(false);
-
-  const bom = useMemo(() => {
-    return calculateBOM(getBOMRings());
-  }, [getBOMRings]);
 
   // ====================================================
   // WEAVE GRID SETTINGS (for resolvePlacement)
@@ -365,7 +365,7 @@ const FreeformChainmail2D: React.FC = () => {
       spacingY: centerSpacing * 0.866,
       wireD: wireMm,
     }),
-    [centerSpacing, wireMm]
+    [centerSpacing, wireMm],
   );
 
   // ====================================================
@@ -417,7 +417,7 @@ const FreeformChainmail2D: React.FC = () => {
       const y = row * spacingY;
       return { x, y };
     },
-    [centerSpacing, spacingY]
+    [centerSpacing, spacingY],
   );
 
   // ✅ Debug markers stored in LOGICAL coords
@@ -429,46 +429,65 @@ const FreeformChainmail2D: React.FC = () => {
     setDebugClicks((prev) => [...prev, { id: prev.length + 1, lx, ly }]);
   }, []);
 
+  // ⬇️ keep the import: type { ExportRing } from "../types/project";
+
+  const exportRings = useMemo<ExportRing[]>(() => {
+    const out: ExportRing[] = [];
+    rings.forEach((r) => {
+      const { x, y } = rcToLogical(r.row, r.col); // logical mm on your hex grid
+      out.push({
+        key: `${r.row},${r.col}`,
+        x_mm: x,
+        y_mm: y,
+        innerDiameter_mm: innerIDmm,
+        wireDiameter_mm: wireMm,
+        colorHex: (r as any).color ?? "#ffffff",
+      });
+    });
+    return out;
+  }, [rings, rcToLogical, innerIDmm, wireMm]);
+
   // ====================================================
   // DYNAMIC GRID EXTENTS (unbounded freeform)
   // IMPORTANT: must be INSIDE component (needs rings)
   // ====================================================
-  const { maxRowSpan, maxColSpan, minRow, minCol, maxRow, maxCol } = useMemo(() => {
-    if (!rings.size) {
+  const { maxRowSpan, maxColSpan, minRow, minCol, maxRow, maxCol } =
+    useMemo(() => {
+      if (!rings.size) {
+        return {
+          maxRowSpan: 128,
+          maxColSpan: 128,
+          minRow: 0,
+          minCol: 0,
+          maxRow: 0,
+          maxCol: 0,
+        };
+      }
+
+      let _minRow = Infinity;
+      let _maxRow = -Infinity;
+      let _minCol = Infinity;
+      let _maxCol = -Infinity;
+
+      rings.forEach((r) => {
+        _minRow = Math.min(_minRow, r.row);
+        _maxRow = Math.max(_maxRow, r.row);
+        _minCol = Math.min(_minCol, r.col);
+        _maxCol = Math.max(_maxCol, r.col);
+      });
+
+      // Larger padding so camera never clips edge rings
+      const PAD = 24;
+
       return {
-        maxRowSpan: 128,
-        maxColSpan: 128,
-        minRow: 0,
-        minCol: 0,
-        maxRow: 0,
-        maxCol: 0,
+        maxRowSpan: Math.max(128, _maxRow - _minRow + 1 + PAD),
+        maxColSpan: Math.max(128, _maxCol - _minCol + 1 + PAD),
+        minRow: _minRow,
+        minCol: _minCol,
+        maxRow: _maxRow,
+        maxCol: _maxCol,
       };
-    }
-
-    let _minRow = Infinity;
-    let _maxRow = -Infinity;
-    let _minCol = Infinity;
-    let _maxCol = -Infinity;
-
-    rings.forEach((r) => {
-      _minRow = Math.min(_minRow, r.row);
-      _maxRow = Math.max(_maxRow, r.row);
-      _minCol = Math.min(_minCol, r.col);
-      _maxCol = Math.max(_maxCol, r.col);
-    });
-
-    // Larger padding so camera never clips edge rings
-    const PAD = 24;
-
-    return {
-      maxRowSpan: Math.max(128, _maxRow - _minRow + 1 + PAD),
-      maxColSpan: Math.max(128, _maxCol - _minCol + 1 + PAD),
-      minRow: _minRow,
-      minCol: _minCol,
-      maxRow: _maxRow,
-      maxCol: _maxCol,
-    };
-  }, [rings]);
+    }, [rings]);
 
   // ====================================================
   // FLOATING ORIGIN (prevents huge world coords => seam/clipping/precision loss)
@@ -504,7 +523,7 @@ const FreeformChainmail2D: React.FC = () => {
 
       return { row, col };
     },
-    [centerSpacing, spacingY]
+    [centerSpacing, spacingY],
   );
 
   // ====================================================
@@ -567,7 +586,9 @@ const FreeformChainmail2D: React.FC = () => {
   // ====================================================
   const getRendererCamera = useCallback((): THREE.PerspectiveCamera | null => {
     const cam = ringRendererRef.current?.getCamera?.();
-    return cam && cam.isPerspectiveCamera ? (cam as THREE.PerspectiveCamera) : null;
+    return cam && cam.isPerspectiveCamera
+      ? (cam as THREE.PerspectiveCamera)
+      : null;
   }, []);
 
   // ====================================================
@@ -589,7 +610,49 @@ const FreeformChainmail2D: React.FC = () => {
     const z = ringRendererRef.current?.getCameraZ?.();
     return typeof z === "number" && z > 0 ? z : FALLBACK_CAMERA_Z;
   }, []);
+  // ============================================================
+  // 🧾 BOM ADAPTER — Freeform → BOMRing[]
+  // (declare BEFORE anything that references it)
+  // ============================================================
+  const getBOMRings = useCallback((): BOMRing[] => {
+    const supplier: SupplierId = "cmj";
 
+    const out: BOMRing[] = [];
+    rings.forEach((r: PlacedRing) => {
+      const id = `${r.row}:${r.col}`;
+      const colorHex = (r as any).color ?? "#ffffff";
+
+      out.push({
+        id,
+        supplier,
+        colorHex,
+        innerDiameter: innerIDmm,
+        wireDiameter: wireMm,
+        material: "Unknown",
+      });
+    });
+
+    return out;
+  }, [rings, innerIDmm, wireMm]);
+
+  // Optional: legacy global (remove once App.tsx stops calling it)
+  useEffect(() => {
+    (window as any).getBOMRings = getBOMRings;
+    return () => {
+      if ((window as any).getBOMRings === getBOMRings) {
+        delete (window as any).getBOMRings;
+      }
+    };
+  }, [getBOMRings]);
+
+  // ==============================
+  // BOM Panel State + Calculation
+  // ==============================
+  const [showBOM, setShowBOM] = useState(false);
+
+  const bom = useMemo(() => {
+    return calculateBOM(getBOMRings());
+  }, [getBOMRings]);
   // ====================================================
   // World convention:
   // RingRenderer renders mesh at (x, -y)
@@ -601,7 +664,7 @@ const FreeformChainmail2D: React.FC = () => {
       const oy = logicalOrigin.oy;
       return { wx: lx - ox, wy: -(ly - oy) };
     },
-    [logicalOrigin]
+    [logicalOrigin],
   );
 
   const worldToLogical = useCallback(
@@ -610,7 +673,7 @@ const FreeformChainmail2D: React.FC = () => {
       const oy = logicalOrigin.oy;
       return { lx: wx + ox, ly: -wy + oy };
     },
-    [logicalOrigin]
+    [logicalOrigin],
   );
 
   const worldToScreen = useCallback(
@@ -630,7 +693,7 @@ const FreeformChainmail2D: React.FC = () => {
         sy: (-v.y + 1) * 0.5 * H,
       };
     },
-    [getRendererCamera, getViewRect]
+    [getRendererCamera, getViewRect],
   );
 
   const screenToWorld = useCallback(
@@ -661,7 +724,7 @@ const FreeformChainmail2D: React.FC = () => {
 
       return { wx, wy, lx, ly };
     },
-    [getRendererCamera, getViewRect, worldToLogical]
+    [getRendererCamera, getViewRect, worldToLogical],
   );
 
   const projectRingRadiusPx = useCallback(
@@ -674,7 +737,7 @@ const FreeformChainmail2D: React.FC = () => {
 
       return Math.abs(sx2 - sx1);
     },
-    [logicalToWorld, worldToScreen]
+    [logicalToWorld, worldToScreen],
   );
 
   const getCanvasPoint = useCallback(
@@ -682,7 +745,7 @@ const FreeformChainmail2D: React.FC = () => {
       const rect = getViewRect();
       return { sx: evt.clientX - rect.left, sy: evt.clientY - rect.top };
     },
-    [getViewRect]
+    [getViewRect],
   );
 
   // ====================================================
@@ -704,7 +767,7 @@ const FreeformChainmail2D: React.FC = () => {
       const tiltDeg = r.row % 2 === 0 ? angleIn : angleOut;
       const tiltRad = THREE.MathUtils.degToRad(tiltDeg);
 
-const color = (r as any).color ?? "#ffffff";
+      const color = (r as any).color ?? "#ffffff";
 
       arr.push({
         id: `${r.row},${r.col}`,
@@ -738,21 +801,77 @@ const color = (r as any).color ?? "#ffffff";
     selectedKeys,
   ]);
 
-  // ====================================================
-  // Renderer params (rows/cols only affect internal grid; keep large + padded)
-  // ====================================================
-  const rendererParams = useMemo(
-    () => ({
-      rows: maxRowSpan,
-      cols: maxColSpan,
-      innerDiameter: innerIDmm,
-      wireDiameter: wireMm,
-      ringColor: "#ffffff",
-      bgColor: "#020617",
-      centerSpacing,
-    }),
-    [innerIDmm, wireMm, centerSpacing, maxRowSpan, maxColSpan]
-  );
+  // Creates a composited 2D canvas (opaque) from the live renderer.
+  // Works whether RingRenderer is WebGL or 2D; prevents black/transparent PNGs.
+  const getRendererCanvas = useCallback((): HTMLCanvasElement | null => {
+    // 1) Try to grab the canvas directly from the renderer ref
+    const fromRef =
+      (ringRendererRef.current as any)?.getCanvas?.() ??
+      (ringRendererRef.current as any)?.domElement ??
+      null;
+
+    // 2) Otherwise, discover the main rendering canvas in the DOM
+    const src: HTMLCanvasElement | null =
+      (fromRef as HTMLCanvasElement) ??
+      (() => {
+        const list = Array.from(
+          document.querySelectorAll("canvas"),
+        ) as HTMLCanvasElement[];
+
+        // Prefer a WebGL canvas (Three.js)
+        const gl = list.find((c) => {
+          try {
+            return !!(
+              c.getContext("webgl2") ||
+              c.getContext("webgl") ||
+              c.getContext("experimental-webgl")
+            );
+          } catch {
+            return false;
+          }
+        });
+        if (gl) return gl;
+
+        // Fallback: largest non-zero canvas
+        return (
+          list
+            .filter((c) => c.width > 0 && c.height > 0)
+            .sort((a, b) => b.width * b.height - a.width * a.height)[0] ?? null
+        );
+      })();
+
+    if (!src) return null;
+
+    // Use the backing-store size (already DPR-scaled for WebGL)
+    const w = Math.max(1, src.width);
+    const h = Math.max(1, src.height);
+
+    // 3) Composite onto an opaque 2D canvas with the app bg color
+    const out = document.createElement("canvas");
+    out.width = w;
+    out.height = h;
+
+    const ctx = out.getContext("2d", { alpha: false });
+    if (!ctx) return null;
+
+    // Match your renderer background (keeps export colors true)
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+
+    // Draw the rendered image
+    try {
+      ctx.drawImage(src, 0, 0, w, h);
+    } catch (e) {
+      console.warn("drawImage from renderer failed:", e);
+      return null;
+    }
+
+    // Optional: draw a labels/numbering overlay if you have one
+    // const labels = document.querySelector<HTMLCanvasElement>('[data-export-layer="labels"]');
+    // if (labels) ctx.drawImage(labels, 0, 0, w, h);
+
+    return out;
+  }, []);
 
   // ====================================================
   // Resize canvases reliably (window + layout changes)
@@ -806,19 +925,15 @@ const color = (r as any).color ?? "#ffffff";
       window.removeEventListener("resize", resizeOverlayCanvases);
     };
   }, [resizeOverlayCanvases]);
-
-  // ====================================================
-  // Effective inner radius (accounts for row tilt)
-  // ====================================================
+  // Effective inner radius for hit-circles (mm).
+  // We size clickable circles by the ring's inner opening.
+  // This stays independent of tilt; projection handles screen scale.
   const getEffectiveInnerRadiusMm = useCallback(
-    (row: number) => {
-      const tiltDeg = row % 2 === 0 ? angleIn : angleOut;
-      const tiltRad = THREE.MathUtils.degToRad(tiltDeg);
-      return (innerIDmm / 2) * Math.abs(Math.cos(tiltRad));
+    (_row: number) => {
+      return Math.max(0.1, innerIDmm / 2); // inner diameter → radius
     },
-    [innerIDmm, angleIn, angleOut]
+    [innerIDmm],
   );
-
   // ====================================================
   // HIT CIRCLE DRAWING (WORLD SPACE → SCREEN SPACE)
   // ====================================================
@@ -847,9 +962,9 @@ const color = (r as any).color ?? "#ffffff";
       const { wx, wy } = logicalToWorld(lx, ly);
       const { sx, sy } = worldToScreen(wx, wy);
 
-const effInner = getEffectiveInnerRadiusMm(r.row);
-const baseRmm = effInner; // ← FIX
-const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
+      const effInner = getEffectiveInnerRadiusMm(r.row);
+      const baseRmm = effInner; // ← FIX
+      const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
 
       ctx.beginPath();
       ctx.arc(sx, sy, rPx, 0, Math.PI * 2);
@@ -1026,7 +1141,7 @@ const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
       panWorldX,
       panWorldY,
       drawSelectionOverlay,
-    ]
+    ],
   );
 
   const handleMouseMove = useCallback(
@@ -1065,7 +1180,12 @@ const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
             for (let r = minRowC; r <= maxRowC; r++) {
               for (let c = minColC; c <= maxColC; c++) {
                 const p = rcToLogical(r, c);
-                if (p.x >= minLX && p.x <= maxLX && p.y >= minLY && p.y <= maxLY) {
+                if (
+                  p.x >= minLX &&
+                  p.x <= maxLX &&
+                  p.y >= minLY &&
+                  p.y <= maxLY
+                ) {
                   cells.add(`${r}:${c}`);
                 }
               }
@@ -1120,7 +1240,7 @@ const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
       logicalToRowColApprox,
       rcToLogical,
       drawSelectionOverlay,
-    ]
+    ],
   );
 
   // ====================================================
@@ -1210,7 +1330,7 @@ const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
         const toDelete = new Set<string>();
         for (const cell of cells) {
           const foundKey = [...mapCopy.entries()].find(
-            ([, v]) => v.row === cell.row && v.col === cell.col
+            ([, v]) => v.row === cell.row && v.col === cell.col,
           )?.[0];
           if (foundKey) toDelete.add(foundKey);
         }
@@ -1219,13 +1339,13 @@ const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
         // Add rings
         for (const cell of cells) {
           const { ring, newCluster } = resolvePlacement(
-  cell.col,
-  cell.row,
-  mapCopy,
-  clusterId,
-  activeColorRef.current,
-  settings
-);
+            cell.col,
+            cell.row,
+            mapCopy,
+            clusterId,
+            activeColorRef.current,
+            settings,
+          );
           clusterId = newCluster;
 
           const key = `${ring.row}-${ring.col}`;
@@ -1238,15 +1358,14 @@ const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
       setLastSelectionCount(cells.length);
       setSelectedKeys(new Set());
     },
-[
-  rings,
-  nextClusterId,
-  eraseMode,
-  settings,
-  logicalToRowColApprox,
-  rcToLogical,
-]
-
+    [
+      rings,
+      nextClusterId,
+      eraseMode,
+      settings,
+      logicalToRowColApprox,
+      rcToLogical,
+    ],
   );
 
   const handleMouseUp = useCallback(() => {
@@ -1297,7 +1416,7 @@ const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
       setPanWorldX((p) => p + dx);
       setPanWorldY((p) => p + dy);
     },
-    [zoom, screenToWorld]
+    [zoom, screenToWorld],
   );
 
   const handleWheel = useCallback(
@@ -1309,7 +1428,7 @@ const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
 
       zoomAroundPoint(sx, sy, factor);
     },
-    [getCanvasPoint, zoomAroundPoint]
+    [getCanvasPoint, zoomAroundPoint],
   );
 
   const handleTouchStart = useCallback(
@@ -1384,7 +1503,7 @@ const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
       drawSelectionOverlay,
       panWorldX,
       panWorldY,
-    ]
+    ],
   );
 
   const handleTouchMove = useCallback(
@@ -1474,7 +1593,7 @@ const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
       selectionMode,
       getViewRect,
       drawSelectionOverlay,
-    ]
+    ],
   );
 
   const handleTouchEnd = useCallback(() => {
@@ -1525,11 +1644,14 @@ const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
       const adjLx = lx - circleOffsetX;
       const adjLy = ly - circleOffsetY;
 
-      const { row: approxRow, col: approxCol } = logicalToRowColApprox(adjLx, adjLy);
+      const { row: approxRow, col: approxCol } = logicalToRowColApprox(
+        adjLx,
+        adjLy,
+      );
 
       const effectiveInnerRadiusMm = getEffectiveInnerRadiusMm(approxRow);
 
-const baseCircleRmm = effectiveInnerRadiusMm; // ← FIX
+      const baseCircleRmm = effectiveInnerRadiusMm; // ← FIX
 
       const hitRadiusPx =
         projectRingRadiusPx(adjLx, adjLy, baseCircleRmm * circleScale) * 1.05;
@@ -1563,20 +1685,20 @@ const baseCircleRmm = effectiveInnerRadiusMm; // ← FIX
 
       if (!found) return;
 
-const { ring, newCluster } = resolvePlacement(
-  bestCol,
-  bestRow,
-  rings,
-  nextClusterId,
-  eraseMode ? "#000000" : activeColorRef.current,
-  settings
-);
+      const { ring, newCluster } = resolvePlacement(
+        bestCol,
+        bestRow,
+        rings,
+        nextClusterId,
+        eraseMode ? "#000000" : activeColorRef.current,
+        settings,
+      );
 
       const mapCopy: RingMap = new Map(rings);
 
       if (eraseMode) {
         const delKey = [...mapCopy.entries()].find(
-          ([, v]) => v.row === ring.row && v.col === ring.col
+          ([, v]) => v.row === ring.row && v.col === ring.col,
         )?.[0];
         if (delKey) mapCopy.delete(delKey);
       } else {
@@ -1617,7 +1739,7 @@ const { ring, newCluster } = resolvePlacement(
       eraseMode,
       activeColor,
       settings,
-    ]
+    ],
   );
 
   // ===============================
@@ -1684,7 +1806,7 @@ const { ring, newCluster } = resolvePlacement(
     setAngleOut(rs.angleOut ?? -25);
     setActiveRingSetId(rs.id);
   }, []);
-const activeColorRef = useRef(activeColor);
+  const activeColorRef = useRef(activeColor);
   useEffect(() => {
     reloadRingSets();
 
@@ -1696,9 +1818,9 @@ const activeColorRef = useRef(activeColor);
     const storedActive = localStorage.getItem(ACTIVE_SET_KEY);
     if (storedActive) setActiveRingSetId(storedActive);
   }, [reloadRingSets]);
-useEffect(() => {
-  activeColorRef.current = activeColor;
-}, [activeColor]);
+  useEffect(() => {
+    activeColorRef.current = activeColor;
+  }, [activeColor]);
   useEffect(() => {
     if (!ringSets.length) return;
 
@@ -1728,139 +1850,187 @@ useEffect(() => {
       ringRendererRef.current.setPanEnabled(false);
     }
   }, []);
-const saveFreeformProject = useCallback(() => {
-  return {
-    type: "freeform",
-    version: 1,
+  const saveFreeformProject = useCallback(() => {
+    const id = crypto.randomUUID();
+    const name = `Freeform ${new Date().toLocaleString()}`;
 
-    rings: Array.from(rings.values()).map((r: PlacedRing) => ({
-      row: r.row,
-      col: r.col,
-      cluster: r.cluster,
-      color: (r as any).color ?? "#ffffff",
-    })),
-
-    geometry: {
-      innerDiameter: innerIDmm,
-      wireDiameter: wireMm,
-      centerSpacing,
-      angleIn,
-      angleOut,
-    },
-
-    metadata: {
-      page: "freeform",
-      createdAt: Date.now(),
-    },
-  };
-}, [rings, innerIDmm, wireMm, centerSpacing, angleIn, angleOut]);  // Escape cancels selection drag + tool (keeps stable UX)
-
-const loadFreeformProject = useCallback((data: any) => {
-  if (!data || data.type !== "freeform") {
-    alert("❌ Not a Freeform project file");
-    return;
-  }
-  if (!Array.isArray(data.rings)) {
-    alert("❌ Invalid Freeform project data");
-    return;
-  }
-
-  const map: RingMap = new Map();
-  for (const r of data.rings) {
-    if (typeof r.row !== "number" || typeof r.col !== "number") continue;
-
-    map.set(`${r.row}-${r.col}`, {
-      row: r.row,
-      col: r.col,
-      cluster: r.cluster ?? 1,
-      color: r.color ?? "#ffffff",
-    } as PlacedRing);
-  }
-
-  setRings(map);
-  setnextClusterId(
-    Math.max(1, ...Array.from(map.values()).map((r) => r.cluster ?? 1)) + 1
-  );
-
-  if (data.geometry) {
-    setInnerIDmm(data.geometry.innerDiameter ?? innerIDmm);
-    setWireMm(data.geometry.wireDiameter ?? wireMm);
-    setCenterSpacing(data.geometry.centerSpacing ?? centerSpacing);
-    setAngleIn(data.geometry.angleIn ?? angleIn);
-    setAngleOut(data.geometry.angleOut ?? angleOut);
-  }
-}, [innerIDmm, wireMm, centerSpacing, angleIn, angleOut]);
-
-
-  useEffect(() => {
-    const onKeyDown = (ev: KeyboardEvent) => {
-      if (ev.key === "Escape") {
-        if (isSelecting) {
-          setIsSelecting(false);
-          selectionRef.current = null;
-          setSelectedKeys(new Set());
-          clearInteractionCanvas();
-          return;
-        }
-        if (selectionMode !== "none") {
-          setSelectionMode("none");
-          selectionRef.current = null;
-          setSelectedKeys(new Set());
-          clearInteractionCanvas();
-          return;
-        }
+    // thumbnail from renderer canvas (≈480px wide)
+    const cvs = getRendererCanvas();
+    let thumb:
+      | { pngDataUrl: string; width: number; height: number }
+      | undefined;
+    if (cvs) {
+      const targetW = 480;
+      const scale = targetW / cvs.width;
+      const t = document.createElement("canvas");
+      t.width = targetW;
+      t.height = Math.max(1, Math.round(cvs.height * scale));
+      const ctx = t.getContext("2d");
+      if (ctx) {
+        ctx.drawImage(cvs, 0, 0, t.width, t.height);
+        thumb = {
+          pngDataUrl: t.toDataURL("image/png"),
+          width: t.width,
+          height: t.height,
+        };
       }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectionMode, isSelecting, clearInteractionCanvas]);
+    }
 
+    const payload = {
+      id,
+      type: "freeform" as const,
+      version: 2,
+      rings: Array.from(rings.values()).map((r: PlacedRing) => ({
+        row: r.row,
+        col: r.col,
+        cluster: r.cluster,
+        color: (r as any).color ?? "#ffffff",
+      })),
+      geometry: {
+        innerDiameter: innerIDmm,
+        wireDiameter: wireMm,
+        centerSpacing,
+        angleIn,
+        angleOut,
+      },
+      paletteAssignment: assignment,
+      metadata: {
+        page: "freeform",
+        name,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        thumbnail: thumb,
+      },
+    };
+
+    // persist to workspace index
+    const idxRaw = localStorage.getItem("chainmail.projectIndex.v1");
+    const idx = idxRaw ? JSON.parse(idxRaw) : [];
+    idx.push({
+      id,
+      tool: "freeform",
+      name,
+      updatedAt: Date.now(),
+      thumbnail: thumb,
+    });
+    localStorage.setItem("chainmail.projectIndex.v1", JSON.stringify(idx));
+
+    // persist payload
+    localStorage.setItem(`chainmail.project:${id}`, JSON.stringify(payload));
+
+    return payload; // ProjectSaveLoadButtons will still download this JSON
+  }, [
+    rings,
+    innerIDmm,
+    wireMm,
+    centerSpacing,
+    angleIn,
+    angleOut,
+    assignment,
+    getRendererCanvas,
+  ]);
+  const loadFreeformProject = useCallback(
+    (data: any) => {
+      if (!data || data.type !== "freeform") {
+        alert("❌ Not a Freeform project file");
+        return;
+      }
+      if (!Array.isArray(data.rings)) {
+        alert("❌ Invalid Freeform project data");
+        return;
+      }
+
+      const map: RingMap = new Map();
+      for (const r of data.rings) {
+        if (typeof r.row !== "number" || typeof r.col !== "number") continue;
+
+        map.set(`${r.row}-${r.col}`, {
+          row: r.row,
+          col: r.col,
+          cluster: r.cluster ?? 1,
+          color: r.color ?? "#ffffff",
+        } as PlacedRing);
+      }
+
+      setRings(map);
+      setnextClusterId(
+        Math.max(1, ...Array.from(map.values()).map((r) => r.cluster ?? 1)) + 1,
+      );
+
+      if (data.geometry) {
+        setInnerIDmm(data.geometry.innerDiameter ?? innerIDmm);
+        setWireMm(data.geometry.wireDiameter ?? wireMm);
+        setCenterSpacing(data.geometry.centerSpacing ?? centerSpacing);
+        setAngleIn(data.geometry.angleIn ?? angleIn);
+        setAngleOut(data.geometry.angleOut ?? angleOut);
+      }
+
+      if (data.paletteAssignment) {
+        setAssignment(data.paletteAssignment);
+        localStorage.setItem(
+          "freeform.paletteAssignment",
+          JSON.stringify(data.paletteAssignment),
+        );
+      }
+    },
+    [innerIDmm, wireMm, centerSpacing, angleIn, angleOut],
+  );
   // ====================================================
   // Manual JSON load
   // ====================================================
-  const handleFileJSONLoad = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleFileJSONLoad = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(String(ev.target?.result || "{}"));
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const data = JSON.parse(String(ev.target?.result || "{}"));
 
-        if (typeof data.innerDiameter === "number") setInnerIDmm(data.innerDiameter);
-        if (typeof data.wireDiameter === "number") setWireMm(data.wireDiameter);
-        if (typeof data.centerSpacing === "number") setCenterSpacing(data.centerSpacing);
-        if (typeof data.angleIn === "number") setAngleIn(data.angleIn);
-        if (typeof data.angleOut === "number") setAngleOut(data.angleOut);
+          if (typeof data.innerDiameter === "number")
+            setInnerIDmm(data.innerDiameter);
+          if (typeof data.wireDiameter === "number")
+            setWireMm(data.wireDiameter);
+          if (typeof data.centerSpacing === "number")
+            setCenterSpacing(data.centerSpacing);
+          if (typeof data.angleIn === "number") setAngleIn(data.angleIn);
+          if (typeof data.angleOut === "number") setAngleOut(data.angleOut);
 
-        const newId = data.id || `file:${file.name}`;
-        setActiveRingSetId(newId);
-        setAutoFollowTuner(false);
-      } catch (err) {
-        alert("Could not parse JSON file.");
-        console.error(err);
-      }
-    };
+          const newId = data.id || `file:${file.name}`;
+          setActiveRingSetId(newId);
+          setAutoFollowTuner(false);
+        } catch (err) {
+          alert("Could not parse JSON file.");
+          console.error(err);
+        }
+      };
 
-    reader.readAsText(file);
-  }, []);
-
+      reader.readAsText(file);
+    },
+    [],
+  );
   // ====================================================
   // External view state passed to RingRenderer
   // IMPORTANT: must use SAME floating-origin pipeline as rings3D
   // ====================================================
   const externalViewState = useMemo(() => {
-    // Convert logical pan center -> renderer world coords (shifted + y-inverted)
     const worldPanX = panWorldX - logicalOrigin.ox;
     const worldPanY = -(panWorldY - logicalOrigin.oy);
-
-    return {
-      panX: worldPanX,
-      panY: worldPanY,
-      zoom,
-    };
+    return { panX: worldPanX, panY: worldPanY, zoom };
   }, [panWorldX, panWorldY, zoom, logicalOrigin.ox, logicalOrigin.oy]);
-
+  const rendererParams = useMemo(
+    () => ({
+      rows: maxRowSpan,
+      cols: maxColSpan,
+      innerDiameter: innerIDmm,
+      wireDiameter: wireMm,
+      ringColor: "#ffffff",
+      bgColor: "#020617",
+      centerSpacing,
+    }),
+    [innerIDmm, wireMm, centerSpacing, maxRowSpan, maxColSpan],
+  );
   // ====================================================
   // RENDER
   // ====================================================
@@ -1899,7 +2069,6 @@ const loadFreeformProject = useCallback((data: any) => {
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
         >
-
           {/* ✨ Identity */}
           <ToolButton active title="Freeform">
             ✨
@@ -1942,7 +2111,7 @@ const loadFreeformProject = useCallback((data: any) => {
             }}
             title="Rectangle selection"
           >
-            <SquareIcon active={selectionMode === "rect"} />
+            <span style={{ fontSize: 22, lineHeight: 1 }}>▢</span>
           </ToolButton>
 
           {/* Circle Selection */}
@@ -1956,7 +2125,7 @@ const loadFreeformProject = useCallback((data: any) => {
             }}
             title="Circle selection"
           >
-            <CircleIcon active={selectionMode === "circle"} />
+            <span style={{ fontSize: 22, lineHeight: 1 }}>◯</span>
           </ToolButton>
 
           {/* Pan */}
@@ -2003,13 +2172,14 @@ const loadFreeformProject = useCallback((data: any) => {
           >
             🧾
           </ToolButton>
-<ProjectSaveLoadButtons
-  onSave={saveFreeformProject}
-  onLoad={(json) => {
-    if (!window.confirm("Load project and replace current work?")) return;
-    loadFreeformProject(json);
-  }}
-/>
+          <ProjectSaveLoadButtons
+            onSave={saveFreeformProject}
+            onLoad={(json) => {
+              if (!window.confirm("Load project and replace current work?"))
+                return;
+              loadFreeformProject(json);
+            }}
+          />
           {/* Navigation */}
           <ToolButton
             active={showCompass}
@@ -2017,6 +2187,12 @@ const loadFreeformProject = useCallback((data: any) => {
             title="Navigation Menu"
           >
             🧭
+          </ToolButton>
+          <ToolButton
+            onClick={() => setFinalizeOpen(true)}
+            title="Finalize & Export (SKU mapping, numbered maps, true-size print)"
+          >
+            📦
           </ToolButton>
         </div>
       </DraggablePill>
@@ -2075,6 +2251,16 @@ const loadFreeformProject = useCallback((data: any) => {
           </div>
         </div>
       </DraggablePill>
+      {finalizeOpen && (
+        <FinalizeAndExportPanel
+          rings={exportRings}
+          initialAssignment={assignment}
+          onAssignmentChange={(p) => setAssignment(p)}
+          getRendererCanvas={getRendererCanvas}
+          onClose={() => setFinalizeOpen(false)}
+          mapMode="freeform" // ✅ Freeform wants the numbered full-image map
+        />
+      )}
 
       {/* ============================= */}
       {/* ✅ SUBMENU / NAVIGATION (Designer style) */}
@@ -2122,10 +2308,10 @@ const loadFreeformProject = useCallback((data: any) => {
               selectionMode !== "none"
                 ? "crosshair"
                 : panMode
-                ? "grab"
-                : eraseMode
-                ? "not-allowed"
-                : "crosshair",
+                  ? "grab"
+                  : eraseMode
+                    ? "not-allowed"
+                    : "crosshair",
             touchAction: "none",
             background: "transparent",
             zIndex: 3,
@@ -2202,7 +2388,10 @@ const loadFreeformProject = useCallback((data: any) => {
             🧾 Floating BOM Panel (Freeform)
            ============================== */}
         {showBOM && (
-          <DraggablePill id="freeform-bom-panel" defaultPosition={{ x: 420, y: 120 }}>
+          <DraggablePill
+            id="freeform-bom-panel"
+            defaultPosition={{ x: 420, y: 120 }}
+          >
             <div
               style={{
                 minWidth: 280,
@@ -2241,7 +2430,13 @@ const loadFreeformProject = useCallback((data: any) => {
                   ✕
                 </button>
               </div>
-
+              <div style={{ marginTop: 8 }}>
+                <BOMButtons
+                  rings={exportRings}
+                  meta={freeformBOMMeta}
+                  compact
+                />
+              </div>
               {/* Summary */}
               <div style={{ marginBottom: 10 }}>
                 <div>
@@ -2252,7 +2447,9 @@ const loadFreeformProject = useCallback((data: any) => {
                 </div>
                 <div>
                   Total Weight:{" "}
-                  <strong>{(bom?.summary?.totalWeight ?? 0).toFixed(2)} g</strong>
+                  <strong>
+                    {(bom?.summary?.totalWeight ?? 0).toFixed(2)} g
+                  </strong>
                 </div>
               </div>
 
@@ -2269,7 +2466,9 @@ const loadFreeformProject = useCallback((data: any) => {
                       marginTop: 4,
                     }}
                   >
-                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    >
                       <span
                         style={{
                           width: 12,
@@ -2290,7 +2489,10 @@ const loadFreeformProject = useCallback((data: any) => {
               <div style={{ marginBottom: 10 }}>
                 <strong>By Supplier</strong>
                 {(bom?.summary?.suppliers ?? []).map((s) => (
-                  <div key={s} style={{ display: "flex", justifyContent: "space-between" }}>
+                  <div
+                    key={s}
+                    style={{ display: "flex", justifyContent: "space-between" }}
+                  >
                     <span>{s.toUpperCase()}</span>
                     <span>
                       {(bom?.lines ?? [])
@@ -2344,12 +2546,14 @@ const loadFreeformProject = useCallback((data: any) => {
               fontSize: 12,
             }}
           >
-            <h3 style={{ margin: 0, fontSize: 14 }}>Freeform Geometry (Tuner-linked)</h3>
+            <h3 style={{ margin: 0, fontSize: 14 }}>
+              Freeform Geometry (Tuner-linked)
+            </h3>
 
             <p style={{ margin: 0, opacity: 0.8, lineHeight: 1.3 }}>
-              Uses the same <b>center spacing</b> and hex grid as the Weave Tuner. Vertical
-              spacing is <code>center × 0.866</code> and odd rows are shifted by{" "}
-              <code>center / 2</code>.
+              Uses the same <b>center spacing</b> and hex grid as the Weave
+              Tuner. Vertical spacing is <code>center × 0.866</code> and odd
+              rows are shifted by <code>center / 2</code>.
             </p>
 
             <SliderRow
@@ -2461,8 +2665,8 @@ const loadFreeformProject = useCallback((data: any) => {
                 {selectionMode === "none"
                   ? "—"
                   : selectionMode === "rect"
-                  ? "Rectangle"
-                  : "Circle"}{" "}
+                    ? "Rectangle"
+                    : "Circle"}{" "}
                 {selectionMode !== "none" ? "(Esc to cancel)" : ""}
               </div>
               <div>Last Select Count: {lastSelectionCount}</div>
@@ -2538,7 +2742,9 @@ const loadFreeformProject = useCallback((data: any) => {
               </div>
 
               <div style={{ marginTop: 4 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>Load JSON File</div>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                  Load JSON File
+                </div>
                 <input
                   type="file"
                   accept="application/json"
@@ -2547,7 +2753,10 @@ const loadFreeformProject = useCallback((data: any) => {
                 />
                 <div style={{ opacity: 0.7, marginTop: 2 }}>
                   JSON structure:{" "}
-                  <code>innerDiameter, wireDiameter, centerSpacing, angleIn, angleOut</code>
+                  <code>
+                    innerDiameter, wireDiameter, centerSpacing, angleIn,
+                    angleOut
+                  </code>
                 </div>
               </div>
             </div>
@@ -2593,7 +2802,12 @@ const loadFreeformProject = useCallback((data: any) => {
             >
               <span style={{ fontWeight: 600 }}>Diagnostics (copy text)</span>
               <button
-                style={{ ...smallBtn, flex: "none", padding: "2px 6px", fontSize: 10 }}
+                style={{
+                  ...smallBtn,
+                  flex: "none",
+                  padding: "2px 6px",
+                  fontSize: 10,
+                }}
                 onClick={() => setDiagLog("")}
               >
                 Clear

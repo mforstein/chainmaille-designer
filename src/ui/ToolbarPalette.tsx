@@ -53,8 +53,18 @@ export function Toolbar(props: {
       />
       <button onClick={props.onReset}>Reset</button>
       <span className="sep" />
-      <button className={props.paintOn ? "on" : ""} onClick={props.onPaintToggle}>Paint</button>
-      <button className={props.eraseOn ? "on" : ""} onClick={props.onEraseToggle}>Erase</button>
+      <button
+        className={props.paintOn ? "on" : ""}
+        onClick={props.onPaintToggle}
+      >
+        Paint
+      </button>
+      <button
+        className={props.eraseOn ? "on" : ""}
+        onClick={props.onEraseToggle}
+      >
+        Erase
+      </button>
       <span className="sep" />
       <button onClick={props.onPrint}>Print 1:1</button>
       <span className="sep" />
@@ -83,7 +93,12 @@ export function Palette(props: {
           <button
             key={c.hex}
             title={c.name}
-            className={"swatch" + (props.current.toLowerCase() === c.hex.toLowerCase() ? " active" : "")}
+            className={
+              "swatch" +
+              (props.current.toLowerCase() === c.hex.toLowerCase()
+                ? " active"
+                : "")
+            }
             style={{ background: c.hex }}
             onClick={() => props.onPick(c.hex)}
           />

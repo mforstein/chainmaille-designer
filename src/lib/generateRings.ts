@@ -1,7 +1,13 @@
 // ================================================
 // src/lib/generateRings.ts
 // ================================================
-export type Ring = { row: number; col: number; x: number; y: number; radius: number };
+export type Ring = {
+  row: number;
+  col: number;
+  x: number;
+  y: number;
+  radius: number;
+};
 
 /**
  * Generate an E4-in-1 grid in world-units (mm).
@@ -12,20 +18,20 @@ export function generateRings(p: {
   rows: number;
   cols: number;
   innerDiameter: number; // ID (mm)
-  wireDiameter: number;  // wire thickness (mm)
+  wireDiameter: number; // wire thickness (mm)
 }): Ring[] {
   const rings: Ring[] = [];
 
   // Correct outer diameter and radius
   const OD = p.innerDiameter + 2 * p.wireDiameter;
-  const R  = OD / 2; // outer radius used by renderer
+  const R = OD / 2; // outer radius used by renderer
 
   // Hex-grid pitches tuned for a nice E4-in-1 interlock appearance
   const pitchX = OD * 0.58; // horizontal spacing between centers
-  const pitchY = OD * 0.50; // vertical spacing between rows
+  const pitchY = OD * 0.5; // vertical spacing between rows
 
   for (let r = 0; r < p.rows; r++) {
-    const xOffset = (r % 2 === 0) ? 0 : pitchX / 2;
+    const xOffset = r % 2 === 0 ? 0 : pitchX / 2;
     for (let c = 0; c < p.cols; c++) {
       rings.push({
         row: r,

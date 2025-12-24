@@ -6,5 +6,5 @@ export const DEFAULT_RING = {
   ar: 4.0,
   material: "Aluminum",
   color: "Natural",
-  label: `1/4" 16swg AR=4.0 (Default)`
+  label: `1/4" 16swg AR=4.0 (Default)`,
 };

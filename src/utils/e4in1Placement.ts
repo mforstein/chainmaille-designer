@@ -17,8 +17,8 @@ export type RingMap = Map<string, PlacedRing>;
 // ======================================================
 
 export const WEAVE_SETTINGS_DEFAULT = {
-  spacingX: 8.0,          // horizontal spacing
-  spacingY: 8.0 * 0.866,  // vertical spacing (hex)
+  spacingX: 8.0, // horizontal spacing
+  spacingY: 8.0 * 0.866, // vertical spacing (hex)
   wireD: 1.6,
 };
 
@@ -40,7 +40,7 @@ export const WEAVE_SETTINGS_DEFAULT = {
 
 export function snapToHexCell(
   gridX: number,
-  gridY: number
+  gridY: number,
 ): { row: number; col: number } {
   //
   // Nearest integer hex grid coords
@@ -72,7 +72,7 @@ export function resolvePlacement(
   rings: RingMap,
   nextCluster: number,
   color: string,
-  settings: { spacingX: number; spacingY: number; wireD: number }
+  settings: { spacingX: number; spacingY: number; wireD: number },
 ): { ring: PlacedRing; newCluster: number } {
   // Snap to nearest hex cell
   const { row, col } = snapToHexCell(gridX, gridY);

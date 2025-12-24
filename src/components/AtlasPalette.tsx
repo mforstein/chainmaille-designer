@@ -3,10 +3,10 @@ import React from "react";
 type Entry = {
   id: string; // e.g., "5/16_1.6mm"
   innerDiameter: number; // mm
-  wireDiameter: number;  // mm
+  wireDiameter: number; // mm
   centerSpacing: number; // mm
-  angleIn: number;       // deg
-  angleOut: number;      // deg
+  angleIn: number; // deg
+  angleOut: number; // deg
   status: "valid" | "no_solution";
   savedAt?: string;
 };
@@ -18,7 +18,11 @@ export default function AtlasPalette({
 }) {
   const raw = localStorage.getItem("chainmailMatrix") || "[]";
   let rows: Entry[] = [];
-  try { rows = JSON.parse(raw); } catch { rows = []; }
+  try {
+    rows = JSON.parse(raw);
+  } catch {
+    rows = [];
+  }
 
   if (!Array.isArray(rows)) rows = [];
 
@@ -61,7 +65,9 @@ export default function AtlasPalette({
               <div>ID: {e.innerDiameter.toFixed(3)} mm</div>
               <div>WD: {e.wireDiameter.toFixed(3)} mm</div>
               <div>Spacing: {e.centerSpacing.toFixed(2)} mm</div>
-              <div>Angle In/Out: {e.angleIn}° / {e.angleOut}°</div>
+              <div>
+                Angle In/Out: {e.angleIn}° / {e.angleOut}°
+              </div>
             </div>
             <button
               style={{

@@ -18,15 +18,13 @@ export function parseIDToMM(id: string): number {
 // ============================================================
 export function computeRingVarsIndependent(
   idValue: string,
-  wireDiameterMM: number
+  wireDiameterMM: number,
 ) {
   const ID_mm = parseIDToMM(idValue);
   const WD_mm = wireDiameterMM;
 
   const OD_mm =
-    Number.isFinite(ID_mm) && Number.isFinite(WD_mm)
-      ? ID_mm + 2 * WD_mm
-      : NaN;
+    Number.isFinite(ID_mm) && Number.isFinite(WD_mm) ? ID_mm + 2 * WD_mm : NaN;
 
   return {
     ID_mm,

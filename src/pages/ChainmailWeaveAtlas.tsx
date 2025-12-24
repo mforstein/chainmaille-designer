@@ -70,7 +70,9 @@ export default function ChainmailWeaveAtlas() {
         position: "relative",
       }}
     >
-      <h1 style={{ fontSize: 24, marginBottom: 12 }}>🌐 Chainmail Weave Atlas</h1>
+      <h1 style={{ fontSize: 24, marginBottom: 12 }}>
+        🌐 Chainmail Weave Atlas
+      </h1>
 
       <table
         style={{
@@ -132,8 +134,7 @@ export default function ChainmailWeaveAtlas() {
                     </td>
                   );
 
-                const color =
-                  entry.status === "valid" ? "#19c37d" : "#ef4444";
+                const color = entry.status === "valid" ? "#19c37d" : "#ef4444";
                 const isActive = entry.id === activeWeaveId;
 
                 return (
@@ -150,8 +151,8 @@ Angles: ${entry.angleIn}/${entry.angleOut}°`}
                       background: isActive
                         ? "#19324d"
                         : entry.status === "valid"
-                        ? "#0f1720"
-                        : "#1a1111",
+                          ? "#0f1720"
+                          : "#1a1111",
                       color,
                       fontWeight: "bold",
                       transition: "background 0.2s ease",
@@ -168,8 +169,8 @@ Angles: ${entry.angleIn}/${entry.angleOut}°`}
 
       {matrix.length === 0 && (
         <div style={{ marginTop: 32, color: "#8fa1b3" }}>
-          ⚠️ No data found — open the <strong>Weave Tuner</strong> and save a few
-          combinations first.
+          ⚠️ No data found — open the <strong>Weave Tuner</strong> and save a
+          few combinations first.
         </div>
       )}
 

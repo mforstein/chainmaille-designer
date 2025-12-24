@@ -5,12 +5,19 @@ export default function ComparePage() {
     <div style={wrapper}>
       <h1>🎨 Renderer Comparison</h1>
       <p style={{ marginBottom: 20 }}>
-        Compare <strong>Canvas2D</strong> vs <strong>PixiJS</strong> vs <strong>Three.js</strong>
+        Compare <strong>Canvas2D</strong> vs <strong>PixiJS</strong> vs{" "}
+        <strong>Three.js</strong>
       </p>
       <div style={{ display: "flex", gap: 20 }}>
-        <a href="/canvas" style={btn}>🖼️ Canvas 2D</a>
-        <a href="/pixi" style={btn}>🚀 PixiJS</a>
-        <a href="/ringrenderer" style={btn}>🔺 Three.js</a>
+        <a href="/canvas" style={btn}>
+          🖼️ Canvas 2D
+        </a>
+        <a href="/pixi" style={btn}>
+          🚀 PixiJS
+        </a>
+        <a href="/ringrenderer" style={btn}>
+          🔺 Three.js
+        </a>
       </div>
     </div>
   );

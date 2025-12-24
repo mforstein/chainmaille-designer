@@ -14,19 +14,14 @@ export function createFreeformCamera(
   panX = 0,
   panY = 0,
   zoom = 1,
-  existing?: THREE.PerspectiveCamera
+  existing?: THREE.PerspectiveCamera,
 ) {
   const rect = canvas.getBoundingClientRect();
   const aspect = Math.max(1e-6, rect.width) / Math.max(1e-6, rect.height);
 
   const cam =
     existing ??
-    new THREE.PerspectiveCamera(
-      CAMERA_FOV,
-      aspect,
-      CAMERA_NEAR,
-      CAMERA_FAR
-    );
+    new THREE.PerspectiveCamera(CAMERA_FOV, aspect, CAMERA_NEAR, CAMERA_FAR);
 
   cam.aspect = aspect;
   cam.position.set(panX, panY, CAMERA_BASE_Z / Math.max(1e-6, zoom));
@@ -43,7 +38,7 @@ export function projectWorldToScreen(
   canvas: HTMLCanvasElement,
   wx: number,
   wy: number,
-  wz = 0
+  wz = 0,
 ) {
   const rect = canvas.getBoundingClientRect();
   const v = new THREE.Vector3(wx, wy, wz).project(cam);
@@ -59,7 +54,7 @@ export function screenToWorld(
   cam: THREE.PerspectiveCamera,
   canvas: HTMLCanvasElement,
   sx: number,
-  sy: number
+  sy: number,
 ) {
   const rect = canvas.getBoundingClientRect();
 

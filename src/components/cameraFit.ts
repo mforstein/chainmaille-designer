@@ -13,10 +13,10 @@ export function fitCameraToBox({
   camera,
   controls,
   box,
-  padding = 1.1,          // why: headroom for UI/edges
+  padding = 1.1, // why: headroom for UI/edges
   forward = new THREE.Vector3(0, 0, 1), // camera forward when looking at origin
-  refs,                   // zoomRef, initialZRef, initialTargetRef
-  BASE_Z = 100,           // your model baseline for zoomRef mapping
+  refs, // zoomRef, initialZRef, initialTargetRef
+  BASE_Z = 100, // your model baseline for zoomRef mapping
 }: {
   camera: THREE.PerspectiveCamera;
   controls: any; // OrbitControls
@@ -40,7 +40,7 @@ export function fitCameraToBox({
 
   // Distances to fit height and width
   const fitHeight = size.y / (2 * Math.tan(vFOV / 2));
-  const fitWidth  = size.x / (2 * Math.tan(hFOV / 2));
+  const fitWidth = size.x / (2 * Math.tan(hFOV / 2));
 
   // Depth safety: include some allowance for size.z so near-plane won't clip
   const depthPad = size.z * 0.5;
@@ -66,7 +66,7 @@ export function fitCameraToBox({
 
   // Sync zoom model & initial refs
   const fitZ = dist; // single declaration (no duplicates)
-  refs.zoomRef.current = BASE_Z / fitZ;         // why: keeps your zoom model consistent
+  refs.zoomRef.current = BASE_Z / fitZ; // why: keeps your zoom model consistent
   refs.initialZRef.current = fitZ;
   refs.initialTargetRef.current = target.clone();
 }

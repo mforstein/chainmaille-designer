@@ -7,13 +7,19 @@ interface GeometryPanelProps {
   onChange: (field: "rows" | "cols", value: number) => void;
 }
 
-export default function GeometryPanel({ rows, cols, onChange }: GeometryPanelProps) {
+export default function GeometryPanel({
+  rows,
+  cols,
+  onChange,
+}: GeometryPanelProps) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <label style={{ fontWeight: 600, fontSize: 14 }}>Grid Size</label>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <div>
-          <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>Rows</label>
+          <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>
+            Rows
+          </label>
           <input
             type="number"
             value={rows}
@@ -31,7 +37,9 @@ export default function GeometryPanel({ rows, cols, onChange }: GeometryPanelPro
           />
         </div>
         <div>
-          <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>Cols</label>
+          <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>
+            Cols
+          </label>
           <input
             type="number"
             value={cols}

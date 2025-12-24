@@ -12,8 +12,17 @@ import RingRenderer from "../components/RingRenderer"; // ← REQUIRED
 // CONSTANTS
 // ========================================
 const ID_OPTIONS = [
-  "7/64", "1/8", "9/64", "5/32", "3/16", "1/4",
-  "5/16", "3/8", "7/16", "1/2", "5/8",
+  "7/64",
+  "1/8",
+  "9/64",
+  "5/32",
+  "3/16",
+  "1/4",
+  "5/16",
+  "3/8",
+  "7/16",
+  "1/2",
+  "5/8",
 ];
 
 const WIRE_OPTIONS = [0.9, 1.2, 1.6, 2.0, 2.5, 3.0];
@@ -30,7 +39,7 @@ export default function RingSizeChart() {
   const rings = useMemo(() => {
     const grid: any[] = [];
     const spacing = 20;
-    const SCALE_NORMALIZER = 0.30; // doubled size
+    const SCALE_NORMALIZER = 0.3; // doubled size
 
     WIRE_OPTIONS.forEach((wire, r) => {
       ID_OPTIONS.forEach((id, c) => {
@@ -45,7 +54,7 @@ export default function RingSizeChart() {
         const scaledOD = OD_mm * SCALE_NORMALIZER;
 
         const label = new SpriteText(
-          `${WD_mm.toFixed(1)}mm / ${ID_mm.toFixed(2)}mm`
+          `${WD_mm.toFixed(1)}mm / ${ID_mm.toFixed(2)}mm`,
         );
         label.color = "#CCCCCC";
         label.textHeight = 0.9;

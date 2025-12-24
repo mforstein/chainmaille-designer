@@ -17,7 +17,7 @@ export interface RenderParams {
   rows: number;
   cols: number;
   innerDiameter: number; // mm
-  wireDiameter: number;  // mm
+  wireDiameter: number; // mm
   colorMode: ColorMode;
   ringColor: string;
   altColor: string;
@@ -94,9 +94,16 @@ export default function RingRenderer3D({
       const h = container.clientHeight;
       const halfW = w / 2;
       const halfH = h / 2;
-      const cam = new THREE.OrthographicCamera(-halfW, halfW, halfH, -halfH, 0.1, 5000);
+      const cam = new THREE.OrthographicCamera(
+        -halfW,
+        halfW,
+        halfH,
+        -halfH,
+        0.1,
+        5000,
+      );
       cam.position.set(0, 0, 1000); // straight on
-      cam.zoom = 6;                  // initial zoom (tweak as you like)
+      cam.zoom = 6; // initial zoom (tweak as you like)
       cam.updateProjectionMatrix();
       return cam;
     };
@@ -129,9 +136,9 @@ export default function RingRenderer3D({
       const w = container.clientWidth;
       const h = container.clientHeight;
       const cam = cameraRef.current!;
-      cam.left   = -w / 2;
-      cam.right  =  w / 2;
-      cam.top    =  h / 2;
+      cam.left = -w / 2;
+      cam.right = w / 2;
+      cam.top = h / 2;
       cam.bottom = -h / 2;
       cam.updateProjectionMatrix();
     };
@@ -156,12 +163,13 @@ export default function RingRenderer3D({
       meshByKey.current.clear();
       scene.clear();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // background color update
   useEffect(() => {
-    if (sceneRef.current) sceneRef.current.background = new THREE.Color(params.bgColor);
+    if (sceneRef.current)
+      sceneRef.current.background = new THREE.Color(params.bgColor);
   }, [params.bgColor]);
 
   // (re)build ring meshes whenever geometry count/size changes
@@ -175,7 +183,8 @@ export default function RingRenderer3D({
 
     // torus dimensions
     const tubeR = (params.wireDiameter / 2) * mmToScene; // wire radius
-    const majorRFromInner = (inner: number) => (inner / 2 + params.wireDiameter / 2) * mmToScene;
+    const majorRFromInner = (inner: number) =>
+      (inner / 2 + params.wireDiameter / 2) * mmToScene;
 
     // geometry shared (we can’t share majorR because it depends on ring size; here all same)
     const majorR = majorRFromInner(params.innerDiameter);
@@ -203,19 +212,23 @@ export default function RingRenderer3D({
 
       const rowShift = (r.row % 2) * (params.innerDiameter * 0.5);
       const colShift = (r.col % 2) * (params.innerDiameter * 0.25);
-      mesh.position.set(
-        r.x * mmToScene + rowShift,
-        -r.y * mmToScene,
-        colShift
-      );
+      mesh.position.set(r.x * mmToScene + rowShift, -r.y * mmToScene, colShift);
       // alternating tilts to create interlinking illusion
-      mesh.rotation.x = (r.row % 2 === 0 ? Math.PI / 8 : -Math.PI / 8);
-      mesh.rotation.z = (r.col % 2 === 0 ? Math.PI / 2 : 0);
+      mesh.rotation.x = r.row % 2 === 0 ? Math.PI / 8 : -Math.PI / 8;
+      mesh.rotation.z = r.col % 2 === 0 ? Math.PI / 2 : 0;
       scene.add(mesh);
       meshByKey.current.set(key, mesh);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rings, params.innerDiameter, params.wireDiameter, paint, params.colorMode, params.ringColor, params.altColor]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    rings,
+    params.innerDiameter,
+    params.wireDiameter,
+    paint,
+    params.colorMode,
+    params.ringColor,
+    params.altColor,
+  ]);
 
   // recolor on paint or theme change (without rebuilding meshes)
   useEffect(() => {
@@ -226,7 +239,7 @@ export default function RingRenderer3D({
       const hex = paint.get(key) ?? defaultColorFor(r, c);
       (mesh.material as THREE.MeshStandardMaterial).color.set(hex);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paint, params.colorMode, params.ringColor, params.altColor]);
 
   // ----- picking / painting -----
@@ -238,10 +251,15 @@ export default function RingRenderer3D({
       pointer.y = -(_ev.offsetY / dom.clientHeight) * 2 + 1;
 
       raycaster.setFromCamera(pointer, cameraRef.current!);
-      const hits = raycaster.intersectObjects([...meshByKey.current.values()], false);
+      const hits = raycaster.intersectObjects(
+        [...meshByKey.current.values()],
+        false,
+      );
       if (hits.length && setHoverRC) {
         const mesh = hits[0].object as THREE.Mesh;
-        const entry = [...meshByKey.current.entries()].find(([, m]) => m === mesh);
+        const entry = [...meshByKey.current.entries()].find(
+          ([, m]) => m === mesh,
+        );
         if (entry) {
           const [key] = entry;
           const [r, c] = key.split(",").map(Number);
@@ -255,7 +273,9 @@ export default function RingRenderer3D({
     let isPainting = false;
     const paintTarget = (mesh: THREE.Object3D | null) => {
       if (!mesh) return;
-      const entry = [...meshByKey.current.entries()].find(([, m]) => m === mesh);
+      const entry = [...meshByKey.current.entries()].find(
+        ([, m]) => m === mesh,
+      );
       if (!entry) return;
       const [key] = entry;
       setPaint((prev) => {
@@ -268,7 +288,10 @@ export default function RingRenderer3D({
     const onDown = (_ev: PointerEvent) => {
       if (!paintMode) return; // let OrbitControls pan/zoom
       raycaster.setFromCamera(pointer, cameraRef.current!);
-      const hits = raycaster.intersectObjects([...meshByKey.current.values()], false);
+      const hits = raycaster.intersectObjects(
+        [...meshByKey.current.values()],
+        false,
+      );
       if (hits.length) {
         isPainting = true;
         paintTarget(hits[0].object);
@@ -277,7 +300,10 @@ export default function RingRenderer3D({
     const onDrag = (_ev: PointerEvent) => {
       if (!isPainting) return;
       raycaster.setFromCamera(pointer, cameraRef.current!);
-      const hits = raycaster.intersectObjects([...meshByKey.current.values()], false);
+      const hits = raycaster.intersectObjects(
+        [...meshByKey.current.values()],
+        false,
+      );
       if (hits.length) paintTarget(hits[0].object);
     };
     const onUp = () => (isPainting = false);
@@ -294,7 +320,7 @@ export default function RingRenderer3D({
       dom.removeEventListener("pointerup", onUp);
       dom.removeEventListener("pointerleave", onUp);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paintMode, eraseMode, activeColor, setPaint, setHoverRC]);
 
   return <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />;

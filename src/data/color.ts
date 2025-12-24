@@ -1,18 +1,12 @@
 export const SupplierColors = [
   {
-    "supplier": "The Ring Lord",
-    "colors": [
-      "Natural",
-      "Anodized Blue"
-    ]
+    supplier: "The Ring Lord",
+    colors: ["Natural", "Anodized Blue"],
   },
   {
-    "supplier": "Chainmail Joe",
-    "colors": [
-      "Anodized Green",
-      "Anodized Purple"
-    ]
-  }
+    supplier: "Chainmail Joe",
+    colors: ["Anodized Green", "Anodized Purple"],
+  },
 ];
 // src/utils/color.ts
 export function rgbToHex(r: number, g: number, b: number): string {

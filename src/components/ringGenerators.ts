@@ -47,7 +47,16 @@ export function _generateRingsBase({
 }
 
 export function generateRingsDesigner(opts: any) {
-  const { rows, cols, innerDiameter, wireDiameter, centerSpacing, angleIn = 25, angleOut = -25, layout = [] } = opts;
+  const {
+    rows,
+    cols,
+    innerDiameter,
+    wireDiameter,
+    centerSpacing,
+    angleIn = 25,
+    angleOut = -25,
+    layout = [],
+  } = opts;
 
   const finalLayout: any[] = [];
   for (let r = 0; r < rows; r++) {

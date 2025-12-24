@@ -16,8 +16,7 @@ export default function PasswordGate({ onSuccess }: PasswordGateProps) {
   const location = useLocation();
 
   // Where to go after successful unlock
-  const redirect =
-    (location.state as any)?.redirect || "/workspace";
+  const redirect = (location.state as any)?.redirect || "/workspace";
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,9 +52,7 @@ export default function PasswordGate({ onSuccess }: PasswordGateProps) {
         padding: 24,
       }}
     >
-      <h1 style={{ marginBottom: 8 }}>
-        Woven Rainbows by Erin
-      </h1>
+      <h1 style={{ marginBottom: 8 }}>Woven Rainbows by Erin</h1>
 
       <p style={{ color: "#9CA3AF", marginBottom: 24 }}>
         Enter password to access the designer tools
@@ -102,11 +99,7 @@ export default function PasswordGate({ onSuccess }: PasswordGateProps) {
           Enter
         </button>
 
-        {error && (
-          <p style={{ color: "#F87171", marginTop: 4 }}>
-            {error}
-          </p>
-        )}
+        {error && <p style={{ color: "#F87171", marginTop: 4 }}>{error}</p>}
       </form>
     </div>
   );

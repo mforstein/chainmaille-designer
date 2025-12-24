@@ -35,23 +35,23 @@ const BlogManager: React.FC = () => {
       body: JSON.stringify(updated),
     }).catch(console.error);
   };
-const isErin = localStorage.getItem("authUser") === "erin";
-if (!isErin) {
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "#94a3b8",
-        background: "#0f1115",
-      }}
-    >
-      🔒 Blog access restricted to Erin.
-    </div>
-  );
-}
+  const isErin = localStorage.getItem("authUser") === "erin";
+  if (!isErin) {
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#94a3b8",
+          background: "#0f1115",
+        }}
+      >
+        🔒 Blog access restricted to Erin.
+      </div>
+    );
+  }
   return (
     <div
       style={{
@@ -62,7 +62,9 @@ if (!isErin) {
         padding: "40px 20px",
       }}
     >
-      <h1 style={{ fontSize: "1.8rem", marginBottom: 20 }}>🪶 Erin’s Blog Manager</h1>
+      <h1 style={{ fontSize: "1.8rem", marginBottom: 20 }}>
+        🪶 Erin’s Blog Manager
+      </h1>
 
       <div
         style={{
@@ -107,7 +109,9 @@ if (!isErin) {
       <div style={{ maxWidth: 800, margin: "0 auto" }}>
         <h2 style={{ fontSize: "1.4rem", marginBottom: 12 }}>Previous Posts</h2>
         {entries.length === 0 && (
-          <p style={{ color: "#94a3b8" }}>No blog entries yet — start by writing one!</p>
+          <p style={{ color: "#94a3b8" }}>
+            No blog entries yet — start by writing one!
+          </p>
         )}
         {entries.map((entry, i) => (
           <div

@@ -66,8 +66,8 @@ export default function CanvasStage({
           paintMode || eraserMode
             ? "cursor-crosshair"
             : isPanning
-            ? "cursor-grabbing"
-            : "cursor-grab"
+              ? "cursor-grabbing"
+              : "cursor-grab"
         }`}
         style={{ width: `${viewSize}px`, height: `${viewSize}px` }}
       />
@@ -119,9 +119,24 @@ export default function CanvasStage({
         </div>
 
         <div className="flex items-center gap-2">
-          <button onClick={fitToView} className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs">Fit</button>
-          <button onClick={centerView} className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs">Center</button>
-          <button onClick={oneToOne} className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs">1:1</button>
+          <button
+            onClick={fitToView}
+            className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs"
+          >
+            Fit
+          </button>
+          <button
+            onClick={centerView}
+            className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs"
+          >
+            Center
+          </button>
+          <button
+            onClick={oneToOne}
+            className="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-xs"
+          >
+            1:1
+          </button>
         </div>
       </div>
 

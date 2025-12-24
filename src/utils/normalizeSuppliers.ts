@@ -32,7 +32,7 @@ export function normalizeRings(
     aspectRatio?: string;
     available?: boolean;
   }[],
-  color?: string
+  color?: string,
 ): NormalizedRing[] {
   return rings.map((r) => {
     const wireGauge = r.wireGauge?.trim();
@@ -45,8 +45,8 @@ export function normalizeRings(
       r.aspectRatio && !isNaN(parseFloat(r.aspectRatio))
         ? parseFloat(r.aspectRatio)
         : idMM && wireDiameterMM
-        ? +(idMM / wireDiameterMM).toFixed(2)
-        : undefined;
+          ? +(idMM / wireDiameterMM).toFixed(2)
+          : undefined;
 
     const gaugeLabel =
       wireGauge && !isNaN(parseFloat(wireGauge))

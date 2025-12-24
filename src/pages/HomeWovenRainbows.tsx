@@ -54,15 +54,15 @@ const HomeWovenRainbows: React.FC = () => {
   }, []);
 
   // Load Designer features
-useEffect(() => {
-  fetch("/wovenrainbows_listings_featured.json")
-    .then((res) => res.json())
-    .then((data) => {
-      console.log("✅ Loaded Etsy items:", data);
-      setItems(Array.isArray(data) ? data : data.items || []);
-    })
-    .catch((err) => console.error("❌ Failed to load Etsy listings:", err));
-}, []);
+  useEffect(() => {
+    fetch("/wovenrainbows_listings_featured.json")
+      .then((res) => res.json())
+      .then((data) => {
+        console.log("✅ Loaded Etsy items:", data);
+        setItems(Array.isArray(data) ? data : data.items || []);
+      })
+      .catch((err) => console.error("❌ Failed to load Etsy listings:", err));
+  }, []);
 
   // Load Blog Entries
   useEffect(() => {
@@ -71,7 +71,8 @@ useEffect(() => {
       .then((data) => {
         if (Array.isArray(data)) {
           const sorted = [...data].sort(
-            (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+            (a, b) =>
+              new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
           );
           setBlogEntries(sorted);
         } else {
@@ -154,7 +155,8 @@ useEffect(() => {
             <strong>Erin Forstein</strong>’s 50th birthday as a special present.
           </p>
           <p style={{ marginBottom: 10 }}>
-            Erin is my muse and inspiration for everything I do, and I love her deeply.
+            Erin is my muse and inspiration for everything I do, and I love her
+            deeply.
           </p>
           <p>
             You can see Erin’s beautiful chainmaille creations on her Etsy shop:{" "}
@@ -197,95 +199,98 @@ useEffect(() => {
               </span>
               Erin’s Latest Studio Note
             </h2>
-            <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>{latestPost.content}</p>
+            <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+              {latestPost.content}
+            </p>
             <div style={{ marginTop: 10, color: "#9ca3af", fontSize: 13 }}>
-              — {latestPost.author}, {new Date(latestPost.timestamp).toLocaleDateString()}
+              — {latestPost.author},{" "}
+              {new Date(latestPost.timestamp).toLocaleDateString()}
             </div>
           </div>
         )}
 
-{/* ======= Etsy Product Grid ======= */}
-<div
-  style={{
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-    gap: "22px",
-    maxWidth: 1200,
-    margin: "0 auto 60px",
-  }}
->
-  {items.map((item, i) => {
-    // ✅ Determine correct image source
-    const imageSrc = item.image_url?.startsWith("http")
-      ? item.image_url // Etsy-hosted
-      : `/images/etsy/${item.image_url
-          ?.replace(/^\.\/|^\/?images\/etsy\//, "") // clean any leading ./ or /images/etsy/
-          .trim()}`;
-
-    return (
-      <a
-        key={i}
-        href={item.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        style={{
-          background: "#1f2937",
-          borderRadius: 12,
-          overflow: "hidden",
-          textDecoration: "none",
-          color: "inherit",
-          transition: "transform 0.2s ease, box-shadow 0.2s ease",
-        }}
-      >
+        {/* ======= Etsy Product Grid ======= */}
         <div
           style={{
-            width: "100%",
-            height: 200,
-            overflow: "hidden",
-            background: "#111",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+            gap: "22px",
+            maxWidth: 1200,
+            margin: "0 auto 60px",
           }}
         >
-<img
-  src={
-    item.image_url?.startsWith("http")
-      ? item.image_url // ✅ Use Etsy-hosted image directly
-      : item.image_url?.startsWith("/")
-      ? item.image_url // ✅ Local /images/etsy/ path
-      : `/images/etsy/${item.image_url}` // ✅ Fallback for local files without slash
-  }
-  alt={item.title || "Etsy listing"}
-  onError={(e) => {
-    console.warn("⚠️ Image failed:", item.image_url);
-    e.currentTarget.src = "/images/placeholder.png";
-  }}
-  style={{
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
-    display: "block",
-    background: "#222",
-  }}
-/>
+          {items.map((item, i) => {
+            // ✅ Determine correct image source
+            const imageSrc = item.image_url?.startsWith("http")
+              ? item.image_url // Etsy-hosted
+              : `/images/etsy/${item.image_url
+                  ?.replace(/^\.\/|^\/?images\/etsy\//, "") // clean any leading ./ or /images/etsy/
+                  .trim()}`;
+
+            return (
+              <a
+                key={i}
+                href={item.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  background: "#1f2937",
+                  borderRadius: 12,
+                  overflow: "hidden",
+                  textDecoration: "none",
+                  color: "inherit",
+                  transition: "transform 0.2s ease, box-shadow 0.2s ease",
+                }}
+              >
+                <div
+                  style={{
+                    width: "100%",
+                    height: 200,
+                    overflow: "hidden",
+                    background: "#111",
+                  }}
+                >
+                  <img
+                    src={
+                      item.image_url?.startsWith("http")
+                        ? item.image_url // ✅ Use Etsy-hosted image directly
+                        : item.image_url?.startsWith("/")
+                          ? item.image_url // ✅ Local /images/etsy/ path
+                          : `/images/etsy/${item.image_url}` // ✅ Fallback for local files without slash
+                    }
+                    alt={item.title || "Etsy listing"}
+                    onError={(e) => {
+                      console.warn("⚠️ Image failed:", item.image_url);
+                      e.currentTarget.src = "/images/placeholder.png";
+                    }}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                      display: "block",
+                      background: "#222",
+                    }}
+                  />
+                </div>
+                <div style={{ padding: "10px 12px" }}>
+                  <div
+                    style={{
+                      fontWeight: 600,
+                      fontSize: "1rem",
+                      marginBottom: 6,
+                      lineHeight: 1.3,
+                    }}
+                  >
+                    {item.title}
+                  </div>
+                  <div style={{ color: "#93c5fd" }}>
+                    {item.price} {item.currency}
+                  </div>
+                </div>
+              </a>
+            );
+          })}
         </div>
-        <div style={{ padding: "10px 12px" }}>
-          <div
-            style={{
-              fontWeight: 600,
-              fontSize: "1rem",
-              marginBottom: 6,
-              lineHeight: 1.3,
-            }}
-          >
-            {item.title}
-          </div>
-          <div style={{ color: "#93c5fd" }}>
-            {item.price} {item.currency}
-          </div>
-        </div>
-      </a>
-    );
-  })}
-</div>
         {/* ======= Designer Button ======= */}
         <div style={{ textAlign: "center", paddingBottom: 40 }}>
           <h2 style={{ fontSize: "1.8rem", marginBottom: 20 }}>
@@ -304,26 +309,26 @@ useEffect(() => {
             Chainmaille Designer tool — created to help you visualize and plan
             your next woven artwork.
           </p>
-<button
-  onClick={() =>
-    navigate("/wovenrainbowsbyerin/login", {
-      state: { redirect: "/workspace" },
-    })
-  }
-  style={{
-    background: "#2563eb",
-    color: "#fff",
-    border: "none",
-    padding: "12px 24px",
-    borderRadius: 10,
-    cursor: "pointer",
-    fontSize: "1.1rem",
-    fontWeight: 600,
-    boxShadow: "0 4px 14px rgba(37,99,235,0.4)",
-  }}
->
-  🧩 Access Designer
-</button>
+          <button
+            onClick={() =>
+              navigate("/wovenrainbowsbyerin/login", {
+                state: { redirect: "/workspace" },
+              })
+            }
+            style={{
+              background: "#2563eb",
+              color: "#fff",
+              border: "none",
+              padding: "12px 24px",
+              borderRadius: 10,
+              cursor: "pointer",
+              fontSize: "1.1rem",
+              fontWeight: 600,
+              boxShadow: "0 4px 14px rgba(37,99,235,0.4)",
+            }}
+          >
+            🧩 Access Designer
+          </button>
         </div>
       </div>
       {/* ======= Hidden Feather (Easter Egg Blog Access) ======= */}
@@ -376,7 +381,7 @@ const styleSheet = document.styleSheets[0];
 if (
   styleSheet &&
   !Array.from(styleSheet.cssRules).some(
-    (rule) => (rule as CSSKeyframesRule).name === "floatFeather"
+    (rule) => (rule as CSSKeyframesRule).name === "floatFeather",
   )
 ) {
   styleSheet.insertRule(
@@ -386,7 +391,7 @@ if (
       50% { transform: translateY(-6px); }
     }
   `,
-    styleSheet.cssRules.length
+    styleSheet.cssRules.length,
   );
 }
 

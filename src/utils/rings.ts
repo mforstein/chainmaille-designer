@@ -10,7 +10,11 @@ export interface RingPosition {
  * Generates a simple rectangular grid of rings using standard
  * 4-in-1 European spacing (hex pattern).
  */
-export function generateRings(rows: number, cols: number, innerDiameter: number): RingPosition[] {
+export function generateRings(
+  rows: number,
+  cols: number,
+  innerDiameter: number,
+): RingPosition[] {
   const rings: RingPosition[] = [];
   const horizSpacing = innerDiameter;
   const vertSpacing = innerDiameter * 0.87; // standard 4-in-1 vertical offset

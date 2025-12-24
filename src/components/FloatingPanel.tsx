@@ -63,8 +63,10 @@ export default function FloatingPanel({
       y: offsetRef.current.y + dy,
     });
   };
-  const onMouseMove = (e: React.MouseEvent) => dragging && handleMove(e.clientX, e.clientY);
-  const onTouchMove = (e: React.TouchEvent) => dragging && handleMove(e.touches[0].clientX, e.touches[0].clientY);
+  const onMouseMove = (e: React.MouseEvent) =>
+    dragging && handleMove(e.clientX, e.clientY);
+  const onTouchMove = (e: React.TouchEvent) =>
+    dragging && handleMove(e.touches[0].clientX, e.touches[0].clientY);
   const stopDrag = () => setDragging(false);
 
   // Keep in window

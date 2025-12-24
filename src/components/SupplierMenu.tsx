@@ -46,13 +46,29 @@ export default function SupplierMenu({ onApplyPalette }: SupplierMenuProps) {
   const SUPPLIER_COLORS: Record<string, string[]> = {
     "All Suppliers": UNIVERSAL_COLORS,
     "Chain Mail Joe": [
-      "#FF0000", "#00FF00", "#0000FF", "#FFFF00", "#FF00FF", "#00FFFF", "#FFA500",
+      "#FF0000",
+      "#00FF00",
+      "#0000FF",
+      "#FFFF00",
+      "#FF00FF",
+      "#00FFFF",
+      "#FFA500",
     ],
     "Metal Designz": [
-      "#E5E4E2", "#FFD700", "#C0C0C0", "#B87333", "#8A2BE2", "#FF4500",
+      "#E5E4E2",
+      "#FFD700",
+      "#C0C0C0",
+      "#B87333",
+      "#8A2BE2",
+      "#FF4500",
     ],
     "The Ring Lord": [
-      "#A0522D", "#DEB887", "#8B4513", "#D8B07A", "#A9A9A9", "#FFFFFF",
+      "#A0522D",
+      "#DEB887",
+      "#8B4513",
+      "#D8B07A",
+      "#A9A9A9",
+      "#FFFFFF",
     ],
   };
 
@@ -131,7 +147,14 @@ export default function SupplierMenu({ onApplyPalette }: SupplierMenuProps) {
       }}
     >
       {/* --- Supplier / Material --- */}
-      <div style={{ display: "flex", gap: 6, width: "100%", justifyContent: "center" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 6,
+          width: "100%",
+          justifyContent: "center",
+        }}
+      >
         <select
           value={selectedSupplier}
           onChange={(e) => setSelectedSupplier(e.target.value)}
@@ -164,7 +187,13 @@ export default function SupplierMenu({ onApplyPalette }: SupplierMenuProps) {
           marginTop: 6,
         }}
       >
-        <label style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <label
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+          }}
+        >
           Gauge (mm)
           <input
             type="number"
@@ -178,7 +207,13 @@ export default function SupplierMenu({ onApplyPalette }: SupplierMenuProps) {
           />
         </label>
 
-        <label style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <label
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+          }}
+        >
           ID (in)
           <select
             value={ringID}
@@ -191,7 +226,13 @@ export default function SupplierMenu({ onApplyPalette }: SupplierMenuProps) {
           </select>
         </label>
 
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+          }}
+        >
           <span>AR</span>
           <div
             style={{
@@ -241,7 +282,9 @@ export default function SupplierMenu({ onApplyPalette }: SupplierMenuProps) {
       </div>
 
       {/* --- Show Only Available --- */}
-      <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+      <label
+        style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}
+      >
         <input
           type="checkbox"
           checked={showOnlyAvailable}
@@ -251,7 +294,15 @@ export default function SupplierMenu({ onApplyPalette }: SupplierMenuProps) {
       </label>
 
       {/* --- Buttons --- */}
-      <div style={{ display: "flex", gap: 8, justifyContent: "center", width: "100%", marginTop: 8 }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          justifyContent: "center",
+          width: "100%",
+          marginTop: 8,
+        }}
+      >
         <button
           style={{
             padding: "6px 10px",

@@ -46,8 +46,7 @@ export function calculateBOM(rings: BOMRing[]) {
     const volume = circumference * wireArea;
 
     const density =
-      MATERIAL_DENSITY[ring.material ?? "Unknown"] ??
-      MATERIAL_DENSITY.Unknown;
+      MATERIAL_DENSITY[ring.material ?? "Unknown"] ?? MATERIAL_DENSITY.Unknown;
 
     const ringWeight = volume * density;
 
@@ -60,9 +59,9 @@ export function calculateBOM(rings: BOMRing[]) {
   return {
     summary: {
       totalRings: rings.length,
-      uniqueColors: new Set(rings.map(r => r.colorHex)).size,
+      uniqueColors: new Set(rings.map((r) => r.colorHex)).size,
       totalWeight,
-      suppliers: Array.from(new Set(rings.map(r => r.supplier))),
+      suppliers: Array.from(new Set(rings.map((r) => r.supplier))),
     },
     lines,
   };

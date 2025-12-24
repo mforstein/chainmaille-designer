@@ -101,7 +101,9 @@ const ImageMatcher: React.FC = () => {
         <thead>
           <tr style={{ borderBottom: "1px solid #334155" }}>
             <th style={{ padding: 8, textAlign: "left" }}>Listing</th>
-            <th style={{ padding: 8, textAlign: "left" }}>Etsy Preview (Paste Here)</th>
+            <th style={{ padding: 8, textAlign: "left" }}>
+              Etsy Preview (Paste Here)
+            </th>
             <th style={{ padding: 8, textAlign: "left" }}>Matched Image</th>
           </tr>
         </thead>

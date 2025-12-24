@@ -40,13 +40,19 @@ export default function LeftToolbar(props: Props) {
       {/* Tool buttons */}
       <div className="grid grid-cols-3 gap-2">
         <button
-          onClick={() => { props.setPaintMode(!props.paintMode); if (props.eraserMode) props.setEraserMode(false); }}
+          onClick={() => {
+            props.setPaintMode(!props.paintMode);
+            if (props.eraserMode) props.setEraserMode(false);
+          }}
           className={`px-2 py-1 rounded text-xs ${props.paintMode ? "bg-green-700" : "bg-slate-700 hover:bg-slate-600"}`}
         >
           Paint
         </button>
         <button
-          onClick={() => { props.setEraserMode(!props.eraserMode); if (props.paintMode) props.setPaintMode(false); }}
+          onClick={() => {
+            props.setEraserMode(!props.eraserMode);
+            if (props.paintMode) props.setPaintMode(false);
+          }}
           className={`px-2 py-1 rounded text-xs ${props.eraserMode ? "bg-red-700" : "bg-slate-700 hover:bg-slate-600"}`}
         >
           Erase
@@ -61,7 +67,9 @@ export default function LeftToolbar(props: Props) {
 
       {/* Palette */}
       <div>
-        <div className="text-xs uppercase tracking-wide text-slate-400 mb-2">Palette</div>
+        <div className="text-xs uppercase tracking-wide text-slate-400 mb-2">
+          Palette
+        </div>
         <div className="flex flex-wrap gap-2">
           {props.supplierPalette.map(({ name, hex }) => (
             <button
@@ -74,7 +82,11 @@ export default function LeftToolbar(props: Props) {
           ))}
         </div>
         <div className="mt-2 text-[10px] text-slate-300">
-          Brush: <span className="inline-block align-middle h-3 w-3 rounded-full border" style={{ background: props.currentBrushColor }} />
+          Brush:{" "}
+          <span
+            className="inline-block align-middle h-3 w-3 rounded-full border"
+            style={{ background: props.currentBrushColor }}
+          />
           <span className="ml-1">{props.currentBrushColor}</span>
         </div>
       </div>

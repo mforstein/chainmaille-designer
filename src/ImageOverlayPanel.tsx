@@ -50,7 +50,9 @@ export default function ImageOverlayPanel({
               border: "1px solid #555",
               objectFit: "contain",
             }}
-            onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)}
+            onLoad={(e) =>
+              URL.revokeObjectURL((e.target as HTMLImageElement).src)
+            }
           />
         </div>
       )}
@@ -102,7 +104,10 @@ export default function ImageOverlayPanel({
           step={1}
           value={previewOffset.x}
           onChange={(e) =>
-            setPreviewOffset({ ...previewOffset, x: parseFloat(e.target.value) })
+            setPreviewOffset({
+              ...previewOffset,
+              x: parseFloat(e.target.value),
+            })
           }
           className="flex-1"
         />
@@ -113,7 +118,10 @@ export default function ImageOverlayPanel({
           step={1}
           value={previewOffset.x}
           onChange={(e) =>
-            setPreviewOffset({ ...previewOffset, x: parseFloat(e.target.value) })
+            setPreviewOffset({
+              ...previewOffset,
+              x: parseFloat(e.target.value),
+            })
           }
           className="w-16 bg-slate-800 border border-slate-700 rounded px-1 text-right text-xs"
         />
@@ -129,7 +137,10 @@ export default function ImageOverlayPanel({
           step={1}
           value={previewOffset.y}
           onChange={(e) =>
-            setPreviewOffset({ ...previewOffset, y: parseFloat(e.target.value) })
+            setPreviewOffset({
+              ...previewOffset,
+              y: parseFloat(e.target.value),
+            })
           }
           className="flex-1"
         />
@@ -140,7 +151,10 @@ export default function ImageOverlayPanel({
           step={1}
           value={previewOffset.y}
           onChange={(e) =>
-            setPreviewOffset({ ...previewOffset, y: parseFloat(e.target.value) })
+            setPreviewOffset({
+              ...previewOffset,
+              y: parseFloat(e.target.value),
+            })
           }
           className="w-16 bg-slate-800 border border-slate-700 rounded px-1 text-right text-xs"
         />
@@ -175,7 +189,9 @@ export default function ImageOverlayPanel({
         <select
           value={paletteSource}
           onChange={(e) =>
-            setPaletteSource(e.target.value as "current" | "cmj" | "trl" | "mdz" | "all")
+            setPaletteSource(
+              e.target.value as "current" | "cmj" | "trl" | "mdz" | "all",
+            )
           }
           className="bg-slate-800 text-xs border border-slate-700 rounded p-1"
         >

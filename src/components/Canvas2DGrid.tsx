@@ -43,7 +43,7 @@ export default function Canvas2DGrid() {
             r * spacingY + spacingY / 2,
             radius,
             0,
-            Math.PI * 2
+            Math.PI * 2,
           );
           ctx.fillStyle = paintRef.current.get(key) || "#334155";
           ctx.fill();

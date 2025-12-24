@@ -24,17 +24,26 @@ const DesignerGalleryEditor: React.FC = () => {
     fetch("/images/designer/")
       .then(() => {
         // Static import context for Vite dev builds
-        const importCtx = import.meta.glob("/public/images/designer/*", { as: "url" });
+        const importCtx = import.meta.glob("/public/images/designer/*", {
+          as: "url",
+        });
         const keys = Object.keys(importCtx);
 
         const initialImages = keys.map((path) => {
           const file = path.split("/").pop()!;
-          return { file, title: file.replace(/\.\w+$/, ""), description: "", preview: `/images/designer/${file}` };
+          return {
+            file,
+            title: file.replace(/\.\w+$/, ""),
+            description: "",
+            preview: `/images/designer/${file}`,
+          };
         });
         setImages(initialImages);
       })
       .catch(() => {
-        console.warn("⚠️ Could not auto-load designer images; use Add Image to import manually.");
+        console.warn(
+          "⚠️ Could not auto-load designer images; use Add Image to import manually.",
+        );
       });
   }, [initialized]);
 
@@ -57,16 +66,26 @@ const DesignerGalleryEditor: React.FC = () => {
   };
 
   // === Update title or description ===
-  const updateField = (idx: number, key: "title" | "description", value: string) => {
+  const updateField = (
+    idx: number,
+    key: "title" | "description",
+    value: string,
+  ) => {
     setImages((prev) =>
-      prev.map((img, i) => (i === idx ? { ...img, [key]: value } : img))
+      prev.map((img, i) => (i === idx ? { ...img, [key]: value } : img)),
     );
   };
 
   // === Export JSON ===
   const handleExport = () => {
-    const data = images.map(({ file, title, description }) => ({ file, title, description }));
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const data = images.map(({ file, title, description }) => ({
+      file,
+      title,
+      description,
+    }));
+    const blob = new Blob([JSON.stringify(data, null, 2)], {
+      type: "application/json",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -89,7 +108,14 @@ const DesignerGalleryEditor: React.FC = () => {
       </h1>
 
       {/* === Toolbar === */}
-      <div style={{ display: "flex", justifyContent: "center", gap: 20, marginBottom: 30 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          gap: 20,
+          marginBottom: 30,
+        }}
+      >
         <label
           style={{
             background: "#1e293b",
