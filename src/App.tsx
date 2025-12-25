@@ -65,7 +65,12 @@ import { calculateBOM } from "./BOM/bomCalculator";
 import "./index.css";
 import "./ui/ui-grid.css";
 import HomeWovenRainbows from "./pages/HomeWovenRainbows";
-
+import {
+  getDeviceLimits,
+  clampAndPersist,
+  clampPersistedDims,
+  SAFE_DEFAULT,
+} from "./utils/limits";
 // ==============================
 // Renderer
 // ==============================
@@ -344,32 +349,46 @@ function ChainmailDesigner() {
     };
   }, []);
 
-  const [params, setParams] = useState<Params>(() => {
-    const saved = localStorage.getItem("cmd.params");
-    const def: Params = {
-      rows: 20,
-      cols: 20,
-      innerDiameter: 7.94,
-      wireDiameter: 1.6,
-      overlapX: 0.3,
-      overlapY: 0.3,
-      colorMode: "solid",
-      ringColor: MATERIALS.find((m) => m.name === "Aluminum")?.hex || "#C0C0C0",
-      altColor: "#B2B2B2",
-      bgColor: "#0F1115",
-      supplier: "cmj",
-      ringSpec: "ID 7.94 mm / WD 1.6 mm (AR≈4.96)",
-      unit: "mm",
-      centerSpacing: 7.5,
-    };
-    if (!saved) return def;
-    try {
-      return { ...def, ...JSON.parse(saved) };
-    } catch {
-      return def;
-    }
-  });
+const [params, setParams] = useState<Params>(() => {
+  const def: Params = {
+    rows: 20,
+    cols: 20,
+    innerDiameter: 7.94,
+    wireDiameter: 1.6,
+    overlapX: 0.3,
+    overlapY: 0.3,
+    colorMode: "solid",
+    ringColor: MATERIALS.find((m) => m.name === "Aluminum")?.hex || "#C0C0C0",
+    altColor: "#B2B2B2",
+    bgColor: "#0F1115",
+    supplier: "cmj",
+    ringSpec: "ID 7.94 mm / WD 1.6 mm (AR≈4.96)",
+    unit: "mm",
+    centerSpacing: 7.5,
+  };
 
+  // Read previously saved params, if any
+  let p = def;
+  const saved = localStorage.getItem("cmd.params");
+  if (saved) {
+    try {
+      p = { ...def, ...JSON.parse(saved) };
+    } catch {
+      p = def;
+    }
+  }
+
+  // ✅ Pre-mount clamp (prevents OOM loops on iPad)
+  const { rows: r, cols: c, clamped } = clampAndPersist("designer", p.rows, p.cols);
+  p = { ...p, rows: r, cols: c };
+
+  // Keep "cmd.params" in sync so refresh is safe
+  try {
+    localStorage.setItem("cmd.params", JSON.stringify(p));
+  } catch {}
+
+  return p;
+});
   const [paint, setPaint] = useState<PaintMap>(() => {
     const saved = localStorage.getItem("cmd.paint");
     return saved ? new Map(JSON.parse(saved)) : new Map();

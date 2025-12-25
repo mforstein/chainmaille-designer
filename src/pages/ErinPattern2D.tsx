@@ -1,15 +1,19 @@
 // src/components/ErinPattern2D.tsx
 
-import { DraggableCompassNav, DraggablePill } from "../App";
+import { DraggableCompassNav } from "../App";
 import ProjectSaveLoadButtons from "../components/ProjectSaveLoadButtons";
-import BOMButtons from "../components/BOMButtons";
 import React, {
   useMemo,
   useState,
   useRef,
   useEffect,
-  useCallback,
 } from "react";
+import {
+  getDeviceLimits,
+  SAFE_DEFAULT,
+  clampPersistedDims,
+  clampAndPersist,
+} from "../utils/limits";
 
 const PALETTE_24 = [
   "#000000",
@@ -58,9 +62,20 @@ const ErinPattern2D: React.FC = () => {
     scale: 1.0,
   };
 
+  // --- Device caps & initial dims (persisted + clamped) ---
+  const limits = getDeviceLimits();
+  const initDims = useMemo(
+    () => clampPersistedDims("erin", SAFE_DEFAULT),
+    [],
+  );
+
   // 🧭 Geometry + transforms
-  const [cols, setCols] = useState(defaultSettings.cols);
-  const [rows, setRows] = useState(defaultSettings.rows);
+  const [cols, setCols] = useState<number>(
+    Number.isFinite(initDims.cols) ? initDims.cols : defaultSettings.cols,
+  );
+  const [rows, setRows] = useState<number>(
+    Number.isFinite(initDims.rows) ? initDims.rows : defaultSettings.rows,
+  );
   const [majorAxis, setMajorAxis] = useState(defaultSettings.majorAxis);
   const [minorAxis, setMinorAxis] = useState(defaultSettings.minorAxis);
   const [wireD, setWireD] = useState(defaultSettings.wireD);
@@ -111,8 +126,12 @@ const ErinPattern2D: React.FC = () => {
       const res = await fetch(SETTINGS_URL + `?v=${Date.now()}`);
       if (!res.ok) throw new Error("Settings not found");
       const data = await res.json();
-      setCols(data.cols ?? defaultSettings.cols);
-      setRows(data.rows ?? defaultSettings.rows);
+      setCols(
+        Number.isFinite(data.cols) ? data.cols : defaultSettings.cols,
+      );
+      setRows(
+        Number.isFinite(data.rows) ? data.rows : defaultSettings.rows,
+      );
       setMajorAxis(data.majorAxis ?? defaultSettings.majorAxis);
       setMinorAxis(data.minorAxis ?? defaultSettings.minorAxis);
       setWireD(data.wireD ?? defaultSettings.wireD);
@@ -131,13 +150,43 @@ const ErinPattern2D: React.FC = () => {
     }
   };
 
+  // When user edits rows/cols (text box, slider, buttons), always go through clampAndPersist:
+  const onRowsChange = (n: number) => {
+    const { rows: r, cols: c, clamped } = clampAndPersist("erin", n, cols);
+    setRows(r);
+    setCols(c);
+    if (clamped) console.warn("Grid clamped to device limits for stability.");
+  };
+
+  const onColsChange = (n: number) => {
+    const { rows: r, cols: c, clamped } = clampAndPersist("erin", rows, n);
+    setRows(r);
+    setCols(c);
+    if (clamped) console.warn("Grid clamped to device limits for stability.");
+  };
+
   useEffect(() => {
     loadSettingsJSON().then(() => {
       setPanX(0);
       setPanY(0);
       setZoom(1);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Optional: belt-and-suspenders guard if something external sets state:
+  useEffect(() => {
+    const area = rows * cols;
+    if (
+      rows > limits.MAX_ROWS ||
+      cols > limits.MAX_COLS ||
+      area > limits.MAX_AREA
+    ) {
+      const { rows: r, cols: c } = clampAndPersist("erin", rows, cols);
+      if (r !== rows) setRows(r);
+      if (c !== cols) setCols(c);
+    }
+  }, [rows, cols, limits]);
 
   // ------------------------------
   // Image dimensions sync
@@ -262,6 +311,7 @@ const ErinPattern2D: React.FC = () => {
 
     ctx.restore();
   };
+
   type Erin2DProject = {
     type: "erin2d";
     version: 1;
@@ -445,7 +495,9 @@ const ErinPattern2D: React.FC = () => {
 
     const apply = () => {
       el.style.transformOrigin = "top left";
-      el.style.transform = `translate(${Math.round(panX)}px, ${Math.round(panY)}px) scale(${zoom})`;
+      el.style.transform = `translate(${Math.round(panX)}px, ${Math.round(
+        panY,
+      )}px) scale(${zoom})`;
     };
 
     apply();
@@ -533,6 +585,7 @@ const ErinPattern2D: React.FC = () => {
     else next.set(key, selectedColor);
     setCells(next);
   };
+
   // ------------------------------
   // ✅ Mouse Wheel Zoom (centered under cursor)
   // ------------------------------
@@ -558,6 +611,7 @@ const ErinPattern2D: React.FC = () => {
     setPanX(newPanX);
     setPanY(newPanY);
   };
+
   // ------------------------------
   // 💾 Save JSON (includes hit circle settings)
   // ------------------------------
@@ -590,6 +644,7 @@ const ErinPattern2D: React.FC = () => {
     a.click();
     URL.revokeObjectURL(url);
   };
+
   // cells: Map<string, string> where value is the fill color hex
   const erinExportRings = useMemo(
     () => Array.from(cells.values()).map((hex) => ({ colorHex: hex })),
@@ -608,6 +663,7 @@ const ErinPattern2D: React.FC = () => {
     }),
     [],
   );
+
   // ------------------------------
   // ✅ Touch / Pinch Zoom (single canonical implementation)
   // ------------------------------
@@ -682,6 +738,7 @@ const ErinPattern2D: React.FC = () => {
     setIsPainting(false);
     panStartRef.current = null;
   };
+
   // ------------------------------
   // Draggable helper hook
   // ------------------------------
@@ -694,6 +751,7 @@ const ErinPattern2D: React.FC = () => {
 
     useEffect(() => {
       setPos(initial);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initial.top, initial.left, resetKey]);
 
     const startDrag = (x: number, y: number) => {
@@ -759,7 +817,6 @@ const ErinPattern2D: React.FC = () => {
     return { pos, handleMouseDown, handleTouchStart };
   };
 
-  // 🧰 Panels
   // 🧰 Panels (mobile-safe positioning)
   const safeTop = Math.min(window.innerHeight - 180, 80); // prevent bottom overflow
   const safeLeft = Math.min(window.innerWidth - 100, 16);
@@ -959,9 +1016,35 @@ const ErinPattern2D: React.FC = () => {
         {/* ⚙️ CONTROL PANEL */}
         {showControls && (
           <div style={controlPanel}>
+            {/* Columns (clamped + persisted) */}
+            <div style={sliderRow}>
+              <label style={sliderLabel}>Columns</label>
+              <input
+                type="number"
+                value={Number(cols)}
+                step={1}
+                min={1}
+                max={limits.MAX_COLS}
+                onChange={(e) => onColsChange(Number(e.target.value))}
+                style={numInput}
+              />
+            </div>
+
+            {/* Rows (clamped + persisted) */}
+            <div style={sliderRow}>
+              <label style={sliderLabel}>Rows</label>
+              <input
+                type="number"
+                value={Number(rows)}
+                step={1}
+                min={1}
+                max={limits.MAX_ROWS}
+                onChange={(e) => onRowsChange(Number(e.target.value))}
+                style={numInput}
+              />
+            </div>
+
             {[
-              ["Columns", cols, setCols, 1, 100, 1],
-              ["Rows", rows, setRows, 1, 100, 1],
               ["Major Axis", majorAxis, setMajorAxis, 5, 150, 0.01],
               ["Minor Axis", minorAxis, setMinorAxis, 5, 150, 0.01],
               ["Wire Diameter", wireD, setWireD, 1, 60, 0.01],
@@ -972,14 +1055,7 @@ const ErinPattern2D: React.FC = () => {
               ["Offset X", offsetX, setOffsetX, -500, 500, 0.1],
               ["Offset Y", offsetY, setOffsetY, -500, 500, 0.1],
               ["Scale", scale, setScale, 0.1, 3, 0.001],
-              [
-                "Hit Radius",
-                hitRadiusFactor,
-                setHitRadiusFactor,
-                0.05,
-                1,
-                0.01,
-              ],
+              ["Hit Radius", hitRadiusFactor, setHitRadiusFactor, 0.05, 1, 0.01],
               ["Hit Offset X", hitOffsetX, setHitOffsetX, -20, 20, 0.1],
               ["Hit Offset Y", hitOffsetY, setHitOffsetY, -20, 20, 0.1],
             ].map(([label, val, setter, min, max, step], idx) => (
