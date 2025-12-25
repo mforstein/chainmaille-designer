@@ -54,7 +54,7 @@ const pushHistory = () => {};
 // ======================================================
 // COLOR PALETTE
 // ======================================================
-const PALETTE: string[] = [
+const DEFAULT_PALETTE: string[] = [
   "#000000",
   "#1f2937",
   "#6b7280",
@@ -80,6 +80,284 @@ const PALETTE: string[] = [
   "#f973c5",
   "#7c2d12",
 ];
+
+// ======================================================
+// COLOR PALETTE (user-editable + persisted)
+// ======================================================
+const COLOR_PALETTE_KEY = "freeform.colorPalette.v1";
+const SAVED_COLOR_PALETTES_KEY = "freeform.savedColorPalettes.v1";
+
+type SavedColorPalettes = Record<string, string[]>;
+
+
+function hex2(n: number) {
+  return n.toString(16).padStart(2, "0");
+}
+function normalizeColor6(hex: string): string {
+  const p = parseHexColor(hex);
+  return p?.rgb ?? "#ffffff"; // always #rrggbb
+}
+function parseHexColor(hex: string): { rgb: string; alpha255: number } | null {
+  const h = hex.trim();
+  const m6 = /^#([0-9a-fA-F]{6})$/.exec(h);
+  if (m6) return { rgb: `#${m6[1].toLowerCase()}`, alpha255: 255 };
+  const m8 = /^#([0-9a-fA-F]{8})$/.exec(h);
+  if (m8) return { rgb: `#${m8[1].slice(0, 6).toLowerCase()}`, alpha255: parseInt(m8[1].slice(6, 8), 16) };
+  const m3 = /^#([0-9a-fA-F]{3})$/.exec(h);
+  if (m3) {
+    const r = m3[1][0];
+    const g = m3[1][1];
+    const b = m3[1][2];
+    return { rgb: `#${r}${r}${g}${g}${b}${b}`.toLowerCase(), alpha255: 255 };
+  }
+  return null;
+}
+function safeUUID(): string {
+  const c: any = typeof crypto !== "undefined" ? crypto : null;
+  if (c?.randomUUID) return c.randomUUID();
+
+  const bytes = new Uint8Array(16);
+  if (c?.getRandomValues) c.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = (Math.random() * 256) | 0;
+
+  // RFC4122 v4
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+  const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0"));
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex
+    .slice(8, 10)
+    .join("")}-${hex.slice(10).join("")}`;
+}
+function toHex8(rgb: string, alpha255: number): string {
+  const p = parseHexColor(rgb);
+  const base = p?.rgb ?? "#000000";
+  const a = Math.max(0, Math.min(255, Math.round(alpha255)));
+  return `${base}${hex2(a)}`;
+}
+
+function loadColorPalette(): string[] {
+  try {
+    const raw = localStorage.getItem(COLOR_PALETTE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    if (Array.isArray(parsed) && parsed.every((x) => typeof x === "string")) {
+      return parsed as string[];
+    }
+  } catch {
+    // ignore
+  }
+  return [...DEFAULT_PALETTE];
+}
+
+function saveColorPalette(palette: string[]) {
+  try {
+    localStorage.setItem(COLOR_PALETTE_KEY, JSON.stringify(palette));
+  } catch {
+    // ignore
+  }
+}
+
+function loadSavedColorPalettes(): SavedColorPalettes {
+  try {
+    const raw = localStorage.getItem(SAVED_COLOR_PALETTES_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const out: SavedColorPalettes = {};
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        if (Array.isArray(v) && v.every((x) => typeof x === "string")) out[k] = v as string[];
+      }
+      return out;
+    }
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+function saveSavedColorPalettes(palettes: SavedColorPalettes) {
+  try {
+    localStorage.setItem(SAVED_COLOR_PALETTES_KEY, JSON.stringify(palettes));
+  } catch {
+    // ignore
+  }
+}
+
+type PaletteColorPickerState = {
+  index: number;
+  rgb: string;
+  alpha255: number;
+};
+
+function LongPressColorSwatch(props: {
+  color: string;
+  active: boolean;
+  onClick: () => void;
+  onLongPress: () => void;
+}) {
+  const { color, active, onClick, onLongPress } = props;
+  const timerRef = useRef<number | null>(null);
+  const longPressedRef = useRef(false);
+
+  const clear = () => {
+    if (timerRef.current != null) window.clearTimeout(timerRef.current);
+    timerRef.current = null;
+  };
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    longPressedRef.current = false;
+    clear();
+    timerRef.current = window.setTimeout(() => {
+      longPressedRef.current = true;
+      onLongPress();
+    }, 420);
+  };
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    const wasLong = longPressedRef.current;
+    clear();
+    if (!wasLong) onClick();
+  };
+
+  const onPointerCancel = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    clear();
+  };
+
+  return (
+    <button
+      type="button"
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
+      style={{
+        width: 22,
+        height: 22,
+        borderRadius: 6,
+        border: active ? "2px solid #f9fafb" : "1px solid rgba(15,23,42,0.9)",
+        background: color,
+        cursor: "pointer",
+        padding: 0,
+      }}
+      title={active ? "Active color" : "Click: select • Hold: edit"}
+    />
+  );
+}
+
+function PaletteColorPickerModal(props: {
+  state: PaletteColorPickerState;
+  onChange: (next: PaletteColorPickerState) => void;
+  onCancel: () => void;
+  onApply: () => void;
+}) {
+  const { state, onChange, onCancel, onApply } = props;
+  const hex8 = toHex8(state.rgb, state.alpha255);
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.45)",
+        display: "grid",
+        placeItems: "center",
+        zIndex: 9999,
+      }}
+      onMouseDown={onCancel}
+    >
+      <div
+        style={{
+          width: 320,
+          borderRadius: 16,
+          background: "#0b1220",
+          border: "1px solid rgba(255,255,255,0.08)",
+          boxShadow: "0 16px 45px rgba(0,0,0,0.6)",
+          padding: 14,
+          color: "#f8fafc",
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10 }}>Choose color</div>
+
+        <div style={{ display: "grid", gap: 10 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <input
+              type="color"
+              value={state.rgb}
+              onChange={(e) => onChange({ ...state, rgb: e.target.value })}
+              style={{ width: 54, height: 36, border: "none", background: "transparent" }}
+            />
+            <div style={{ display: "grid", gap: 4, flex: 1 }}>
+              <div style={{ fontSize: 12, opacity: 0.85 }}>Alpha</div>
+              <input
+                type="range"
+                min={0}
+                max={255}
+                value={state.alpha255}
+                onChange={(e) => onChange({ ...state, alpha255: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+
+          <label style={{ display: "grid", gap: 6, fontSize: 12, opacity: 0.9 }}>
+            Hex (#RRGGBBAA)
+            <input
+              value={hex8}
+              onChange={(e) => {
+                const p = parseHexColor(e.target.value);
+                if (!p) return;
+                onChange({ ...state, rgb: p.rgb, alpha255: p.alpha255 });
+              }}
+              style={{
+                padding: 8,
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: "rgba(255,255,255,0.06)",
+                color: "#f8fafc",
+                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+              }}
+            />
+          </label>
+
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={onCancel}
+              style={{
+                padding: "8px 10px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.14)",
+                background: "transparent",
+                color: "#f8fafc",
+                cursor: "pointer",
+                fontSize: 12,
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onApply}
+              style={{
+                padding: "8px 10px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.14)",
+                background: "#f8fafc",
+                color: "#0b1220",
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 800,
+              }}
+            >
+              Apply
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ======================================================
 // SELECTION TYPES
@@ -306,6 +584,48 @@ const FreeformChainmail2D: React.FC = () => {
 
   // ✅ DEFAULT COLOR OF RINGS SHOULD BE WHITE
   const [activeColor, setActiveColor] = useState("#ffffff");
+
+  // ====================================================
+  // COLOR PALETTE (editable + persisted)
+  // ====================================================
+  const [colorPalette, setColorPalette] = useState<string[]>(() => loadColorPalette());
+  const [savedColorPalettes, setSavedColorPalettes] = useState<SavedColorPalettes>(() => loadSavedColorPalettes());
+  const [paletteManagerOpen, setPaletteManagerOpen] = useState(false);
+  const [paletteName, setPaletteName] = useState<string>("");
+  const [selectedSavedPalette, setSelectedSavedPalette] = useState<string>("");
+  const [pickerState, setPickerState] = useState<PaletteColorPickerState | null>(null);
+
+  useEffect(() => {
+    saveColorPalette(colorPalette);
+  }, [colorPalette]);
+
+  useEffect(() => {
+    saveSavedColorPalettes(savedColorPalettes);
+  }, [savedColorPalettes]);
+
+  const openPickerForIndex = useCallback(
+    (index: number) => {
+      const current = colorPalette[index] ?? "#ffffffff";
+      const parsed = parseHexColor(current) ?? { rgb: "#ffffff", alpha255: 255 };
+      setPickerState({ index, rgb: parsed.rgb, alpha255: parsed.alpha255 });
+    },
+    [colorPalette],
+  );
+
+const applyPicker = useCallback(() => {
+  if (!pickerState) return;
+
+  const next = [...colorPalette];
+
+  // ✅ store as #RRGGBB so RingRenderer/Three always understands it
+  const normalized = normalizeColor6(toHex8(pickerState.rgb, pickerState.alpha255));
+  next[pickerState.index] = normalized;
+
+  setColorPalette(next);
+  setActiveColor(normalized);
+  setPickerState(null);
+}, [pickerState, colorPalette]);
+
 
   const [eraseMode, setEraseMode] = useState(false);
   const [showControls, setShowControls] = useState(false);
@@ -620,8 +940,7 @@ const FreeformChainmail2D: React.FC = () => {
     const out: BOMRing[] = [];
     rings.forEach((r: PlacedRing) => {
       const id = `${r.row}:${r.col}`;
-      const colorHex = (r as any).color ?? "#ffffff";
-
+ const colorHex = normalizeColor6((r as any).color ?? "#ffffff");
       out.push({
         id,
         supplier,
@@ -767,7 +1086,7 @@ const FreeformChainmail2D: React.FC = () => {
       const tiltDeg = r.row % 2 === 0 ? angleIn : angleOut;
       const tiltRad = THREE.MathUtils.degToRad(tiltDeg);
 
-      const color = (r as any).color ?? "#ffffff";
+const color = normalizeColor6((r as any).color ?? "#ffffff");
 
       arr.push({
         id: `${r.row},${r.col}`,
@@ -1337,21 +1656,23 @@ const FreeformChainmail2D: React.FC = () => {
         toDelete.forEach((k) => mapCopy.delete(k));
       } else {
         // Add rings
+        // Add rings
         for (const cell of cells) {
           const { ring, newCluster } = resolvePlacement(
             cell.col,
             cell.row,
             mapCopy,
             clusterId,
-            activeColorRef.current,
+            eraseMode ? "#000000" : normalizeColor6(activeColorRef.current),
             settings,
           );
+
           clusterId = newCluster;
 
           const key = `${ring.row}-${ring.col}`;
           mapCopy.set(key, ring);
         }
-      }
+              }
 
       setRings(mapCopy);
       setnextClusterId(clusterId);
@@ -1624,124 +1945,116 @@ const FreeformChainmail2D: React.FC = () => {
     finalizeSelection,
   ]);
 
-  // ===============================
-  // CLICK → place / erase nearest ring
-  // (kept intact; selection tool ignores click placement)
-  // ===============================
-  const handleClick = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement>) => {
-      if (panMode) return;
-      if (selectionMode !== "none") return; // selection tool uses drag, not click
+// ===============================
+// CLICK → place / erase nearest ring
+// (kept intact; selection tool ignores click placement)
+// ===============================
+const handleClick = useCallback(
+  (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (panMode) return;
+    if (selectionMode !== "none") return; // selection tool uses drag, not click
 
-      const { sx, sy } = getCanvasPoint(e);
-      const { lx, ly } = screenToWorld(sx, sy);
+    const { sx, sy } = getCanvasPoint(e);
+    const { lx, ly } = screenToWorld(sx, sy);
 
-      // ✅ Debug markers ONLY when diagnostics is enabled
-      if (showDiagnostics) {
-        addDebugMarker(lx, ly);
-      }
+    // ✅ Debug markers ONLY when diagnostics is enabled
+    if (showDiagnostics) {
+      addDebugMarker(lx, ly);
+    }
 
-      const adjLx = lx - circleOffsetX;
-      const adjLy = ly - circleOffsetY;
+    const adjLx = lx - circleOffsetX;
+    const adjLy = ly - circleOffsetY;
 
-      const { row: approxRow, col: approxCol } = logicalToRowColApprox(
-        adjLx,
-        adjLy,
-      );
+    const { row: approxRow, col: approxCol } = logicalToRowColApprox(adjLx, adjLy);
 
-      const effectiveInnerRadiusMm = getEffectiveInnerRadiusMm(approxRow);
+    const effectiveInnerRadiusMm = getEffectiveInnerRadiusMm(approxRow);
+    const baseCircleRmm = effectiveInnerRadiusMm;
 
-      const baseCircleRmm = effectiveInnerRadiusMm; // ← FIX
+    const hitRadiusPx =
+      projectRingRadiusPx(adjLx, adjLy, baseCircleRmm * circleScale) * 1.05;
 
-      const hitRadiusPx =
-        projectRingRadiusPx(adjLx, adjLy, baseCircleRmm * circleScale) * 1.05;
+    let bestRow = approxRow;
+    let bestCol = approxCol;
+    let bestDist2 = Number.POSITIVE_INFINITY;
+    let found = false;
 
-      let bestRow = approxRow;
-      let bestCol = approxCol;
-      let bestDist2 = Number.POSITIVE_INFINITY;
-      let found = false;
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        const row = approxRow + dr;
+        const col = approxCol + dc;
 
-      for (let dr = -1; dr <= 1; dr++) {
-        for (let dc = -1; dc <= 1; dc++) {
-          const row = approxRow + dr;
-          const col = approxCol + dc;
+        const { x: gx, y: gy } = rcToLogical(row, col);
+        const { wx, wy } = logicalToWorld(gx, gy);
+        const { sx: ringSx, sy: ringSy } = worldToScreen(wx, wy);
 
-          const { x: gx, y: gy } = rcToLogical(row, col);
-          const { wx, wy } = logicalToWorld(gx, gy);
-          const { sx: ringSx, sy: ringSy } = worldToScreen(wx, wy);
+        const dx = sx - ringSx;
+        const dy = sy - ringSy;
+        const d2 = dx * dx + dy * dy;
 
-          const dx = sx - ringSx;
-          const dy = sy - ringSy;
-          const d2 = dx * dx + dy * dy;
-
-          if (d2 <= hitRadiusPx * hitRadiusPx && d2 < bestDist2) {
-            bestDist2 = d2;
-            bestRow = row;
-            bestCol = col;
-            found = true;
-          }
+        if (d2 <= hitRadiusPx * hitRadiusPx && d2 < bestDist2) {
+          bestDist2 = d2;
+          bestRow = row;
+          bestCol = col;
+          found = true;
         }
       }
+    }
 
-      if (!found) return;
+    if (!found) return;
 
-      const { ring, newCluster } = resolvePlacement(
-        bestCol,
-        bestRow,
-        rings,
-        nextClusterId,
-        eraseMode ? "#000000" : activeColorRef.current,
-        settings,
-      );
-
-      const mapCopy: RingMap = new Map(rings);
-
-      if (eraseMode) {
-        const delKey = [...mapCopy.entries()].find(
-          ([, v]) => v.row === ring.row && v.col === ring.col,
-        )?.[0];
-        if (delKey) mapCopy.delete(delKey);
-      } else {
-        const key = `${ring.row}-${ring.col}`;
-        mapCopy.set(key, ring);
-      }
-
-      setRings(mapCopy);
-      setnextClusterId(newCluster);
-
-      // ✅ Diagnostics log only when enabled
-      if (showDiagnostics) {
-        setDiagLog((prev) => {
-          const line = `lx=${lx.toFixed(3)} ly=${ly.toFixed(3)} row=${bestRow} col=${bestCol}\n`;
-          return (prev || "") + line;
-        });
-      }
-    },
-    [
-      panMode,
-      selectionMode,
-      getCanvasPoint,
-      screenToWorld,
-      addDebugMarker,
-      showDiagnostics,
-      circleOffsetX,
-      circleOffsetY,
-      logicalToRowColApprox,
-      getEffectiveInnerRadiusMm,
-      wireMm,
-      circleScale,
-      projectRingRadiusPx,
-      rcToLogical,
-      logicalToWorld,
-      worldToScreen,
+    const { ring, newCluster } = resolvePlacement(
+      bestCol,
+      bestRow,
       rings,
       nextClusterId,
-      eraseMode,
-      activeColor,
+      eraseMode ? "#000000" : normalizeColor6(activeColorRef.current),
       settings,
-    ],
-  );
+    );
+    const mapCopy: RingMap = new Map(rings);
 
+    if (eraseMode) {
+      const delKey = [...mapCopy.entries()].find(
+        ([, v]) => v.row === ring.row && v.col === ring.col,
+      )?.[0];
+      if (delKey) mapCopy.delete(delKey);
+    } else {
+      const key = `${ring.row}-${ring.col}`;
+      mapCopy.set(key, ring);
+    }
+
+    setRings(mapCopy);
+    setnextClusterId(newCluster);
+
+    // ✅ Diagnostics log only when enabled
+    if (showDiagnostics) {
+      setDiagLog((prev) => {
+        const line = `lx=${lx.toFixed(3)} ly=${ly.toFixed(3)} row=${bestRow} col=${bestCol}\n`;
+        return (prev || "") + line;
+      });
+    }
+  },
+  [
+    panMode,
+    selectionMode,
+    getCanvasPoint,
+    screenToWorld,
+    showDiagnostics,
+    addDebugMarker,
+    circleOffsetX,
+    circleOffsetY,
+    logicalToRowColApprox,
+    getEffectiveInnerRadiusMm,
+    projectRingRadiusPx,
+    circleScale,
+    rcToLogical,
+    logicalToWorld,
+    worldToScreen,
+    rings,
+    nextClusterId,
+    eraseMode,
+    settings,
+  ],
+);
   // ===============================
   // CLEAR / GEOMETRY RESET
   // ===============================
@@ -1818,9 +2131,10 @@ const FreeformChainmail2D: React.FC = () => {
     const storedActive = localStorage.getItem(ACTIVE_SET_KEY);
     if (storedActive) setActiveRingSetId(storedActive);
   }, [reloadRingSets]);
-  useEffect(() => {
-    activeColorRef.current = activeColor;
-  }, [activeColor]);
+useEffect(() => {
+  activeColorRef.current = normalizeColor6(activeColor);
+}, [activeColor]);
+
   useEffect(() => {
     if (!ringSets.length) return;
 
@@ -1851,7 +2165,7 @@ const FreeformChainmail2D: React.FC = () => {
     }
   }, []);
   const saveFreeformProject = useCallback(() => {
-    const id = crypto.randomUUID();
+    const id = safeUUID();
     const name = `Freeform ${new Date().toLocaleString()}`;
 
     // thumbnail from renderer canvas (≈480px wide)
@@ -2220,6 +2534,182 @@ const FreeformChainmail2D: React.FC = () => {
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
         >
+          <div style={{ display: "flex", gap: 6, width: "100%", justifyContent: "space-between" }}>
+            <button
+              type="button"
+              onClick={() => setPaletteManagerOpen((v) => !v)}
+              style={{
+                width: 30,
+                height: 26,
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.16)",
+                background: "rgba(255,255,255,0.06)",
+                color: "#f8fafc",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+              title="Palette manager"
+            >
+              🎨
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setColorPalette([...DEFAULT_PALETTE]);
+                setPaletteManagerOpen(false);
+              }}
+              style={{
+                width: 30,
+                height: 26,
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.16)",
+                background: "rgba(255,255,255,0.06)",
+                color: "#f8fafc",
+                cursor: "pointer",
+                fontSize: 13,
+              }}
+              title="Reset palette"
+            >
+              ↺
+            </button>
+          </div>
+
+          {paletteManagerOpen && (
+            <div
+              style={{
+                width: 196,
+                marginTop: 6,
+                padding: 10,
+                borderRadius: 14,
+                background: "rgba(2,6,23,0.92)",
+                border: "1px solid rgba(255,255,255,0.10)",
+                display: "grid",
+                gap: 8,
+              }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
+            >
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#f8fafc" }}>Saved palettes</div>
+              <select
+                value={selectedSavedPalette}
+                onChange={(e) => setSelectedSavedPalette(e.target.value)}
+                style={{
+                  padding: 8,
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  background: "rgba(255,255,255,0.06)",
+                  color: "#f8fafc",
+                  fontSize: 12,
+                }}
+              >
+                <option value="">(select)</option>
+                {Object.keys(savedColorPalettes)
+                  .sort((a, b) => a.localeCompare(b))
+                  .map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+              </select>
+
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  type="button"
+                  disabled={!selectedSavedPalette || !savedColorPalettes[selectedSavedPalette]}
+                  onClick={() => {
+                    const p = savedColorPalettes[selectedSavedPalette];
+                    if (!p) return;
+                    setColorPalette([...p]);
+                    setPaletteManagerOpen(false);
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: "8px 10px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.14)",
+                    background: "rgba(255,255,255,0.92)",
+                    color: "#0b1220",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: 800,
+                    opacity: !selectedSavedPalette ? 0.6 : 1,
+                  }}
+                >
+                  Load
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedSavedPalette}
+                  onClick={() => {
+                    if (!selectedSavedPalette) return;
+                    const next = { ...savedColorPalettes };
+                    delete next[selectedSavedPalette];
+                    setSavedColorPalettes(next);
+                    setSelectedSavedPalette("");
+                  }}
+                  style={{
+                    width: 58,
+                    padding: "8px 10px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.14)",
+                    background: "transparent",
+                    color: "#f8fafc",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    opacity: !selectedSavedPalette ? 0.6 : 1,
+                  }}
+                >
+                  Del
+                </button>
+              </div>
+
+              <div style={{ height: 1, background: "rgba(255,255,255,0.08)" }} />
+
+              <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#f8fafc" }}>
+                Save as
+                <input
+                  value={paletteName}
+                  onChange={(e) => setPaletteName(e.target.value)}
+                  placeholder="My palette"
+                  style={{
+                    padding: 8,
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.14)",
+                    background: "rgba(255,255,255,0.06)",
+                    color: "#f8fafc",
+                    fontSize: 12,
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={!paletteName.trim()}
+                onClick={() => {
+                  const name = paletteName.trim();
+                  if (!name) return;
+                  setSavedColorPalettes({ ...savedColorPalettes, [name]: [...colorPalette] });
+                  setSelectedSavedPalette(name);
+                }}
+                style={{
+                  padding: "8px 10px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  background: "rgba(255,255,255,0.92)",
+                  color: "#0b1220",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontWeight: 800,
+                  opacity: !paletteName.trim() ? 0.6 : 1,
+                }}
+              >
+                Save current
+              </button>
+              <div style={{ fontSize: 11, opacity: 0.8, color: "#f8fafc" }}>
+                Tip: hold any swatch to edit it.
+              </div>
+            </div>
+          )}
+
           <div
             style={{
               display: "grid",
@@ -2227,30 +2717,30 @@ const FreeformChainmail2D: React.FC = () => {
               gap: 6,
             }}
           >
-            {PALETTE.map((c) => (
-              <button
-                key={c}
-                onClick={() => {
-                  setActiveColor(c);
-                  setEraseMode(false);
-                }}
-                title={c}
-                style={{
-                  width: 22,
-                  height: 22,
-                  borderRadius: 6,
-                  border:
-                    activeColor === c
-                      ? "2px solid #f9fafb"
-                      : "1px solid rgba(15,23,42,0.9)",
-                  background: c,
-                  cursor: "pointer",
-                }}
-              />
+            {colorPalette.map((c, idx) => (
+<LongPressColorSwatch
+  key={`${idx}-${c}`}
+  color={c}
+  active={normalizeColor6(activeColor) === normalizeColor6(c)}
+  onClick={() => {
+    setActiveColor(normalizeColor6(c));
+    setEraseMode(false);
+  }}
+  onLongPress={() => openPickerForIndex(idx)}
+/>
             ))}
           </div>
         </div>
       </DraggablePill>
+      {pickerState && (
+        <PaletteColorPickerModal
+          state={pickerState}
+          onChange={setPickerState}
+          onCancel={() => setPickerState(null)}
+          onApply={applyPicker}
+        />
+      )}
+
       {finalizeOpen && (
         <FinalizeAndExportPanel
           rings={exportRings}
