@@ -46,7 +46,7 @@ export function summarizeByColor(
 
   const entries = Array.from(map.entries())
     .map(([hex, count]) => ({ hex, count }))
-    // stable, but predictable: sort by hex so numbering matches across runs
+    // stable, predictable: sort by hex so numbering matches across runs
     .sort((a, b) => a.hex.localeCompare(b.hex));
 
   const rows: ColorSummary[] = entries.map((e, i) => ({
@@ -88,6 +88,7 @@ export function exportBOMCsv(
   filename = "freeform-bom.csv",
 ) {
   const { rows, total, meta: m } = summarizeByColor(rings, meta);
+
   const lines: string[] = [];
   lines.push(
     [
@@ -100,6 +101,7 @@ export function exportBOMCsv(
       "Material",
     ].join(","),
   );
+
   for (const r of rows) {
     lines.push(
       [
@@ -113,9 +115,11 @@ export function exportBOMCsv(
       ].join(","),
     );
   }
+
   lines.push(
     ["TOTAL", "", total, Math.ceil(total / m.packSize), "", "", ""].join(","),
   );
+
   const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
   downloadBlob(filename, blob);
 }
@@ -144,6 +148,7 @@ export async function exportBOMPng(
   cvs.height = height * scale;
   cvs.style.width = `${width}px`;
   cvs.style.height = `${height}px`;
+
   const ctx = cvs.getContext("2d")!;
   ctx.scale(scale, scale);
 
@@ -168,6 +173,7 @@ export async function exportBOMPng(
   const y0 = headerH - 18;
   ctx.fillStyle = "rgba(255,255,255,0.2)";
   roundRect(ctx, padding - 6, y0, width - padding * 2 + 12, 28, 8, true, false);
+
   ctx.fillStyle = m.textColor;
   ctx.font =
     "bold 12px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
@@ -183,6 +189,7 @@ export async function exportBOMPng(
   ctx.font =
     "12px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial";
   let y = headerH + 4;
+
   rows.forEach((r, i) => {
     // alternating row bg
     if (i % 2 === 0) {
@@ -198,6 +205,7 @@ export async function exportBOMPng(
         false,
       );
     }
+
     // swatch
     ctx.fillStyle = r.hex;
     roundRect(
@@ -214,11 +222,12 @@ export async function exportBOMPng(
     ctx.fillStyle = m.textColor;
     drawRow(ctx, padding, y, swatch, {
       num: String(r.number),
-      color: "", // swatch only
+      color: "",
       hex: r.hex.toUpperCase(),
       count: String(r.count),
       packs: String(r.packs),
     });
+
     y += rowH;
   });
 
@@ -297,11 +306,7 @@ export function openBOMPrintWindow(
 </body>
 </html>`;
 
-  const w = window.open(
-    "",
-    "_blank",
-    "noopener,noreferrer,width=920,height=700",
-  );
+  const w = window.open("", "_blank", "noopener,noreferrer,width=920,height=700");
   if (!w) return;
   w.document.open();
   w.document.write(html);
@@ -314,18 +319,12 @@ function drawRow(
   x: number,
   baselineY: number,
   swatch: number,
-  data: {
-    num: string;
-    color: string;
-    hex: string;
-    count: string;
-    packs: string;
-  },
+  data: { num: string; color: string; hex: string; count: string; packs: string },
 ) {
   const colX = {
     num: x,
     sw: x + 44,
-    hex: x + 44 + swatch + 16 + 140, // after swatch + a little padding + “Color” col width
+    hex: x + 44 + swatch + 16 + 140,
     count: x + 44 + swatch + 16 + 360,
     packs: x + 44 + swatch + 16 + 460,
   };
@@ -371,7 +370,6 @@ function downloadBlob(filename: string, data: Blob) {
 }
 
 function escapeHtml(s: string) {
-  // Order matters: & first to avoid double-escaping
   return s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")

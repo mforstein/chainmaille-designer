@@ -8,16 +8,22 @@ import React, {
   useState,
   forwardRef,
   useImperativeHandle,
+  useMemo,
 } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import SpriteText from "three-spritetext";
 import type { OverlayState } from "../components/ImageOverlayPanel";
+import RingRendererInstanced from "./RingRendererInstanced";
 
 // ============================================================
 // Utility Constants & Conversions
 // ============================================================
 const INCH_TO_MM = 25.4;
+
+// If rings are above this threshold, use instanced renderer.
+// Tune this number if you want; 5k is a safe default for torus-per-mesh.
+const LARGE_THRESHOLD = 5000;
 
 export function parseInchFractionToInches(v: string | number): number {
   if (typeof v === "number") return v;
@@ -87,6 +93,9 @@ export type Ring = {
   tilt?: number; // degrees (optional)
   tiltRad?: number; // radians (preferred)
 
+  // Optional per-ring color (Freeform provides this; Tuner paint system uses paint map)
+  color?: string;
+
   _chartLabel?: SpriteText;
 };
 
@@ -148,6 +157,9 @@ export type RingRendererHandle = {
   getCameraZ?: () => number;
   getCamera?: () => THREE.PerspectiveCamera | null;
   getDomRect?: () => DOMRect | null;
+
+  // ✅ For export / screenshot
+  getCanvas?: () => HTMLCanvasElement | null;
 };
 
 // ============================================================
@@ -211,6 +223,22 @@ function rgbToHex(r: number, g: number, b: number) {
   return `#${to(r)}${to(g)}${to(b)}`;
 }
 
+function normalizeColor6(hex: string): string {
+  const h = (hex || "").trim().toLowerCase();
+  const m6 = /^#([0-9a-f]{6})$/.exec(h);
+  if (m6) return `#${m6[1]}`;
+  const m8 = /^#([0-9a-f]{8})$/.exec(h);
+  if (m8) return `#${m8[1].slice(0, 6)}`;
+  const m3 = /^#([0-9a-f]{3})$/.exec(h);
+  if (m3) {
+    const r = m3[1][0];
+    const g = m3[1][1];
+    const b = m3[1][2];
+    return `#${r}${r}${g}${g}${b}${b}`;
+  }
+  return "#ffffff";
+}
+
 // ============================================================
 // Fit camera to group (keeps panel from “disappearing” when scale changes)
 // - Only runs when NOT using externalViewState
@@ -230,7 +258,6 @@ function fitCameraToObject(
   const center = new THREE.Vector3();
   box.getCenter(center);
 
-  // If everything is at a point, keep defaults
   const maxDim = Math.max(size.x, size.y, size.z);
   if (!Number.isFinite(maxDim) || maxDim <= 1e-6) {
     controls.target.copy(center);
@@ -245,7 +272,6 @@ function fitCameraToObject(
 
   controls.target.copy(center);
 
-  // Camera stays on +Z axis for “2D-ish” feel; distance is computed to fit
   camera.position.set(center.x, center.y, center.z + dist);
   camera.near = Math.max(0.01, dist / 5000);
   camera.far = Math.max(100000, dist * 20);
@@ -255,10 +281,81 @@ function fitCameraToObject(
 }
 
 // ============================================================
-// MAIN COMPONENT
+// Error boundary for safe instanced/non-instanced fallback
+// (prevents “blank screen” when instanced renderer throws)
 // ============================================================
-const RingRenderer = forwardRef<RingRendererHandle, Props>(
-  function RingRenderer(
+class RingRendererErrorBoundary extends React.Component<
+  {
+    onError: (err: any) => void;
+    fallback: React.ReactNode;
+    children: React.ReactNode;
+  },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(err: any) {
+    try {
+      this.props.onError(err);
+    } catch {}
+  }
+
+  render() {
+    if (this.state.hasError) return this.props.fallback;
+    return this.props.children;
+  }
+}
+
+// ============================================================
+// WRAPPER COMPONENT (safe large/small switch without breaking hooks)
+// ============================================================
+const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer(
+  props,
+  ref,
+) {
+  const useInstanced = (props?.rings?.length ?? 0) >= LARGE_THRESHOLD;
+
+  // If instanced ever fails, permanently fall back for this mount.
+  const [instancedFailed, setInstancedFailed] = useState(false);
+
+  const shouldUseInstanced = useInstanced && !instancedFailed;
+
+  // IMPORTANT: do NOT put hooks behind conditionals. We delegate to two different components.
+  if (shouldUseInstanced) {
+    return (
+      <RingRendererErrorBoundary
+        onError={(err) => {
+          console.warn(
+            "[RingRenderer] Instanced renderer failed; falling back to non-instanced.",
+            err,
+          );
+          setInstancedFailed(true);
+        }}
+        fallback={<RingRendererNonInstanced {...props} ref={ref} />}
+      >
+        <RingRendererInstanced
+          {...(props as any)}
+          ref={ref as any}
+          // Instanced renderer should manage internally using the same props.
+        />
+      </RingRendererErrorBoundary>
+    );
+  }
+
+  return <RingRendererNonInstanced {...props} ref={ref} />;
+});
+
+export default RingRenderer;
+
+// ============================================================
+// NON-INSTANCED RENDERER (all features preserved)
+// ============================================================
+const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
+  function RingRendererNonInstanced(
     {
       rings,
       params,
@@ -314,8 +411,14 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
     const controlsRef = useRef<OrbitControls | null>(null);
+
     const meshesRef = useRef<THREE.Mesh[]>([]);
     const groupRef = useRef<THREE.Group | null>(null);
+
+    // For accurate picking & fast lookup
+    const meshByKeyRef = useRef<Map<string, THREE.Mesh>>(new Map());
+    const spatialIndexRef = useRef<Map<string, number[]>>(new Map());
+    const spatialCellSizeRef = useRef<number>(safeParams.centerSpacing ?? 7.5);
 
     const [localPaintMode, setLocalPaintMode] = useState(initialPaintMode);
     const [localEraseMode, setLocalEraseMode] = useState(initialEraseMode);
@@ -340,7 +443,6 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
       eraseModeRef.current = localEraseMode;
     }, [localEraseMode]);
 
-    // ✅ IMPORTANT: do NOT set OrbitControls pan/rotate here (syncControlsButtons owns that)
     useEffect(() => {
       lockRef.current = rotationLocked;
     }, [rotationLocked]);
@@ -355,6 +457,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
 
     useEffect(() => {
       paramsRef.current = safeParams;
+      spatialCellSizeRef.current = safeParams.centerSpacing ?? 7.5;
     }, [safeParams]);
 
     useEffect(() => {
@@ -365,13 +468,51 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
     const initialTargetRef = useRef(new THREE.Vector3(0, 0, 0));
 
     // ============================================================
+    // Paint batching (prevents huge setState storms during drag)
+    // ============================================================
+    const pendingPaintRef = useRef<Map<string, string | null>>(new Map());
+    const pendingRAFRef = useRef<number | null>(null);
+
+    const flushPendingPaint = () => {
+      if (pendingRAFRef.current != null) {
+        cancelAnimationFrame(pendingRAFRef.current);
+        pendingRAFRef.current = null;
+      }
+
+      if (pendingPaintRef.current.size === 0) return;
+
+      const patch = new Map(pendingPaintRef.current);
+      pendingPaintRef.current.clear();
+
+      setPaint((prev) => {
+        const next = new Map(prev);
+        for (const [k, v] of patch.entries()) {
+          next.set(k, v);
+        }
+        return next;
+      });
+    };
+
+    const queuePaintPatch = (key: string, value: string | null) => {
+      pendingPaintRef.current.set(key, value);
+
+      if (pendingRAFRef.current == null) {
+        pendingRAFRef.current = requestAnimationFrame(() => {
+          pendingRAFRef.current = null;
+          flushPendingPaint();
+        });
+      }
+    };
+
+    // ============================================================
     // Helper — apply current paint map to ring meshes
+    // (optimized: no material.needsUpdate required for color changes)
     // ============================================================
     const applyPaintToMeshes = () => {
       const meshes = meshesRef.current;
       if (!meshes || meshes.length === 0) return;
 
-      const defaultHex = paramsRef.current.ringColor || "#CCCCCC";
+      const defaultHex = normalizeColor6(paramsRef.current.ringColor || "#CCCCCC");
 
       for (const mesh of meshes) {
         const mat = mesh.material as THREE.MeshStandardMaterial;
@@ -381,9 +522,13 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
         const col = mesh.userData.col as number;
         const key = `${row},${col}`;
 
-        const colorHex = paintRef.current.get(key) ?? defaultHex;
+        const colorHex = normalizeColor6(
+          (paintRef.current.get(key) as any) ??
+            (mesh.userData?.color as any) ??
+            defaultHex,
+        );
+
         mat.color.set(colorHex);
-        mat.needsUpdate = true;
       }
     };
 
@@ -394,13 +539,76 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
       const meshes = meshesRef.current;
       if (!meshes || meshes.length === 0) return;
 
-      const defaultHex = paramsRef.current.ringColor || "#CCCCCC";
+      const defaultHex = normalizeColor6(paramsRef.current.ringColor || "#CCCCCC");
       for (const mesh of meshes) {
         const mat = mesh.material as THREE.MeshStandardMaterial;
         if (!mat) continue;
         mat.color.set(defaultHex);
-        mat.needsUpdate = true;
       }
+    };
+
+    // ============================================================
+    // Spatial index build (for accurate & fast nearest-ring picking)
+    // ============================================================
+    const rebuildSpatialIndexFromMeshes = () => {
+      const meshes = meshesRef.current;
+      const cs = Math.max(1e-6, spatialCellSizeRef.current || 7.5);
+      const idx = new Map<string, number[]>();
+
+      // Use mesh positions (already in scene coordinates)
+      for (let i = 0; i < meshes.length; i++) {
+        const m = meshes[i];
+        const cx = Math.floor(m.position.x / cs);
+        const cy = Math.floor(m.position.y / cs);
+        const k = `${cx},${cy}`;
+        const arr = idx.get(k);
+        if (arr) arr.push(i);
+        else idx.set(k, [i]);
+      }
+
+      spatialIndexRef.current = idx;
+    };
+
+    const findNearestMeshByWorldPoint = (wx: number, wy: number) => {
+      const meshes = meshesRef.current;
+      if (!meshes || meshes.length === 0) return null;
+
+      const cs = Math.max(1e-6, spatialCellSizeRef.current || 7.5);
+      const cx = Math.floor(wx / cs);
+      const cy = Math.floor(wy / cs);
+
+      let best: THREE.Mesh | null = null;
+      let bestD2 = Infinity;
+
+      // Search nearby cells (constant-time neighborhood)
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const k = `${cx + dx},${cy + dy}`;
+          const bucket = spatialIndexRef.current.get(k);
+          if (!bucket) continue;
+
+          for (const i of bucket) {
+            const m = meshes[i];
+            const dx2 = m.position.x - wx;
+            const dy2 = m.position.y - wy;
+            const d2 = dx2 * dx2 + dy2 * dy2;
+            if (d2 < bestD2) {
+              bestD2 = d2;
+              best = m;
+            }
+          }
+        }
+      }
+
+      // Optional: ignore if very far from any ring center (prevents accidental paints in void)
+      // Use a threshold tied to ring outer radius and spacing.
+      const ID = paramsRef.current.innerDiameter ?? safeParams.innerDiameter;
+      const WD = paramsRef.current.wireDiameter ?? safeParams.wireDiameter;
+      const ringOuter = ID / 2 + WD; // approx outer radius
+      const threshold = Math.max(ringOuter * 1.35, cs * 0.55);
+      if (best && bestD2 <= threshold * threshold) return best;
+
+      return null;
     };
 
     // ============================================================
@@ -459,7 +667,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
       renderer.setClearColor(safeParams.bgColor, 1);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 
-      // ✅ Fix “colors not showing / looks wrong”: correct color pipeline
+      // ✅ Correct color pipeline
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.25;
@@ -467,7 +675,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
       mount.appendChild(renderer.domElement);
       rendererRef.current = renderer;
 
-      // Lights (keep strong enough for MeshStandardMaterial colors to read)
+      // Lights
       scene.add(new THREE.AmbientLight(0xffffff, 0.85));
 
       const dir = new THREE.DirectionalLight(0xffffff, 1.15);
@@ -484,11 +692,22 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
       controls.dampingFactor = 0.08;
       controls.target.copy(initialTargetRef.current);
 
-      // ✅ SINGLE SOURCE OF TRUTH for OrbitControls mappings (runs every frame)
+      // ✅ Sync OrbitControls mappings ONLY when state actually changes
+      let lastSig = "";
       const syncControlsButtons = () => {
         const locked = lockRef.current;
         const panAllowed = panEnabledRef.current;
         const painting = paintModeRef.current;
+
+        const sig = `${locked ? 1 : 0}|${panAllowed ? 1 : 0}|${
+          painting ? 1 : 0
+        }`;
+        if (sig === lastSig) {
+          // Still need damping updates
+          controls.update();
+          return;
+        }
+        lastSig = sig;
 
         // Always allow zoom
         controls.enableZoom = true;
@@ -500,7 +719,6 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
           // ✅ Pan allowed when paint is OFF and panEnabled is true
           controls.enablePan = panAllowed && !painting;
 
-          // Always valid enums — behavior controlled elsewhere
           controls.mouseButtons = {
             LEFT: THREE.MOUSE.PAN,
             MIDDLE: THREE.MOUSE.DOLLY,
@@ -552,17 +770,18 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
 
       // ============================================================
       // Pointer interaction
-      // 1) ALWAYS emit a world coordinate event for diagnostics + placement
-      // 2) Only paint/erase if you actually hit a ring mesh
       // ============================================================
       const raycaster = new THREE.Raycaster();
       const ndc = new THREE.Vector2();
       let isPainting = false;
 
-      const emitWorldClick = (clientX: number, clientY: number) => {
+      // For skipping redundant paint on drag
+      const lastPaintKeyRef = { current: "" };
+
+      const computeWorldPointOnZ0 = (clientX: number, clientY: number) => {
         const cam = cameraRef.current;
         const rend = rendererRef.current;
-        if (!cam || !rend) return;
+        if (!cam || !rend) return null;
 
         const rect = rend.domElement.getBoundingClientRect();
         ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
@@ -570,11 +789,19 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
 
         raycaster.setFromCamera(ndc, cam);
 
-        // Intersect against Z=0 plane to get stable world point anywhere
         const planeZ = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
         const worldPoint = new THREE.Vector3();
-        raycaster.ray.intersectPlane(planeZ, worldPoint);
+        const hit = raycaster.ray.intersectPlane(planeZ, worldPoint);
+        if (!hit) return null;
 
+        return worldPoint;
+      };
+
+      const emitWorldClick = (clientX: number, clientY: number) => {
+        const worldPoint = computeWorldPointOnZ0(clientX, clientY);
+        if (!worldPoint) return null;
+
+        // Note: we invert Y for your upstream coordinate convention
         window.dispatchEvent(
           new CustomEvent("ring-click", {
             detail: {
@@ -587,47 +814,51 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
         return worldPoint;
       };
 
-      const tryPaintRingAt = (clientX: number, clientY: number) => {
+      const pickMeshAt = (clientX: number, clientY: number) => {
         const cam = cameraRef.current;
         const rend = rendererRef.current;
-        if (!cam || !rend) return;
+        if (!cam || !rend) return null;
 
         const rect = rend.domElement.getBoundingClientRect();
         ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
         ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-
         raycaster.setFromCamera(ndc, cam);
 
+        // First try a true geometry hit
         const hits = raycaster.intersectObjects(meshesRef.current, false);
-        if (hits.length === 0) return;
+        if (hits.length > 0) return hits[0].object as THREE.Mesh;
 
-        const mesh = hits[0].object as THREE.Mesh;
+        // If we missed (common when clicking the torus hole), pick nearest center on Z=0 plane
+        const wp = computeWorldPointOnZ0(clientX, clientY);
+        if (!wp) return null;
+
+        return findNearestMeshByWorldPoint(wp.x, wp.y);
+      };
+
+      const applyPaintToMesh = (mesh: THREE.Mesh) => {
         const row = mesh.userData.row as number;
         const col = mesh.userData.col as number;
         if (row == null || col == null) return;
 
         const key = `${row},${col}`;
+        if (lastPaintKeyRef.current === key) return;
+        lastPaintKeyRef.current = key;
+
         const mat = mesh.material as THREE.MeshStandardMaterial;
         if (!mat) return;
 
-        setPaint((prev) => {
-          const next = new Map(prev);
-
-          if (eraseModeRef.current) {
-            next.set(key, null);
-            mat.color.set(paramsRef.current.ringColor || "#CCCCCC");
-          } else {
-            const c =
-              activeColorRef.current ||
-              paramsRef.current.ringColor ||
-              "#CCCCCC";
-            next.set(key, c);
-            mat.color.set(c);
-          }
-
-          mat.needsUpdate = true;
-          return next;
-        });
+        if (eraseModeRef.current) {
+          // "null" means revert to default in your paint system
+          const def = normalizeColor6(paramsRef.current.ringColor || "#CCCCCC");
+          mat.color.set(def);
+          queuePaintPatch(key, null);
+        } else {
+          const c = normalizeColor6(
+            activeColorRef.current || paramsRef.current.ringColor || "#CCCCCC",
+          );
+          mat.color.set(c);
+          queuePaintPatch(key, c);
+        }
       };
 
       const onPointerDown = (e: PointerEvent) => {
@@ -640,14 +871,18 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
         if (!lockRef.current) return;
         if (!paintModeRef.current) return;
 
+        // Prevent OrbitControls from interpreting the drag as a pan
         e.preventDefault();
+
         isPainting = true;
+        lastPaintKeyRef.current = "";
 
         try {
           (renderer.domElement as any).setPointerCapture?.(e.pointerId);
         } catch {}
 
-        tryPaintRingAt(e.clientX, e.clientY);
+        const mesh = pickMeshAt(e.clientX, e.clientY);
+        if (mesh) applyPaintToMesh(mesh);
       };
 
       const onPointerMove = (e: PointerEvent) => {
@@ -656,22 +891,37 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
         if (!paintModeRef.current) return;
 
         e.preventDefault();
-        tryPaintRingAt(e.clientX, e.clientY);
+
+        const mesh = pickMeshAt(e.clientX, e.clientY);
+        if (mesh) applyPaintToMesh(mesh);
       };
 
       const onPointerUp = (e: PointerEvent) => {
         isPainting = false;
+        lastPaintKeyRef.current = "";
         try {
           (renderer.domElement as any).releasePointerCapture?.(e.pointerId);
         } catch {}
+
+        // Flush batched paint immediately at end of stroke
+        flushPendingPaint();
       };
 
-      renderer.domElement.addEventListener("pointerdown", onPointerDown);
-      renderer.domElement.addEventListener("pointermove", onPointerMove);
-      renderer.domElement.addEventListener("pointerup", onPointerUp);
-      renderer.domElement.addEventListener("pointerleave", onPointerUp);
+      // IMPORTANT: passive:false stops Chrome's "Unable to preventDefault inside passive..." spam
+      renderer.domElement.addEventListener("pointerdown", onPointerDown, {
+        passive: false,
+      });
+      renderer.domElement.addEventListener("pointermove", onPointerMove, {
+        passive: false,
+      });
+      renderer.domElement.addEventListener("pointerup", onPointerUp, {
+        passive: false,
+      });
+      renderer.domElement.addEventListener("pointerleave", onPointerUp, {
+        passive: false,
+      });
 
-      // Animate loop
+      // Animate loop (continuous; very light when static)
       let alive = true;
       const animate = () => {
         if (!alive) return;
@@ -688,14 +938,24 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
       return () => {
         alive = false;
 
+        // Flush pending paint to avoid losing last stroke on unmount
+        try {
+          flushPendingPaint();
+        } catch {}
+
         try {
           ro.disconnect();
         } catch {}
 
-        renderer.domElement.removeEventListener("pointerdown", onPointerDown);
-        renderer.domElement.removeEventListener("pointermove", onPointerMove);
-        renderer.domElement.removeEventListener("pointerup", onPointerUp);
-        renderer.domElement.removeEventListener("pointerleave", onPointerUp);
+        try {
+          renderer.domElement.removeEventListener("pointerdown", onPointerDown);
+          renderer.domElement.removeEventListener("pointermove", onPointerMove);
+          renderer.domElement.removeEventListener("pointerup", onPointerUp);
+          renderer.domElement.removeEventListener(
+            "pointerleave",
+            onPointerUp,
+          );
+        } catch {}
 
         try {
           controls.dispose();
@@ -775,6 +1035,8 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
           scene.remove(groupRef.current);
         } catch {}
         meshesRef.current = [];
+        meshByKeyRef.current = new Map();
+        spatialIndexRef.current = new Map();
       }
 
       const group = new THREE.Group();
@@ -783,10 +1045,18 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
       if (!Array.isArray(rings) || rings.length === 0) {
         scene.add(group);
         meshesRef.current = [];
+        meshByKeyRef.current = new Map();
+        spatialIndexRef.current = new Map();
         return;
       }
 
+      // Geometry cache by ID/WD pair (saves memory when many rings share the same dimensions)
+      const geomCache = new Map<string, THREE.TorusGeometry>();
+
       const meshes: THREE.Mesh[] = [];
+      const meshByKey = new Map<string, THREE.Mesh>();
+
+      const defaultHex = normalizeColor6(safeParams.ringColor || "#CCCCCC");
 
       rings.forEach((r) => {
         const ID = r.innerDiameter ?? safeParams.innerDiameter;
@@ -795,9 +1065,14 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
         const ringRadius = ID / 2 + WD / 2;
         const tubeRadius = WD / 2;
 
-        const geom = new THREE.TorusGeometry(ringRadius, tubeRadius, 32, 64);
+        const gKey = `${ringRadius.toFixed(6)}_${tubeRadius.toFixed(6)}`;
+        let geom = geomCache.get(gKey);
+        if (!geom) {
+          geom = new THREE.TorusGeometry(ringRadius, tubeRadius, 32, 64);
+          geomCache.set(gKey, geom);
+        }
 
-        // ✅ Make colors read strongly (and consistently) under toneMapping
+        // Each ring needs its own material for per-ring color in non-instanced mode
         const mat = new THREE.MeshStandardMaterial({
           color: 0xffffff,
           metalness: 0.85,
@@ -811,14 +1086,27 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
             ? r.tiltRad
             : THREE.MathUtils.degToRad(r.tilt ?? 0);
 
+        // Note: Y inverted to match your app’s 2D coordinate convention
         mesh.position.set(r.x, -r.y, r.z ?? 0);
         mesh.rotation.set(0, tiltRad, Math.PI / 2);
 
         mesh.userData.row = r.row;
         mesh.userData.col = r.col;
 
+        // ✅ Store initial color for fast rebuild without a full paint pass
+        const key = `${r.row},${r.col}`;
+        const painted = paintRef.current.get(key);
+        const direct = (r as any)?.color;
+        const colorHex = normalizeColor6(
+          (painted as any) ?? (direct as any) ?? defaultHex,
+        );
+        mesh.userData.color = colorHex;
+        mat.color.set(colorHex);
+
         group.add(mesh);
         meshes.push(mesh);
+
+        meshByKey.set(key, mesh);
 
         // Chart labels preserved
         if ((r as any)._chartLabel) {
@@ -833,8 +1121,13 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
 
       scene.add(group);
       meshesRef.current = meshes;
+      meshByKeyRef.current = meshByKey;
 
-      // Apply paint after building
+      // Build spatial index for picking
+      rebuildSpatialIndexFromMeshes();
+
+      // Apply paint after building (only needed if external paint map differs)
+      // (kept for correctness; cheap for small counts, and rebuilds are rare in non-instanced mode)
       applyPaintToMeshes();
 
       // ✅ Keep panel from “disappearing” after geometry rebuilds (unless externalViewState drives camera)
@@ -854,6 +1147,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
       safeParams.innerDiameter,
       safeParams.wireDiameter,
       safeParams.ringColor,
+      safeParams.centerSpacing,
       externalViewState,
     ]);
 
@@ -951,7 +1245,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
 
         if (a <= 0.01) return null;
 
-        const baseHex = paramsRef.current.ringColor || "#FFFFFF";
+        const baseHex = normalizeColor6(paramsRef.current.ringColor || "#FFFFFF");
         const base = new THREE.Color(baseHex);
         const baseR = Math.round(base.r * 255);
         const baseG = Math.round(base.g * 255);
@@ -966,6 +1260,8 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
         return rgbToHex(outR, outG, outB);
       };
 
+      // Overlay application is inherently "bulk"; do it in one state update
+      // and update materials immediately for responsiveness.
       setPaint((prev) => {
         const next = new Map(prev);
 
@@ -980,10 +1276,10 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
 
           const sampled = sampleAtWorld(wx, wy);
           if (sampled) {
-            next.set(key, sampled);
+            const c = normalizeColor6(sampled);
+            next.set(key, c);
             const mat = mesh.material as THREE.MeshStandardMaterial;
-            mat?.color?.set(sampled);
-            if (mat) mat.needsUpdate = true;
+            mat?.color?.set(c);
           }
         }
 
@@ -1027,7 +1323,6 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
         setRotationLocked(next);
         lockRef.current = next;
 
-        // OrbitControls configuration is applied in syncControlsButtons() every frame
         const ctr = controlsRef.current;
         if (ctr) ctr.update();
       },
@@ -1037,7 +1332,7 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
         paintModeRef.current = on;
       },
 
-      // ✅ IMPORTANT: this must set the REF used by syncControlsButtons()
+      // ✅ IMPORTANT: this must set the REF used by OrbitControls sync
       setPanEnabled: (enabled: boolean) => {
         setPanEnabledState(enabled);
         panEnabledRef.current = enabled;
@@ -1057,6 +1352,15 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
       },
 
       clearPaint: () => {
+        // clear any pending paint patches first
+        try {
+          pendingPaintRef.current.clear();
+          if (pendingRAFRef.current != null) {
+            cancelAnimationFrame(pendingRAFRef.current);
+            pendingRAFRef.current = null;
+          }
+        } catch {}
+
         resetMeshColorsToDefault();
         setPaint(new Map());
       },
@@ -1103,6 +1407,9 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
       getCameraZ: () => cameraRef.current?.position.z ?? initialZRef.current,
       getCamera: () => cameraRef.current ?? null,
 
+      // ✅ Used by Freeform export thumbnail capture
+      getCanvas: () => rendererRef.current?.domElement ?? null,
+
       applyOverlayToRings,
     }));
 
@@ -1122,5 +1429,3 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(
     );
   },
 );
-
-export default RingRenderer;

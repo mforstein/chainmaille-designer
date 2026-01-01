@@ -2,12 +2,7 @@
 
 import { DraggableCompassNav } from "../App";
 import ProjectSaveLoadButtons from "../components/ProjectSaveLoadButtons";
-import React, {
-  useMemo,
-  useState,
-  useRef,
-  useEffect,
-} from "react";
+import React, { useMemo, useState, useRef, useEffect } from "react";
 import {
   getDeviceLimits,
   SAFE_DEFAULT,
@@ -64,10 +59,7 @@ const ErinPattern2D: React.FC = () => {
 
   // --- Device caps & initial dims (persisted + clamped) ---
   const limits = getDeviceLimits();
-  const initDims = useMemo(
-    () => clampPersistedDims("erin", SAFE_DEFAULT),
-    [],
-  );
+  const initDims = useMemo(() => clampPersistedDims("erin", SAFE_DEFAULT), []);
 
   // 🧭 Geometry + transforms
   const [cols, setCols] = useState<number>(
@@ -116,6 +108,10 @@ const ErinPattern2D: React.FC = () => {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const transformRef = useRef<HTMLDivElement | null>(null);
   const interactionRef = useRef<HTMLDivElement | null>(null);
+
+  // ✅ NEW: stable, untransformed container for coordinate math
+  const outerWrapRef = useRef<HTMLDivElement | null>(null);
+
   const [imgDims, setImgDims] = useState({ w: 1920, h: 1080 });
 
   // ------------------------------
@@ -126,12 +122,8 @@ const ErinPattern2D: React.FC = () => {
       const res = await fetch(SETTINGS_URL + `?v=${Date.now()}`);
       if (!res.ok) throw new Error("Settings not found");
       const data = await res.json();
-      setCols(
-        Number.isFinite(data.cols) ? data.cols : defaultSettings.cols,
-      );
-      setRows(
-        Number.isFinite(data.rows) ? data.rows : defaultSettings.rows,
-      );
+      setCols(Number.isFinite(data.cols) ? data.cols : defaultSettings.cols);
+      setRows(Number.isFinite(data.rows) ? data.rows : defaultSettings.rows);
       setMajorAxis(data.majorAxis ?? defaultSettings.majorAxis);
       setMinorAxis(data.minorAxis ?? defaultSettings.minorAxis);
       setWireD(data.wireD ?? defaultSettings.wireD);
@@ -462,13 +454,42 @@ const ErinPattern2D: React.FC = () => {
     imgDims.h,
   ]);
 
-  const screenToCanvas = (clientX: number, clientY: number) => {
-    const canvas = canvasRef.current!;
-    const rect = canvas.getBoundingClientRect();
+  // ------------------------------
+  // ✅ Keep latest values in refs to avoid stale closures (wheel/touch)
+  // ------------------------------
+  const zoomRef = useRef(zoom);
+  const panXRef = useRef(panX);
+  const panYRef = useRef(panY);
 
-    // IMPORTANT: include panX/panY because the whole layer is translated
-    const x = (clientX - rect.left - panX) / zoom;
-    const y = (clientY - rect.top - panY) / zoom;
+  useEffect(() => {
+    zoomRef.current = zoom;
+    panXRef.current = panX;
+    panYRef.current = panY;
+  }, [zoom, panX, panY]);
+
+  // ------------------------------
+  // ✅ Correct coordinate transform (fixes drift after zoom)
+  // IMPORTANT:
+  // - We must compute coords relative to an UNTRANSFORMED container.
+  // - Do NOT use canvas.getBoundingClientRect() here because canvas is inside a scaled/translated layer.
+  // ------------------------------
+  const screenToCanvas = (clientX: number, clientY: number) => {
+    const baseEl = outerWrapRef.current;
+    if (!baseEl) return { x: 0, y: 0 };
+
+    const rect = baseEl.getBoundingClientRect();
+
+    // coords in base (untransformed) screen space
+    const cx = clientX - rect.left;
+    const cy = clientY - rect.top;
+
+    const z = Math.max(1e-6, zoomRef.current);
+    const px = panXRef.current;
+    const py = panYRef.current;
+
+    // invert the CSS transform: translate(pan) then scale(zoom)
+    const x = (cx - px) / z;
+    const y = (cy - py) / z;
 
     return { x, y };
   };
@@ -557,17 +578,6 @@ const ErinPattern2D: React.FC = () => {
   const lastDist = useRef<number | null>(null);
   const pinchStartZoom = useRef<number>(1);
 
-  // keep latest values in refs to avoid stale closures
-  const zoomRef = useRef(zoom);
-  const panXRef = useRef(panX);
-  const panYRef = useRef(panY);
-
-  useEffect(() => {
-    zoomRef.current = zoom;
-    panXRef.current = panX;
-    panYRef.current = panY;
-  }, [zoom, panX, panY]);
-
   // ------------------------------
   // ✅ Handle Canvas Click (paint or erase cell)
   // ------------------------------
@@ -587,23 +597,32 @@ const ErinPattern2D: React.FC = () => {
   };
 
   // ------------------------------
-  // ✅ Mouse Wheel Zoom (centered under cursor)
+  // ✅ Mouse Wheel Zoom (centered under cursor) — FIXED
+  // Uses UNTRANSFORMED outerWrap rect; keeps cursor anchored correctly at any zoom/pan.
   // ------------------------------
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
 
-    const delta = -e.deltaY * 0.0015;
-    const zoomFactor = 1 + delta;
-    const nextZoom = Math.max(0.3, Math.min(5, zoom * zoomFactor));
+    const baseEl = outerWrapRef.current;
+    if (!baseEl) return;
 
-    const rect = (
-      interactionRef.current as HTMLDivElement
-    ).getBoundingClientRect();
+    const rect = baseEl.getBoundingClientRect();
     const cx = e.clientX - rect.left;
     const cy = e.clientY - rect.top;
 
-    const worldX = (cx - panX) / zoom;
-    const worldY = (cy - panY) / zoom;
+    const z = Math.max(1e-6, zoomRef.current);
+    const px = panXRef.current;
+    const py = panYRef.current;
+
+    const delta = -e.deltaY * 0.0015;
+    const zoomFactor = 1 + delta;
+    const nextZoom = Math.max(0.3, Math.min(5, z * zoomFactor));
+
+    // world coordinate under cursor BEFORE zoom
+    const worldX = (cx - px) / z;
+    const worldY = (cy - py) / z;
+
+    // choose new pan so that same world point stays under cursor AFTER zoom
     const newPanX = cx - worldX * nextZoom;
     const newPanY = cy - worldY * nextZoom;
 
@@ -665,11 +684,15 @@ const ErinPattern2D: React.FC = () => {
   );
 
   // ------------------------------
-  // ✅ Touch / Pinch Zoom (single canonical implementation)
+  // ✅ Touch / Pinch Zoom (single canonical implementation) — FIXED
+  // Uses UNTRANSFORMED outerWrap rect; no drift after zoom.
   // ------------------------------
   const handleTouchMove = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
       e.preventDefault();
+
+      const baseEl = outerWrapRef.current;
+      if (!baseEl) return;
 
       const t1 = e.touches[0];
       const t2 = e.touches[1];
@@ -680,7 +703,7 @@ const ErinPattern2D: React.FC = () => {
 
       if (lastDist.current == null) {
         lastDist.current = dist;
-        pinchStartZoom.current = zoom;
+        pinchStartZoom.current = zoomRef.current;
         return;
       }
 
@@ -690,16 +713,23 @@ const ErinPattern2D: React.FC = () => {
         Math.min(5, pinchStartZoom.current * scaleFactor),
       );
 
-      const rect = interactionRef.current!.getBoundingClientRect();
-      const midX = (t1.clientX + t2.clientX) / 2 - rect.left;
-      const midY = (t1.clientY + t2.clientY) / 2 - rect.top;
+      const rect = baseEl.getBoundingClientRect();
+      const midClientX = (t1.clientX + t2.clientX) / 2;
+      const midClientY = (t1.clientY + t2.clientY) / 2;
 
-      const worldX = (midX - panX) / zoom;
-      const worldY = (midY - panY) / zoom;
+      const cx = midClientX - rect.left;
+      const cy = midClientY - rect.top;
+
+      const z = Math.max(1e-6, zoomRef.current);
+      const px = panXRef.current;
+      const py = panYRef.current;
+
+      const worldX = (cx - px) / z;
+      const worldY = (cy - py) / z;
 
       setZoom(nextZoom);
-      setPanX(midX - worldX * nextZoom);
-      setPanY(midY - worldY * nextZoom);
+      setPanX(cx - worldX * nextZoom);
+      setPanY(cy - worldY * nextZoom);
 
       return;
     }
@@ -764,10 +794,7 @@ const ErinPattern2D: React.FC = () => {
       const newLeft = x - offset.current.x;
 
       // prevent dragging completely off-screen
-      const clampedTop = Math.max(
-        0,
-        Math.min(window.innerHeight - 100, newTop),
-      );
+      const clampedTop = Math.max(0, Math.min(window.innerHeight - 100, newTop));
       const clampedLeft = Math.max(
         0,
         Math.min(window.innerWidth - 100, newLeft),
@@ -804,7 +831,7 @@ const ErinPattern2D: React.FC = () => {
       const onTouchEnd = () => endDrag();
       window.addEventListener("mousemove", onMove);
       window.addEventListener("mouseup", onUp);
-      window.addEventListener("touchmove", onTouchMove);
+      window.addEventListener("touchmove", onTouchMove, { passive: false });
       window.addEventListener("touchend", onTouchEnd);
       return () => {
         window.removeEventListener("mousemove", onMove);
@@ -1079,10 +1106,7 @@ const ErinPattern2D: React.FC = () => {
               <button onClick={saveSettingsJSON} style={smallToolBtn}>
                 💾 Save
               </button>
-              <button
-                onClick={() => loadSettingsJSON()}
-                style={smallToolBtnBlue}
-              >
+              <button onClick={() => loadSettingsJSON()} style={smallToolBtnBlue}>
                 🔄 Reload
               </button>
             </div>
@@ -1090,7 +1114,7 @@ const ErinPattern2D: React.FC = () => {
         )}
 
         {/* 🖼️ IMAGE + CANVAS (one unified interaction layer) */}
-        <div style={outerWrap}>
+        <div style={outerWrap} ref={outerWrapRef}>
           <div
             ref={transformRef}
             style={{

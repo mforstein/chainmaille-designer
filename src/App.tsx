@@ -53,13 +53,7 @@
 //
 // ==============================
 
-import React, {
-  useRef,
-  useState,
-  useEffect,
-  useMemo,
-  useCallback,
-} from "react";
+import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
 import { Routes, Route, Navigate, useNavigate, Link } from "react-router-dom";
 import { calculateBOM } from "./BOM/bomCalculator";
 import "./index.css";
@@ -71,6 +65,7 @@ import {
   clampPersistedDims,
   SAFE_DEFAULT,
 } from "./utils/limits";
+
 // ==============================
 // Renderer
 // ==============================
@@ -97,6 +92,7 @@ import {
 import ProjectSaveLoadButtons from "./components/ProjectSaveLoadButtons";
 import FinalizeAndExportPanel from "./components/FinalizeAndExportPanel";
 import type { ExportRing, PaletteAssignment } from "./types/project";
+
 // ==============================
 // Pages
 // ==============================
@@ -107,6 +103,7 @@ import PasswordGate from "./pages/PasswordGate";
 import FreeformChainmail2D from "./pages/FreeformChainmail2D";
 import ErinPattern2D from "./pages/ErinPattern2D";
 import BOMButtons from "./components/BOMButtons";
+
 // ==============================
 // BOM-RELATED SHARED TYPES
 // ==============================
@@ -131,6 +128,10 @@ export interface Params {
   ringSpec: string;
   unit: Unit;
   centerSpacing?: number;
+
+  // ✅ weave tuner / atlas support
+  angleIn?: number;
+  angleOut?: number;
 }
 
 export type ColorId = string; // stable identity: `${supplier}:${sku}`
@@ -307,7 +308,7 @@ function ChainmailDesigner() {
   const [finalizeOpen, setFinalizeOpen] = useState(false);
   const [assignment, setAssignment] = useState<PaletteAssignment | null>(null);
 
-  // Interactive tool state (was referenced but missing in your last paste)
+  // Interactive tool state
   const [paintMode, setPaintMode] = useState(true);
   const [eraseMode, setEraseMode] = useState(false);
   const [rotationLocked, setRotationLocked] = useState(true);
@@ -320,7 +321,7 @@ function ChainmailDesigner() {
   const [showCompass, setShowCompass] = useState(false);
   const [overlayState, setOverlayState] = useState<OverlayState | null>(null);
 
-  // renderer handle (ONE declaration only, outside JSX)
+  // renderer handle
   const rendererRef = useRef<RingRendererHandle | null>(null);
 
   const [lastWeave, setLastWeave] = useState<any | null>(null);
@@ -349,46 +350,51 @@ function ChainmailDesigner() {
     };
   }, []);
 
-const [params, setParams] = useState<Params>(() => {
-  const def: Params = {
-    rows: 20,
-    cols: 20,
-    innerDiameter: 7.94,
-    wireDiameter: 1.6,
-    overlapX: 0.3,
-    overlapY: 0.3,
-    colorMode: "solid",
-    ringColor: MATERIALS.find((m) => m.name === "Aluminum")?.hex || "#C0C0C0",
-    altColor: "#B2B2B2",
-    bgColor: "#0F1115",
-    supplier: "cmj",
-    ringSpec: "ID 7.94 mm / WD 1.6 mm (AR≈4.96)",
-    unit: "mm",
-    centerSpacing: 7.5,
-  };
+  const [params, setParams] = useState<Params>(() => {
+    const def: Params = {
+      rows: 20,
+      cols: 20,
+      innerDiameter: 7.94,
+      wireDiameter: 1.6,
+      overlapX: 0.3,
+      overlapY: 0.3,
+      colorMode: "solid",
+      ringColor: MATERIALS.find((m) => m.name === "Aluminum")?.hex || "#C0C0C0",
+      altColor: "#B2B2B2",
+      bgColor: "#0F1115",
+      supplier: "cmj",
+      ringSpec: "ID 7.94 mm / WD 1.6 mm (AR≈4.96)",
+      unit: "mm",
+      centerSpacing: 7.5,
 
-  // Read previously saved params, if any
-  let p = def;
-  const saved = localStorage.getItem("cmd.params");
-  if (saved) {
-    try {
-      p = { ...def, ...JSON.parse(saved) };
-    } catch {
-      p = def;
+      // ✅ default weave angles
+      angleIn: 25,
+      angleOut: -25,
+    };
+
+    // Read previously saved params, if any
+    let p = def;
+    const saved = localStorage.getItem("cmd.params");
+    if (saved) {
+      try {
+        p = { ...def, ...JSON.parse(saved) };
+      } catch {
+        p = def;
+      }
     }
-  }
 
-  // ✅ Pre-mount clamp (prevents OOM loops on iPad)
-  const { rows: r, cols: c, clamped } = clampAndPersist("designer", p.rows, p.cols);
-  p = { ...p, rows: r, cols: c };
+    // ✅ Pre-mount clamp (prevents OOM loops on iPad)
+    const { rows: r, cols: c } = clampAndPersist("designer", p.rows, p.cols);
+    p = { ...p, rows: r, cols: c };
 
-  // Keep "cmd.params" in sync so refresh is safe
-  try {
-    localStorage.setItem("cmd.params", JSON.stringify(p));
-  } catch {}
+    // Keep "cmd.params" in sync so refresh is safe
+    try {
+      localStorage.setItem("cmd.params", JSON.stringify(p));
+    } catch {}
 
-  return p;
-});
+    return p;
+  });
+
   const [paint, setPaint] = useState<PaintMap>(() => {
     const saved = localStorage.getItem("cmd.paint");
     return saved ? new Map(JSON.parse(saved)) : new Map();
@@ -414,6 +420,9 @@ const [params, setParams] = useState<Params>(() => {
   // ✅ RINGS — Uses tuned weave geometry when present
   // ============================================================
   const rings = useMemo(() => {
+    const fallbackAngleIn = params.angleIn ?? 25;
+    const fallbackAngleOut = params.angleOut ?? -25;
+
     if (!lastWeave) {
       // 🧱 fallback: use params only
       return generateRings({
@@ -422,12 +431,12 @@ const [params, setParams] = useState<Params>(() => {
         innerDiameter: params.innerDiameter,
         wireDiameter: params.wireDiameter,
         centerSpacing: params.centerSpacing ?? 7.5,
-        angleIn: 25,
-        angleOut: -25,
+        angleIn: fallbackAngleIn,
+        angleOut: fallbackAngleOut,
       });
     }
 
-    // ✅ Use tuned weave's actual geometry
+    // ✅ Use tuned weave's actual geometry (with params fallback)
     const ID_mm =
       Number.isFinite(lastWeave.innerDiameter) && lastWeave.innerDiameter > 0
         ? lastWeave.innerDiameter
@@ -446,10 +455,13 @@ const [params, setParams] = useState<Params>(() => {
       params.centerSpacing ??
       7.5;
 
-    const angleIn = Number.isFinite(lastWeave.angleIn) ? lastWeave.angleIn : 25;
+    const angleIn = Number.isFinite(lastWeave.angleIn)
+      ? lastWeave.angleIn
+      : fallbackAngleIn;
+
     const angleOut = Number.isFinite(lastWeave.angleOut)
       ? lastWeave.angleOut
-      : -25;
+      : fallbackAngleOut;
 
     return generateRings({
       rows: params.rows,
@@ -467,6 +479,8 @@ const [params, setParams] = useState<Params>(() => {
     params.innerDiameter,
     params.wireDiameter,
     params.centerSpacing,
+    params.angleIn,
+    params.angleOut,
     lastWeave,
   ]);
 
@@ -549,7 +563,6 @@ const [params, setParams] = useState<Params>(() => {
     params.innerDiameter,
     params.wireDiameter,
   ]);
-  // ⬇️ keep the import: type { ExportRing } from "./types/project";
 
   const exportRings = useMemo<ExportRing[]>(() => {
     if (!Array.isArray(rings)) return [];
@@ -581,6 +594,7 @@ const [params, setParams] = useState<Params>(() => {
     safeParams.innerDiameter,
     safeParams.wireDiameter,
   ]);
+
   // ==============================
   // BOM Calculation (Read-Only)
   // ==============================
@@ -588,12 +602,12 @@ const [params, setParams] = useState<Params>(() => {
     return calculateBOM(getBOMRings());
   }, [getBOMRings]);
 
-  const designerExportRings = useMemo(
-    () => getBOMRings().map((r) => ({ colorHex: r.colorHex })),
-    [getBOMRings],
-  );
+  // kept for future use (export widgets, etc.)
+  void useMemo(() => getBOMRings().map((r) => ({ colorHex: r.colorHex })), [
+    getBOMRings,
+  ]);
 
-  const designerBOMMeta = useMemo(
+  void useMemo(
     () => ({
       title: "Designer — Color BOM",
       supplier: (params.supplier ?? "trl").toUpperCase(),
@@ -685,8 +699,6 @@ const [params, setParams] = useState<Params>(() => {
     );
   };
 
-  const doZoomIn = () => rendererRef.current?.zoomIn();
-  const doZoomOut = () => rendererRef.current?.zoomOut();
   const doReset = () => rendererRef.current?.resetView();
   const doClearPaint = () => {
     rendererRef.current?.clearPaint();
@@ -744,6 +756,8 @@ const [params, setParams] = useState<Params>(() => {
       innerDiameter: e.innerDiameter,
       wireDiameter: e.wireDiameter,
       centerSpacing: e.centerSpacing,
+      angleIn: Number.isFinite(e.angleIn) ? e.angleIn : (prev.angleIn ?? 25),
+      angleOut: Number.isFinite(e.angleOut) ? e.angleOut : (prev.angleOut ?? -25),
       ringSpec: `ID ${e.innerDiameter.toFixed(2)} mm / WD ${e.wireDiameter.toFixed(
         2,
       )} mm (AR≈${AR.toFixed(2)})`,
@@ -986,9 +1000,7 @@ const [params, setParams] = useState<Params>(() => {
             </IconBtn>
 
             <IconBtn
-              tooltip={
-                rotationLocked ? "Unlock 3D Rotation" : "Lock to Flat 2D"
-              }
+              tooltip={rotationLocked ? "Unlock 3D Rotation" : "Lock to Flat 2D"}
               onClick={() => setLock(!rotationLocked)}
               active={!rotationLocked}
             >
@@ -1029,8 +1041,7 @@ const [params, setParams] = useState<Params>(() => {
           </div>
         )}
 
-        {/* ✅ Fixed Base Material Label (Stacked, Wrapped & Centered) */}
-        {/* ✅ Compact Base Material Label (Fixed number display) */}
+        {/* ✅ Base Material Label */}
         <div
           onClick={() => setShowMaterialPalette((v) => !v)}
           style={{
@@ -1252,40 +1263,37 @@ const [params, setParams] = useState<Params>(() => {
                       "chainmailSelected",
                       JSON.stringify(defaultWeave),
                     );
+
                     localStorage.setItem(
                       "cmd.params",
                       JSON.stringify({
                         rows: 20,
                         cols: 20,
-                        innerDiameter: 7.94,
-                        wireDiameter: 1.6,
-                        centerSpacing: 7.5,
+                        innerDiameter: defaultWeave.innerDiameter,
+                        wireDiameter: defaultWeave.wireDiameter,
+                        centerSpacing: defaultWeave.centerSpacing,
+                        angleIn: defaultWeave.angleIn,
+                        angleOut: defaultWeave.angleOut,
                       }),
                     );
 
                     setLastWeave(defaultWeave);
                     setParams((prev) => ({
                       ...prev,
-                      innerDiameter: 7.94,
-                      wireDiameter: 1.6,
-                      centerSpacing: 7.5,
+                      innerDiameter: defaultWeave.innerDiameter,
+                      wireDiameter: defaultWeave.wireDiameter,
+                      centerSpacing: defaultWeave.centerSpacing,
+                      angleIn: defaultWeave.angleIn,
+                      angleOut: defaultWeave.angleOut,
+                      ringSpec: `ID ${defaultWeave.innerDiameter.toFixed(
+                        2,
+                      )} mm / WD ${defaultWeave.wireDiameter.toFixed(2)} mm`,
                     }));
 
                     window.dispatchEvent(new Event("weave-updated"));
-                    console.log(
-                      "✅ Default weave applied and geometry rebuilt",
-                    );
+                    console.log("✅ Default weave applied and geometry rebuilt");
                     return;
                   }
-
-                  const colorHex =
-                    sel.color && sel.color !== "Default Colors"
-                      ? typeof sel.color === "string" &&
-                        sel.color.startsWith("#")
-                        ? sel.color
-                        : params.ringColor
-                      : params.ringColor;
-                  void colorHex;
 
                   const parseNumber = (v: any) => {
                     if (v == null) return NaN;
@@ -1300,7 +1308,7 @@ const [params, setParams] = useState<Params>(() => {
                   const ID = parseNumber(sel?.innerDiameter ?? sel?.ringID);
                   const WD = parseNumber(sel?.wireDiameter ?? sel?.wireGauge);
                   const spacing =
-                    parseNumber(sel?.centerSpacing) || params.centerSpacing;
+                    parseNumber(sel?.centerSpacing) || params.centerSpacing || 7.5;
 
                   const weave = {
                     id: sel?.name ?? sel?.id ?? "unnamed",
@@ -1314,16 +1322,22 @@ const [params, setParams] = useState<Params>(() => {
                     status: sel?.status ?? "valid",
                   };
 
-                  localStorage.setItem(
-                    "chainmailSelected",
-                    JSON.stringify(weave),
-                  );
+                  localStorage.setItem("chainmailSelected", JSON.stringify(weave));
                   setLastWeave(weave);
+
                   setParams((prev) => ({
                     ...prev,
                     innerDiameter: ID,
                     wireDiameter: WD,
                     centerSpacing: spacing,
+                    angleIn: weave.angleIn,
+                    angleOut: weave.angleOut,
+                    ringSpec:
+                      Number.isFinite(ID) && Number.isFinite(WD) && WD > 0
+                        ? `ID ${ID.toFixed(2)} mm / WD ${WD.toFixed(
+                            2,
+                          )} mm (AR≈${(ID / WD).toFixed(2)})`
+                        : prev.ringSpec,
                   }));
 
                   window.dispatchEvent(new Event("weave-updated"));
@@ -1368,9 +1382,7 @@ const [params, setParams] = useState<Params>(() => {
               setOverlayState(overlay);
               try {
                 await rendererRef.current?.applyOverlayToRings?.(overlay);
-                setDebugMessage(
-                  "✅ Overlay image successfully applied to rings!",
-                );
+                setDebugMessage("✅ Overlay image successfully applied to rings!");
                 setDebugVisible(true);
               } catch (err) {
                 console.error("❌ applyOverlayToRings failed:", err);
@@ -1454,9 +1466,7 @@ const [params, setParams] = useState<Params>(() => {
                     marginTop: 4,
                   }}
                 >
-                  <span
-                    style={{ display: "flex", alignItems: "center", gap: 6 }}
-                  >
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span
                       style={{
                         width: 12,
@@ -1565,7 +1575,6 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        {/* 🏠 Home Page */}
         <button
           onClick={() => go("/wovenrainbowsbyerin")}
           title="Erin’s Home"
@@ -1574,56 +1583,30 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
           🏠
         </button>
 
-        {/* 🧩 Designer */}
-        <button
-          onClick={() => go("/designer")}
-          title="Designer"
-          style={btnStyle}
-        >
+        <button onClick={() => go("/designer")} title="Designer" style={btnStyle}>
           🧩
         </button>
 
-        {/* ✨ Freeform Painter */}
-        <button
-          onClick={() => go("/freeform")}
-          title="Freeform"
-          style={btnStyle}
-        >
+        <button onClick={() => go("/freeform")} title="Freeform" style={btnStyle}>
           ✨
         </button>
 
-        <button onClick={() => go("/erin2d")} style={btnStyle}>
+        <button onClick={() => go("/erin2d")} title="Erin 2D" style={btnStyle}>
           🪡
         </button>
 
-        {/* 📊 Chart */}
-        <button
-          onClick={() => go("/chart")}
-          title="Ring Chart"
-          style={btnStyle}
-        >
+        <button onClick={() => go("/chart")} title="Ring Chart" style={btnStyle}>
           📊
         </button>
 
-        {/* ⚙️ Tuner */}
-        <button
-          onClick={() => go("/tuner")}
-          title="Weave Tuner"
-          style={btnStyle}
-        >
+        <button onClick={() => go("/tuner")} title="Weave Tuner" style={btnStyle}>
           ⚙️
         </button>
 
-        {/* 🌐 Atlas */}
-        <button
-          onClick={() => go("/atlas")}
-          title="Weave Atlas"
-          style={btnStyle}
-        >
+        <button onClick={() => go("/atlas")} title="Weave Atlas" style={btnStyle}>
           🌐
         </button>
 
-        {/* 🪶 Blog */}
         <button
           onClick={() => go("/blog-editor")}
           title="Blog"
@@ -1848,10 +1831,7 @@ function App() {
       <Route path="/atlas" element={<ChainmailWeaveAtlas />} />
 
       {/* Fallback */}
-      <Route
-        path="*"
-        element={<Navigate to="/wovenrainbowsbyerin" replace />}
-      />
+      <Route path="*" element={<Navigate to="/wovenrainbowsbyerin" replace />} />
     </Routes>
   );
 }
@@ -1862,6 +1842,10 @@ function App() {
 export { DraggableCompassNav, DraggablePill };
 export default App;
 
-// Keep generator import live for future switching.
+// Keep imports “live” for future switching / shared helpers.
 void generateRingsDesigner;
 void BOMButtons;
+void getDeviceLimits;
+void clampPersistedDims;
+void SAFE_DEFAULT;
+void WorkspaceGate;
