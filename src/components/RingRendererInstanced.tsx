@@ -144,6 +144,24 @@ type Props = {
 };
 
 // ============================================================
+// FIX: Instancing color in Three requires USE_COLOR + a valid `color` attribute.
+// If material.vertexColors=true but geometry has no `color`, the shader reads 0,0,0 => BLACK.
+// We attach a per-vertex `color` attribute filled with 1,1,1 so instanceColor works.
+// ============================================================
+function ensureWhiteVertexColors(geom: THREE.BufferGeometry) {
+  const existing = geom.getAttribute("color") as THREE.BufferAttribute | undefined;
+  const pos = geom.getAttribute("position") as THREE.BufferAttribute | undefined;
+  if (!pos) return;
+
+  const neededCount = pos.count;
+  if (existing && existing.count === neededCount && existing.itemSize === 3) return;
+
+  const arr = new Float32Array(neededCount * 3);
+  arr.fill(1);
+  geom.setAttribute("color", new THREE.BufferAttribute(arr, 3));
+}
+
+// ============================================================
 // Renderer
 // ============================================================
 const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
@@ -190,6 +208,21 @@ const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
     useEffect(() => {
       safeParamsRef.current = safeParams;
     }, [safeParams]);
+
+    function ensureInstanceColor(
+      inst: THREE.InstancedMesh,
+      count: number,
+    ): asserts inst is THREE.InstancedMesh & {
+      instanceColor: THREE.InstancedBufferAttribute;
+    } {
+      if (!inst.instanceColor || inst.instanceColor.count !== count) {
+        inst.instanceColor = new THREE.InstancedBufferAttribute(
+          new Float32Array(count * 3),
+          3,
+        );
+        inst.instanceColor.setUsage(THREE.DynamicDrawUsage);
+      }
+    }
 
     // ----------------------------
     // Refs
@@ -308,7 +341,7 @@ const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
     );
 
     // ------------------------------------------------------------
-    // Color cache + incremental paint application
+    // Color cache + incremental paint application (FAST + correct)
     // ------------------------------------------------------------
     const colorCacheRef = useRef<Map<string, THREE.Color>>(new Map());
     const getColor = (hex: string) => {
@@ -322,27 +355,33 @@ const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
 
     const prevPaintRef = useRef<PaintMap>(new Map());
 
+    /**
+     * FAST + correct:
+     * - Ensure inst.instanceColor exists (Three's instancing color path uses this)
+     * - Write directly into the InstancedBufferAttribute
+     */
     const setInstanceColorByKey = useCallback(
       (ringKey: string, hexOrNull: string | null) => {
         const lookup = instanceLookupRef.current.get(ringKey);
         if (!lookup) return;
 
-        const groups = groupsRef.current;
-        const g = groups[lookup.g];
+        const g = groupsRef.current[lookup.g];
         if (!g) return;
 
         const inst = g.mesh;
         const idx = lookup.i;
 
-        const baseHex = safeParamsRef.current.ringColor || "#CCCCCC";
-        const hex = hexOrNull ?? baseHex;
+        ensureInstanceColor(inst, g.count);
+        const attr = inst.instanceColor;
 
-        inst.setColorAt(idx, getColor(hex));
-        if (inst.instanceColor) {
-          inst.instanceColor.needsUpdate = true;
-        }
+        const baseHex = safeParamsRef.current.ringColor || "#CCCCCC";
+        const hex = (hexOrNull ?? baseHex).toLowerCase();
+        const c = getColor(hex);
+
+        attr.setXYZ(idx, c.r, c.g, c.b);
+        attr.needsUpdate = true;
       },
-      [],
+      [], // uses refs only
     );
 
     const applyPaintDiff = useCallback(() => {
@@ -493,7 +532,6 @@ const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
         envTexRef.current = envTex;
 
         scene.environment = envTex;
-        // keep scene.background as your bgColor; do NOT set background to env unless desired
       } catch (err) {
         // eslint-disable-next-line no-console
         console.warn("PMREM/RoomEnvironment failed (continuing without env):", err);
@@ -905,6 +943,10 @@ const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
         const rr = Number(rstr);
 
         const geom = new THREE.TorusGeometry(R, rr, 16, 32);
+
+        // ✅ CRITICAL FIX: Provide a valid per-vertex `color` attribute so USE_COLOR isn't black.
+        ensureWhiteVertexColors(geom);
+
         const mat = new THREE.MeshStandardMaterial({
           metalness,
           roughness,
@@ -914,13 +956,14 @@ const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
         const inst = new THREE.InstancedMesh(geom, mat, items.length);
         inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 
-        // ✅ create instanceColor only if missing (no @ts-expect-error needed)
-        if (!inst.instanceColor) {
-          inst.instanceColor = new THREE.InstancedBufferAttribute(
-            new Float32Array(items.length * 3),
-            3,
-          );
-        }
+        // ✅ Ensure instancing color path is active + sized correctly
+        ensureInstanceColor(inst, items.length);
+
+        // Guarantee shader recompiles with instancing color defines on first draw
+        mat.needsUpdate = true;
+
+        const ic = inst.instanceColor; // InstancedBufferAttribute (vec3)
+        ic.setUsage(THREE.DynamicDrawUsage);
 
         const ringKeys: string[] = [];
 
@@ -941,7 +984,8 @@ const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
           tmp.updateMatrix();
           inst.setMatrixAt(i, tmp.matrix);
 
-          inst.setColorAt(i, baseColor);
+          // ✅ Initialize all instance colors
+          ic.setXYZ(i, baseColor.r, baseColor.g, baseColor.b);
 
           const key = `${r.row},${r.col}`;
           ringKeys.push(key);
@@ -951,10 +995,9 @@ const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
         }
 
         inst.instanceMatrix.needsUpdate = true;
-        if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+        ic.needsUpdate = true;
 
         inst.frustumCulled = false;
-
         scene.add(inst);
 
         groups.push({
@@ -972,6 +1015,7 @@ const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
 
       rebuildSpatialIndex();
 
+      // Apply existing paint to new instances
       for (const [k, v] of paintRef.current.entries()) {
         setInstanceColorByKey(k, v ?? null);
       }
@@ -1190,13 +1234,21 @@ const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
         const baseHex = safeParamsRef.current.ringColor || "#CCCCCC";
         const base = getColor(baseHex);
 
+        // Fast fill of all instanceColor buffers
         for (const g of groupsRef.current) {
+          const inst = g.mesh;
+          ensureInstanceColor(inst, g.count);
+
+          const attr = inst.instanceColor;
+          const arr = attr.array as Float32Array;
+
           for (let i = 0; i < g.count; i++) {
-            g.mesh.setColorAt(i, base);
+            const o = i * 3;
+            arr[o + 0] = base.r;
+            arr[o + 1] = base.g;
+            arr[o + 2] = base.b;
           }
-          if (g.mesh.instanceColor) {
-            g.mesh.instanceColor.needsUpdate = true;
-          }
+          attr.needsUpdate = true;
         }
 
         setPaint(new Map());
