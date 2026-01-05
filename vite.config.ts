@@ -11,6 +11,9 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      "@": path.resolve(__dirname, "src"),
+
+      // keep your explicit aliases if you want them
       react: path.resolve(__dirname, "node_modules/react"),
       "react-dom": path.resolve(__dirname, "node_modules/react-dom"),
       "react-router": path.resolve(__dirname, "node_modules/react-router"),
@@ -19,18 +22,7 @@ export default defineConfig({
     dedupe: ["react", "react-dom", "react-router", "react-router-dom"],
   },
   optimizeDeps: {
-    include: [
-      "react",
-      "react-dom",
-      "react-router",
-      "react-router-dom"
-    ],
-    exclude: [
-      "react-router/dom" // 🧱 Prevents the invalid "react-router/dom" import
-    ],
-  },
-  esbuild: {
-    loader: "tsx",
-    jsx: "automatic",
+    include: ["react", "react-dom", "react-router", "react-router-dom"],
+    exclude: ["react-router/dom"], // prevents invalid import
   },
 });

@@ -65,7 +65,7 @@ import {
   clampPersistedDims,
   SAFE_DEFAULT,
 } from "./utils/limits";
-
+import ColorCalibrationTest from "./pages/ColorCalibrationTest";
 // ==============================
 // Renderer
 // ==============================
@@ -871,10 +871,10 @@ function ChainmailDesigner() {
                 <input
                   type="number"
                   min={1}
-                  max={200}
+                  max={400}
                   value={params.cols}
                   onChange={(e) => {
-                    const val = clamp(parseInt(e.target.value), 1, 200);
+                    const val = clamp(parseInt(e.target.value), 1, 400);
                     setParams({ ...params, cols: val });
                   }}
                   style={{
@@ -899,10 +899,10 @@ function ChainmailDesigner() {
                 <input
                   type="number"
                   min={1}
-                  max={200}
+                  max={400}
                   value={params.rows}
                   onChange={(e) => {
-                    const val = clamp(parseInt(e.target.value), 1, 200);
+                    const val = clamp(parseInt(e.target.value), 1, 400);
                     setParams({ ...params, rows: val });
                   }}
                   style={{
@@ -1829,7 +1829,7 @@ function App() {
       <Route path="/chart" element={<RingSizeChart />} />
       <Route path="/tuner" element={<ChainmailWeaveTuner />} />
       <Route path="/atlas" element={<ChainmailWeaveAtlas />} />
-
+<Route path="/_calibration" element={<ColorCalibrationTest />} />
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/wovenrainbowsbyerin" replace />} />
     </Routes>

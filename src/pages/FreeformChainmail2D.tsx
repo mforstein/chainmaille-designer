@@ -13,9 +13,13 @@ import { useNavigate } from "react-router-dom";
 import * as THREE from "three";
 
 import RingRenderer from "../components/RingRenderer";
+import type { OverlayState } from "../components/ImageOverlayPanel";
 import FinalizeAndExportPanel from "../components/FinalizeAndExportPanel";
 import ProjectSaveLoadButtons from "../components/ProjectSaveLoadButtons";
-
+import {
+  applyCalibrationHex,
+  calibrationUpdatedEventName,
+} from "../utils/colorCalibration";
 import { calculateBOM } from "../BOM/bomCalculator";
 import {
   WEAVE_SETTINGS_DEFAULT,
@@ -622,6 +626,7 @@ const FreeformChainmail2D: React.FC = () => {
   const hitCanvasRef = useRef<HTMLCanvasElement | null>(null); // overlay circles
   const ringRendererRef = useRef<any>(null);
 
+
   // Finalize & Export (must be inside the component)
   const [finalizeOpen, setFinalizeOpen] = useState(false);
   const [assignment, setAssignment] = useState<PaletteAssignment | null>(() => {
@@ -632,6 +637,15 @@ const FreeformChainmail2D: React.FC = () => {
       return null;
     }
   });
+
+  // ✅ React re-render trigger when calibration is saved/applied elsewhere
+  const [calibrationVersion, setCalibrationVersion] = useState(0);
+
+  useEffect(() => {
+    const onUpdate = () => setCalibrationVersion((v) => v + 1);
+    window.addEventListener(calibrationUpdatedEventName(), onUpdate);
+    return () => window.removeEventListener(calibrationUpdatedEventName(), onUpdate);
+  }, []);
 
   // ====================================================
   // PLACED RINGS
@@ -723,6 +737,23 @@ const FreeformChainmail2D: React.FC = () => {
 
   // Optional: show a lightweight selection stats line (kept inside diag log)
   const [lastSelectionCount, setLastSelectionCount] = useState<number>(0);
+
+  // ====================================================
+  // IMAGE OVERLAY (missing state that caused "overlay is not defined")
+  // ====================================================
+
+const overlayImgRef = useRef<HTMLImageElement | null>(null);
+  const [showImageOverlay, setShowImageOverlay] = useState(false);
+  const [overlay, setOverlay] = useState<OverlayState | null>(null);
+
+  type OverlayScope = "all" | "selection";
+  const [overlayScope, setOverlayScope] = useState<OverlayScope>("all");
+
+  // Keys used when user chooses "selection" scope for overlay transfer
+  const [overlayMaskKeys, setOverlayMaskKeys] = useState<Set<string>>(() => new Set());
+
+  // When true: next selection drag defines overlayMaskKeys instead of painting/erasing
+  const overlayPickingRef = useRef(false);
 
   // ====================================================
   // GEOMETRY (synced with Tuner)
@@ -875,6 +906,228 @@ const FreeformChainmail2D: React.FC = () => {
     return { ox: cx, oy: cy };
   }, [rings.size, minRow, minCol, maxRow, maxCol, rcToLogical]);
 
+  const applyOverlayToFreeform = useCallback(async () => {
+    const targetKeys = overlayScope === "selection" ? overlayMaskKeys : null;
+
+    if (!overlay) return;
+    if (!rings.size) return;
+
+    // If user chose "selection" but didn't pick anything yet
+    if (targetKeys && targetKeys.size === 0) return;
+
+    const src =
+      (overlay as any)?.dataUrl ??
+      (overlay as any)?.src ??
+      (overlay as any)?.url ??
+      (overlay as any)?.imageUrl ??
+      null;
+    if (!src) return;
+
+    const offsetX = Number((overlay as any)?.offsetX ?? 0);
+    const offsetY = Number((overlay as any)?.offsetY ?? 0);
+    const scale = Math.max(1e-6, Number((overlay as any)?.scale ?? 1));
+    const opacity = Math.max(0, Math.min(1, Number((overlay as any)?.opacity ?? 1)));
+
+    const tileAny =
+      !!(overlay as any)?.tile ||
+      !!(overlay as any)?.tiled ||
+      !!(overlay as any)?.repeat ||
+      !!(overlay as any)?.tilingEnabled ||
+      String((overlay as any)?.tileMode ?? (overlay as any)?.tiling ?? "")
+        .toLowerCase()
+        .includes("repeat");
+
+    const tileX = (overlay as any)?.tileX ?? (overlay as any)?.repeatX ?? tileAny;
+    const tileY = (overlay as any)?.tileY ?? (overlay as any)?.repeatY ?? tileAny;
+
+    // Crop (optional) in normalized UV
+    const u0 = Number.isFinite((overlay as any)?.cropU0) ? (overlay as any).cropU0 : (overlay as any)?.crop?.u0;
+    const v0 = Number.isFinite((overlay as any)?.cropV0) ? (overlay as any).cropV0 : (overlay as any)?.crop?.v0;
+    const u1 = Number.isFinite((overlay as any)?.cropU1) ? (overlay as any).cropU1 : (overlay as any)?.crop?.u1;
+    const v1 = Number.isFinite((overlay as any)?.cropV1) ? (overlay as any).cropV1 : (overlay as any)?.crop?.v1;
+
+    const U0 = Number.isFinite(u0) ? Math.max(0, Math.min(1, u0)) : 0;
+    const V0 = Number.isFinite(v0) ? Math.max(0, Math.min(1, v0)) : 0;
+    const U1 = Number.isFinite(u1) ? Math.max(0, Math.min(1, u1)) : 1;
+    const V1 = Number.isFinite(v1) ? Math.max(0, Math.min(1, v1)) : 1;
+
+    const cu0 = Math.min(U0, U1);
+    const cu1 = Math.max(U0, U1);
+    const cv0 = Math.min(V0, V1);
+    const cv1 = Math.max(V0, V1);
+    const cropW = Math.max(1e-6, cu1 - cu0);
+    const cropH = Math.max(1e-6, cv1 - cv0);
+
+    const wrap01 = (t: number) => ((t % 1) + 1) % 1;
+
+    // Load image
+    const img: HTMLImageElement = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.crossOrigin = "anonymous";
+      im.onload = () => resolve(im);
+      im.onerror = reject;
+      im.src = src;
+    });
+
+    const cvs = document.createElement("canvas");
+    cvs.width = img.naturalWidth || img.width;
+    cvs.height = img.naturalHeight || img.height;
+
+const ctx = cvs.getContext(
+  "2d",
+  { willReadFrequently: true } as CanvasRenderingContext2DSettings
+);
+if (!ctx) return;
+
+ctx.clearRect(0, 0, cvs.width, cvs.height);
+ctx.drawImage(img, 0, 0);
+const { data } = ctx.getImageData(0, 0, cvs.width, cvs.height);    const W = cvs.width;
+    const H = cvs.height;
+
+    // Compute world bounds, but ONLY for target keys if in selection mode
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
+
+    rings.forEach((r, key) => {
+      if (targetKeys && !targetKeys.has(key)) return;
+
+      const { x: lx, y: ly } = rcToLogical(r.row, r.col);
+      const shiftedX = lx - logicalOrigin.ox;
+      const shiftedY = ly - logicalOrigin.oy;
+      const wx = shiftedX;
+      const wy = -shiftedY;
+
+      minX = Math.min(minX, wx);
+      maxX = Math.max(maxX, wx);
+      minY = Math.min(minY, wy);
+      maxY = Math.max(maxY, wy);
+    });
+
+    if (!Number.isFinite(minX)) return;
+
+    const worldW = Math.max(1e-6, maxX - minX);
+    const worldH = Math.max(1e-6, maxY - minY);
+
+    const cx = (minX + maxX) * 0.5 + offsetX;
+    const cy = (minY + maxY) * 0.5 + offsetY;
+
+    const invScale = 1 / scale;
+
+    // Base blend color = white
+    const baseHex = "#ffffff";
+    const baseR = parseInt(baseHex.slice(1, 3), 16);
+    const baseG = parseInt(baseHex.slice(3, 5), 16);
+    const baseB = parseInt(baseHex.slice(5, 7), 16);
+
+    const sampleAtWorld = (wx: number, wy: number): string | null => {
+      let nx = ((wx - cx) / worldW) * invScale + 0.5;
+      let ny = ((wy - cy) / worldH) * invScale + 0.5;
+
+      if (tileX) nx = wrap01(nx);
+      if (tileY) ny = wrap01(ny);
+
+      if (!tileX && (nx < 0 || nx > 1)) return null;
+      if (!tileY && (ny < 0 || ny > 1)) return null;
+
+      let u = cu0 + nx * cropW;
+      let v = cv0 + ny * cropH;
+
+      if (tileX) u = cu0 + wrap01((u - cu0) / cropW) * cropW;
+      if (tileY) v = cv0 + wrap01((v - cv0) / cropH) * cropH;
+
+      let px = Math.floor(u * W);
+      let py = Math.floor((1 - v) * H);
+      if (px === W) px = W - 1;
+      if (py === H) py = H - 1;
+      if (px < 0 || px >= W || py < 0 || py >= H) return null;
+
+      const idx = (py * W + px) * 4;
+      const r = data[idx + 0];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      const a255 = data[idx + 3];
+      if (a255 <= 2) return null;
+
+      const t = Math.max(0, Math.min(1, (a255 / 255) * opacity));
+      const outR = Math.round(baseR * (1 - t) + r * t);
+      const outG = Math.round(baseG * (1 - t) + g * t);
+      const outB = Math.round(baseB * (1 - t) + b * t);
+
+      return `#${hex2(outR)}${hex2(outG)}${hex2(outB)}`;
+    };
+
+    const next: RingMap = new Map(rings);
+
+    // ✅ avoid in-place mutation for React state sanity
+    next.forEach((r, key) => {
+      if (targetKeys && !targetKeys.has(key)) return;
+
+      const { x: lx, y: ly } = rcToLogical(r.row, r.col);
+      const shiftedX = lx - logicalOrigin.ox;
+      const shiftedY = ly - logicalOrigin.oy;
+      const wx = shiftedX;
+      const wy = -shiftedY;
+
+      const sampled = sampleAtWorld(wx, wy);
+      if (!sampled) return;
+
+      const updated = {
+        ...(r as any),
+        color: normalizeColor6(sampled),
+      } as PlacedRing;
+
+      next.set(key, updated);
+    });
+
+    setRings(next);
+  }, [
+    overlay,
+    rings,
+    rcToLogical,
+    logicalOrigin.ox,
+    logicalOrigin.oy,
+    overlayScope,
+    overlayMaskKeys,
+  ]);
+
+
+
+useEffect(() => {
+  overlayImgRef.current = null;
+
+  const src =
+    (overlay as any)?.dataUrl ??
+    (overlay as any)?.src ??
+    (overlay as any)?.url ??
+    (overlay as any)?.imageUrl ??
+    null;
+
+  if (!src) return;
+
+  let cancelled = false;
+
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => {
+    if (!cancelled) overlayImgRef.current = img;
+  };
+  img.onerror = () => {
+    if (!cancelled) overlayImgRef.current = null;
+  };
+  img.src = src;
+
+  return () => {
+    cancelled = true;
+  };
+}, [
+  (overlay as any)?.dataUrl,
+  (overlay as any)?.src,
+  (overlay as any)?.url,
+  (overlay as any)?.imageUrl,
+]);
+
   // ====================================================
   // TRUE HEX-GRID SNAP (point → row/col)
   // Inverse of rcToLogical() — ODD-ROW OFFSET GRID
@@ -941,60 +1194,61 @@ const FreeformChainmail2D: React.FC = () => {
     [centerSpacing, logicalToRowColApprox],
   );
 
+  const computeSelectionKeys = useCallback(
+    (sel: SelectionDrag, mode: SelectionMode) => {
+      const next = new Set<string>();
+      if (mode === "none") return next;
+
+      const minLX = Math.min(sel.lx0, sel.lx1);
+      const maxLX = Math.max(sel.lx0, sel.lx1);
+      const minLY = Math.min(sel.ly0, sel.ly1);
+      const maxLY = Math.max(sel.ly0, sel.ly1);
+
+      const a = logicalToRowColApprox(minLX, minLY);
+      const b = logicalToRowColApprox(maxLX, maxLY);
+
+      const minRowS = Math.min(a.row, b.row) - 2;
+      const maxRowS = Math.max(a.row, b.row) + 2;
+      const minColS = Math.min(a.col, b.col) - 2;
+      const maxColS = Math.max(a.col, b.col) + 2;
+
+      if (mode === "rect") {
+        for (let r = minRowS; r <= maxRowS; r++) {
+          for (let c = minColS; c <= maxColS; c++) {
+            const p = rcToLogical(r, c);
+            if (p.x >= minLX && p.x <= maxLX && p.y >= minLY && p.y <= maxLY) next.add(`${r}-${c}`);
+          }
+        }
+      } else if (mode === "circle") {
+        const cx = sel.lx0;
+        const cy = sel.ly0;
+        const dx = sel.lx1 - sel.lx0;
+        const dy = sel.ly1 - sel.ly0;
+        const rr = Math.sqrt(dx * dx + dy * dy);
+
+        for (let r = minRowS; r <= maxRowS; r++) {
+          for (let c = minColS; c <= maxColS; c++) {
+            const p = rcToLogical(r, c);
+            const ddx = p.x - cx;
+            const ddy = p.y - cy;
+            if (ddx * ddx + ddy * ddy <= rr * rr) next.add(`${r}-${c}`);
+          }
+        }
+      }
+
+      return next;
+    },
+    [logicalToRowColApprox, rcToLogical],
+  );
+
   // ====================================================
   // FINALIZE SELECTION → compute selected ring keys
   // ====================================================
   const finalizeSelection = useCallback(() => {
     const sel = selectionRef.current;
     if (!sel) return;
-
-    const next = new Set<string>();
-
-    const minLX = Math.min(sel.lx0, sel.lx1);
-    const maxLX = Math.max(sel.lx0, sel.lx1);
-    const minLY = Math.min(sel.ly0, sel.ly1);
-    const maxLY = Math.max(sel.ly0, sel.ly1);
-
-    const a = logicalToRowColApprox(minLX, minLY);
-    const b = logicalToRowColApprox(maxLX, maxLY);
-
-    const minRowS = Math.min(a.row, b.row) - 2;
-    const maxRowS = Math.max(a.row, b.row) + 2;
-    const minColS = Math.min(a.col, b.col) - 2;
-    const maxColS = Math.max(a.col, b.col) + 2;
-
-    if (selectionMode === "rect") {
-      for (let r = minRowS; r <= maxRowS; r++) {
-        for (let c = minColS; c <= maxColS; c++) {
-          const p = rcToLogical(r, c);
-          if (p.x >= minLX && p.x <= maxLX && p.y >= minLY && p.y <= maxLY) {
-            next.add(`${r}-${c}`);
-          }
-        }
-      }
-    }
-
-    if (selectionMode === "circle") {
-      const cx = sel.lx0;
-      const cy = sel.ly0;
-      const dx = sel.lx1 - sel.lx0;
-      const dy = sel.ly1 - sel.ly0;
-      const rr = Math.sqrt(dx * dx + dy * dy);
-
-      for (let r = minRowS; r <= maxRowS; r++) {
-        for (let c = minColS; c <= maxColS; c++) {
-          const p = rcToLogical(r, c);
-          const ddx = p.x - cx;
-          const ddy = p.y - cy;
-          if (ddx * ddx + ddy * ddy <= rr * rr) {
-            next.add(`${r}-${c}`);
-          }
-        }
-      }
-    }
-
-    setSelectedKeys(next);
-  }, [selectionMode, logicalToRowColApprox, rcToLogical]);
+    setSelectedKeys(computeSelectionKeys(sel, selectionMode));
+  }, [selectionMode, computeSelectionKeys]);
 
   // ====================================================
   // ✅ Use RingRenderer camera for projection/unprojection
@@ -1023,8 +1277,21 @@ const FreeformChainmail2D: React.FC = () => {
     const z = ringRendererRef.current?.getCameraZ?.();
     return typeof z === "number" && z > 0 ? z : FALLBACK_CAMERA_Z;
   }, []);
+type ClientPointEvent = { clientX: number; clientY: number };
 
-  // ============================================================
+const getCanvasPoint = useCallback(
+  (evt: ClientPointEvent) => {
+    const rect = getViewRect();
+    if (!rect) return { sx: 0, sy: 0, rect: null as DOMRect | null };
+
+    return {
+      sx: evt.clientX - rect.left,
+      sy: evt.clientY - rect.top,
+      rect,
+    };
+  },
+  [getViewRect],
+);  // ============================================================
   // 🧾 BOM ADAPTER — Freeform → BOMRing[]
   // (declare BEFORE anything that references it)
   // ============================================================
@@ -1156,21 +1423,27 @@ const FreeformChainmail2D: React.FC = () => {
     [logicalToWorld, worldToScreen],
   );
 
-  const getCanvasPoint = useCallback(
-    (evt: { clientX: number; clientY: number }) => {
+  const eventToScreen = useCallback(
+    (evt: MouseEvent | PointerEvent) => {
       const rect = getViewRect();
-      return { sx: evt.clientX - rect.left, sy: evt.clientY - rect.top };
+      if (!rect) return null;
+
+      return {
+        sx: evt.clientX - rect.left,
+        sy: evt.clientY - rect.top,
+      };
     },
     [getViewRect],
   );
-
   // ====================================================
   // ✅ ONE-PASS DERIVED DATA (Rings3D + Paint + Stats + Lazy Export)
   // ====================================================
   const derived = useMemo(() => {
     const rings3D: any[] = [];
     const paintMap = new Map<string, string>();
-    const colorCounts = new Map<string, number>();
+
+    // ✅ Stats/BOM should remain on STORED (true) colors, not calibrated render colors
+    const colorCountsStored = new Map<string, number>();
 
     const outerRadiusMm = (innerIDmm + 2 * wireMm) / 2;
 
@@ -1190,7 +1463,11 @@ const FreeformChainmail2D: React.FC = () => {
       const tiltDeg = r.row % 2 === 0 ? angleIn : angleOut;
       const tiltRad = THREE.MathUtils.degToRad(tiltDeg);
 
-      const color = normalizeColor6((r as any).color ?? "#ffffff");
+      // ✅ STORED physical color (#rrggbb)
+      const storedColor = normalizeColor6((r as any).color ?? "#ffffff");
+
+      // ✅ RENDER color (calibrated) for display only
+      const renderColor = applyCalibrationHex(storedColor);
 
       rings3D.push({
         id: `${r.row},${r.col}`,
@@ -1205,11 +1482,14 @@ const FreeformChainmail2D: React.FC = () => {
         centerSpacing: centerSpacing,
         tilt: tiltDeg,
         tiltRad: tiltRad,
-        color,
+        color: renderColor,
       });
 
-      paintMap.set(key, color);
-      colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
+      // RingRenderer uses paint map for coloring; keep it consistent with render color
+      paintMap.set(key, renderColor);
+
+      // Stats should reflect true chosen colors
+      colorCountsStored.set(storedColor, (colorCountsStored.get(storedColor) ?? 0) + 1);
 
       if (wantExport) {
         exportRings.push({
@@ -1218,12 +1498,13 @@ const FreeformChainmail2D: React.FC = () => {
           y_mm: baseY,
           innerDiameter_mm: innerIDmm,
           wireDiameter_mm: wireMm,
-          colorHex: color,
+          // ✅ Export uses stored physical color
+          colorHex: storedColor,
         });
       }
     });
 
-    const byColor = Array.from(colorCounts.entries()).sort((a, b) => b[1] - a[1]);
+    const byColor = Array.from(colorCountsStored.entries()).sort((a, b) => b[1] - a[1]);
     const ringStats = { total: rings.size, byColor, uniqueColors: byColor.length };
 
     return { rings3D, paintMap, ringStats, exportRings };
@@ -1239,12 +1520,20 @@ const FreeformChainmail2D: React.FC = () => {
     angleOut,
     finalizeOpen,
     showBOM,
+    // ✅ Recompute render colors when calibration changes
+    calibrationVersion,
   ]);
 
   const rings3D = derived.rings3D;
   const paintMap = derived.paintMap;
   const ringStats = derived.ringStats;
   const exportRings = derived.exportRings;
+
+  // ✅ Pass calibrated activeColor to renderer (display only)
+  const renderActiveColor = useMemo(() => {
+    const stored = normalizeColor6(activeColor);
+    return applyCalibrationHex(stored);
+  }, [activeColor, calibrationVersion]);
 
   // Creates a composited 2D canvas (opaque) from the live renderer.
   // Works whether RingRenderer is WebGL or 2D; prevents black/transparent PNGs.
@@ -1307,42 +1596,71 @@ const FreeformChainmail2D: React.FC = () => {
 
     return out;
   }, []);
+  
+// ====================================================
+// Clear interaction canvas (selection overlay canvas)
+// ====================================================
+const clearInteractionCanvas = useCallback(() => {
+  const canvas = canvasRef.current;
+  const wrap = wrapRef.current;
+  if (!canvas || !wrap) return;
+
+  const ctx = canvas.getContext(
+    "2d",
+    { willReadFrequently: true } as CanvasRenderingContext2DSettings
+  );
+  if (!ctx) return;
+
+  const rect = wrap.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+
+  // Ensure we clear in CSS-pixel space (matches resizeOverlayCanvases transform)
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+}, []);
 
   // ====================================================
   // Resize canvases reliably (window + layout changes)
   // ====================================================
-  const resizeOverlayCanvases = useCallback(() => {
-    const wrap = wrapRef.current;
-    const canvas = canvasRef.current;
-    const hitCanvas = hitCanvasRef.current;
-    if (!wrap || !canvas || !hitCanvas) return;
+const resizeOverlayCanvases = useCallback(() => {
+  const wrap = wrapRef.current;
+  const canvas = canvasRef.current;
+  const hitCanvas = hitCanvasRef.current;
+  if (!wrap || !canvas || !hitCanvas) return;
 
-    const rect = wrap.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
+  const rect = wrap.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
 
-    // interaction canvas
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    canvas.style.width = `${rect.width}px`;
-    canvas.style.height = `${rect.height}px`;
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, rect.width, rect.height);
-    }
+  // interaction canvas
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  canvas.style.width = `${rect.width}px`;
+  canvas.style.height = `${rect.height}px`;
 
-    // hit overlay canvas
-    hitCanvas.width = rect.width * dpr;
-    hitCanvas.height = rect.height * dpr;
-    hitCanvas.style.width = `${rect.width}px`;
-    hitCanvas.style.height = `${rect.height}px`;
-    const hctx = hitCanvas.getContext("2d");
-    if (hctx) {
-      hctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      hctx.clearRect(0, 0, rect.width, rect.height);
-    }
-  }, []);
+  const ctx = canvas.getContext(
+    "2d",
+    { willReadFrequently: true } as CanvasRenderingContext2DSettings
+  );
+  if (!ctx) return;
 
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+
+  // hit overlay canvas
+  hitCanvas.width = rect.width * dpr;
+  hitCanvas.height = rect.height * dpr;
+  hitCanvas.style.width = `${rect.width}px`;
+  hitCanvas.style.height = `${rect.height}px`;
+
+  const hctx = hitCanvas.getContext(
+    "2d",
+    { willReadFrequently: true } as CanvasRenderingContext2DSettings
+  );
+  if (!hctx) return;
+
+  hctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  hctx.clearRect(0, 0, rect.width, rect.height);
+}, []);
   useEffect(() => {
     resizeOverlayCanvases();
 
@@ -1375,56 +1693,63 @@ const FreeformChainmail2D: React.FC = () => {
   // HIT CIRCLE DRAWING (WORLD SPACE → SCREEN SPACE)
   // ✅ FIX: RAF-throttle + viewport cull (keeps huge counts responsive)
   // ====================================================
-  const drawHitCircles = useCallback(() => {
-    const canvas = hitCanvasRef.current;
-    const wrap = wrapRef.current;
-    if (!canvas || !wrap) return;
+const drawHitCircles = useCallback(() => {
+  const canvas = hitCanvasRef.current;
+  const wrap = wrapRef.current;
+  if (!canvas || !wrap) return;
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+  const ctx = canvas.getContext(
+    "2d",
+    { willReadFrequently: true } as CanvasRenderingContext2DSettings
+  );
+  if (!ctx) return;
 
-    const rect = wrap.getBoundingClientRect();
-    ctx.clearRect(0, 0, rect.width, rect.height);
+  // Clear in CSS pixel space (since you setTransform(dpr,...) in resize)
+  const rect = wrap.getBoundingClientRect();
+  ctx.clearRect(0, 0, rect.width, rect.height);
 
-    if (hideCircles) return;
+  if (hideCircles) return;
 
-    ctx.strokeStyle = "rgba(20,184,166,0.8)";
-    ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(20,184,166,0.8)";
+  ctx.lineWidth = 1;
 
-    const margin = 60;
+  const margin = 60;
 
-    rings.forEach((r) => {
-      const { x, y } = rcToLogical(r.row, r.col);
+  rings.forEach((r) => {
+    const { x, y } = rcToLogical(r.row, r.col);
 
-      const lx = x + circleOffsetX;
-      const ly = y + circleOffsetY;
+    const lx = x + circleOffsetX;
+    const ly = y + circleOffsetY;
 
-      const { wx, wy } = logicalToWorld(lx, ly);
-      const { sx, sy } = worldToScreen(wx, wy);
+    const { wx, wy } = logicalToWorld(lx, ly);
+    const { sx, sy } = worldToScreen(wx, wy);
 
-      // Cull offscreen
-      if (sx < -margin || sx > rect.width + margin || sy < -margin || sy > rect.height + margin) return;
+    if (
+      sx < -margin ||
+      sx > rect.width + margin ||
+      sy < -margin ||
+      sy > rect.height + margin
+    ) return;
 
-      const effInner = getEffectiveInnerRadiusMm(r.row);
-      const baseRmm = effInner;
-      const rPx = projectRingRadiusPx(lx, ly, baseRmm) * circleScale;
+    const effInner = getEffectiveInnerRadiusMm(r.row);
+    const rPx = projectRingRadiusPx(lx, ly, effInner) * circleScale;
 
-      ctx.beginPath();
-      ctx.arc(sx, sy, rPx, 0, Math.PI * 2);
-      ctx.stroke();
-    });
-  }, [
-    rings,
-    rcToLogical,
-    logicalToWorld,
-    worldToScreen,
-    projectRingRadiusPx,
-    getEffectiveInnerRadiusMm,
-    circleScale,
-    circleOffsetX,
-    circleOffsetY,
-    hideCircles,
-  ]);
+    ctx.beginPath();
+    ctx.arc(sx, sy, rPx, 0, Math.PI * 2);
+    ctx.stroke();
+  });
+}, [
+  rings,
+  rcToLogical,
+  logicalToWorld,
+  worldToScreen,
+  projectRingRadiusPx,
+  getEffectiveInnerRadiusMm,
+  circleScale,
+  circleOffsetX,
+  circleOffsetY,
+  hideCircles,
+]);
 
   const hitRafRef = useRef<number | null>(null);
   const scheduleDrawHitCircles = useCallback(() => {
@@ -1458,90 +1783,116 @@ const FreeformChainmail2D: React.FC = () => {
     };
   }, []);
 
-  // ====================================================
-  // SELECTION OVERLAY DRAWING (on interaction canvas)
-  // - Draws only when selection tool is active and dragging.
-  // - Does NOT interfere with hit circles (separate canvas).
-  // ====================================================
-  const clearInteractionCanvas = useCallback(() => {
-    const canvas = canvasRef.current;
-    const wrap = wrapRef.current;
-    if (!canvas || !wrap) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const rect = wrap.getBoundingClientRect();
-    ctx.clearRect(0, 0, rect.width, rect.height);
-  }, []);
+// ====================================================
+// SELECTION OVERLAY DRAWING (on interaction canvas)
+// - Draws only when selection tool is active and dragging.
+// - Does NOT interfere with hit circles (separate canvas).
+// ====================================================
 
-  const drawSelectionOverlay = useCallback(() => {
-    const canvas = canvasRef.current;
-    const wrap = wrapRef.current;
-    if (!canvas || !wrap) return;
+const drawSelectionOverlay = useCallback(() => {
+  const canvas = canvasRef.current;
+  const wrap = wrapRef.current;
+  if (!canvas || !wrap) return;
 
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+  const ctx = canvas.getContext(
+    "2d",
+    { willReadFrequently: true } as CanvasRenderingContext2DSettings
+  );
+  if (!ctx) return;
 
-    const rect = wrap.getBoundingClientRect();
-    ctx.clearRect(0, 0, rect.width, rect.height);
+  const rect = wrap.getBoundingClientRect();
+  ctx.clearRect(0, 0, rect.width, rect.height);
 
-    if (selectionMode === "none") return;
-    if (!isSelecting) return;
-    const sel = selectionRef.current;
-    if (!sel) return;
+  if (selectionMode === "none") return;
+  if (!isSelecting) return;
 
-    const x0 = sel.sx0;
-    const y0 = sel.sy0;
-    const x1 = sel.sx1;
-    const y1 = sel.sy1;
+  const sel = selectionRef.current;
+  if (!sel) return;
 
-    // general style (kept consistent with existing UI)
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = "rgba(37,99,235,0.95)";
-    ctx.fillStyle = "rgba(37,99,235,0.18)";
+  const x0 = sel.sx0;
+  const y0 = sel.sy0;
+  const x1 = sel.sx1;
+  const y1 = sel.sy1;
 
-    if (selectionMode === "rect") {
-      const rx = Math.min(x0, x1);
-      const ry = Math.min(y0, y1);
-      const rw = Math.abs(x1 - x0);
-      const rh = Math.abs(y1 - y0);
+  // general style (kept consistent with existing UI)
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "rgba(37,99,235,0.95)";
+  ctx.fillStyle = "rgba(37,99,235,0.18)";
 
-      ctx.beginPath();
-      ctx.rect(rx, ry, rw, rh);
-      ctx.fill();
-      ctx.stroke();
+  if (selectionMode === "rect") {
+    const rx = Math.min(x0, x1);
+    const ry = Math.min(y0, y1);
+    const rw = Math.abs(x1 - x0);
+    const rh = Math.abs(y1 - y0);
 
-      // corner handles
-      ctx.fillStyle = "rgba(248,250,252,0.85)";
-      const s = 5;
-      ctx.fillRect(rx - s / 2, ry - s / 2, s, s);
-      ctx.fillRect(rx + rw - s / 2, ry - s / 2, s, s);
-      ctx.fillRect(rx - s / 2, ry + rh - s / 2, s, s);
-      ctx.fillRect(rx + rw - s / 2, ry + rh - s / 2, s, s);
-    } else if (selectionMode === "circle") {
-      const cx = x0;
-      const cy = y0;
-      const dx = x1 - x0;
-      const dy = y1 - y0;
-      const r = Math.sqrt(dx * dx + dy * dy);
+    ctx.beginPath();
+    ctx.rect(rx, ry, rw, rh);
+    ctx.fill();
+    ctx.stroke();
 
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+    // corner handles
+    ctx.fillStyle = "rgba(248,250,252,0.85)";
+    const s = 5;
+    ctx.fillRect(rx - s / 2, ry - s / 2, s, s);
+    ctx.fillRect(rx + rw - s / 2, ry - s / 2, s, s);
+    ctx.fillRect(rx - s / 2, ry + rh - s / 2, s, s);
+    ctx.fillRect(rx + rw - s / 2, ry + rh - s / 2, s, s);
+  } else if (selectionMode === "circle") {
+    const cx = x0;
+    const cy = y0;
+    const dx = x1 - x0;
+    const dy = y1 - y0;
+    const r = Math.sqrt(dx * dx + dy * dy);
 
-      // center dot
-      ctx.fillStyle = "rgba(248,250,252,0.9)";
-      ctx.beginPath();
-      ctx.arc(cx, cy, 3, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
 
-    // hint text
-    ctx.font = "12px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+    // center dot
     ctx.fillStyle = "rgba(248,250,252,0.9)";
-    const hint = eraseMode ? "🧽" : "🎨";
-    ctx.fillText(`${hint} ${lastSelectionCount || ""}`, 10, rect.height - 12);
-  }, [selectionMode, isSelecting, eraseMode, lastSelectionCount]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // hint text
+  ctx.font = "12px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
+  ctx.fillStyle = "rgba(248,250,252,0.9)";
+  const hint = eraseMode ? "🧽" : overlayPickingRef.current ? "🖼️" : "🎨";
+  ctx.fillText(`${hint} ${lastSelectionCount || ""}`, 10, rect.height - 12);
+}, [selectionMode, isSelecting, eraseMode, lastSelectionCount]);
+
+  // ✅ ESC to cancel selection / overlay-pick mode
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+
+      // If we were picking overlay selection, cancel that too
+      overlayPickingRef.current = false;
+
+      // Cancel drag in-progress
+      if (isSelecting) {
+        setIsSelecting(false);
+        selectionRef.current = null;
+        setLiveDims(null);
+        setLastSelectionCount(0);
+        setSelectedKeys(new Set());
+        clearInteractionCanvas();
+        return;
+      }
+
+      // Or just exit selection tool mode
+      if (selectionMode !== "none") {
+        setSelectionMode("none");
+        setSelectedKeys(new Set());
+        clearInteractionCanvas();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isSelecting, selectionMode, clearInteractionCanvas]);
 
   useEffect(() => {
     // keep selection overlay in sync with view
@@ -1847,8 +2198,17 @@ const FreeformChainmail2D: React.FC = () => {
         if (finalDims) setLastDims(finalDims);
         setLiveDims(null);
 
-        finalizeSelection();
-        applySelectionToRings(sel, selectionMode);
+        const keys = computeSelectionKeys(sel, selectionMode);
+
+        if (overlayPickingRef.current) {
+          setOverlayMaskKeys(keys);
+          setOverlayScope("selection");
+          setSelectedKeys(keys); // highlight the chosen overlay area
+          overlayPickingRef.current = false;
+        } else {
+          setSelectedKeys(keys);
+          applySelectionToRings(sel, selectionMode);
+        }
       } else {
         setLiveDims(null);
       }
@@ -1868,6 +2228,7 @@ const FreeformChainmail2D: React.FC = () => {
     clearInteractionCanvas,
     finalizeSelection,
     computeDimsFromSelection,
+    computeSelectionKeys,
   ]);
 
   const zoomAroundPoint = useCallback(
@@ -2101,8 +2462,16 @@ const FreeformChainmail2D: React.FC = () => {
         if (finalDims) setLastDims(finalDims);
         setLiveDims(null);
 
-        finalizeSelection();
-        applySelectionToRings(sel, selectionMode);
+        if (overlayPickingRef.current) {
+          const keys = computeSelectionKeys(sel, selectionMode);
+          setOverlayMaskKeys(keys);
+          setOverlayScope("selection");
+          setSelectedKeys(keys);
+          overlayPickingRef.current = false;
+        } else {
+          finalizeSelection();
+          applySelectionToRings(sel, selectionMode);
+        }
       } else {
         setLiveDims(null);
       }
@@ -2122,6 +2491,7 @@ const FreeformChainmail2D: React.FC = () => {
     finalizeSelection,
     applySelectionToRings,
     clearInteractionCanvas,
+    computeSelectionKeys,
   ]);
 
   // ✅ Install native listeners (passive:false) to stop console spam.
@@ -2655,6 +3025,15 @@ const FreeformChainmail2D: React.FC = () => {
             🧰
           </ToolButton>
 
+          {/* Image Overlay */}
+          <ToolButton
+            active={showImageOverlay}
+            onClick={() => setShowImageOverlay((v) => !v)}
+            title="Image overlay (apply to rings)"
+          >
+            🖼️
+          </ToolButton>
+
           {/* Clear */}
           <ToolButton onClick={handleClear} title="Clear all">
             🧹
@@ -2929,6 +3308,322 @@ const FreeformChainmail2D: React.FC = () => {
         />
       )}
 
+      {/* ============================= */}
+      {/* ✅ IMAGE OVERLAY PANEL (Freeform) */}
+      {/* ============================= */}
+      {showImageOverlay && (
+        <DraggablePill id="freeform-image-overlay" defaultPosition={{ x: 120, y: 120 }}>
+          <div
+            style={{
+              width: 320,
+              background: "rgba(17,24,39,0.97)",
+              border: "1px solid rgba(0,0,0,0.6)",
+              borderRadius: 14,
+              padding: 12,
+              color: "#e5e7eb",
+              fontSize: 12,
+              boxShadow: "0 12px 40px rgba(0,0,0,.45)",
+              display: "grid",
+              gap: 10,
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <strong style={{ fontSize: 13 }}>🖼️ Image Overlay</strong>
+              <button
+                onClick={() => setShowImageOverlay(false)}
+                style={{ background: "none", border: "none", color: "#9ca3af", cursor: "pointer", fontSize: 16 }}
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* ✅ Scope selector + pick selection */}
+            <div
+              style={{
+                display: "grid",
+                gap: 8,
+                padding: 10,
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.10)",
+                background: "rgba(2,6,23,0.75)",
+              }}
+            >
+              <div style={{ fontWeight: 800, fontSize: 12 }}>Transfer Scope</div>
+
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="overlayScope"
+                    checked={overlayScope === "all"}
+                    onChange={() => setOverlayScope("all")}
+                  />
+                  <span>All rings</span>
+                </label>
+
+                <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="overlayScope"
+                    checked={overlayScope === "selection"}
+                    onChange={() => setOverlayScope("selection")}
+                  />
+                  <span>Selection only</span>
+                </label>
+              </div>
+
+              {overlayScope === "selection" && (
+                <div style={{ display: "grid", gap: 6 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      overlayPickingRef.current = true;
+                      setOverlayMaskKeys(new Set());
+                      setSelectedKeys(new Set());
+                      setEraseMode(false);
+                      setPanMode(false);
+                      // ensure a selection tool is active so user can drag right away
+                      setSelectionMode((m) => (m === "none" ? "rect" : m));
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      borderRadius: 12,
+                      border: "1px solid rgba(255,255,255,0.14)",
+                      background: "rgba(255,255,255,0.92)",
+                      color: "#0b1220",
+                      cursor: "pointer",
+                      fontSize: 12,
+                      fontWeight: 900,
+                    }}
+                    title="Click, then drag a rectangle/circle selection on the canvas to define the transfer area."
+                  >
+                    🎯 Pick selection area (then drag on canvas)
+                  </button>
+
+                  <div style={{ fontSize: 11, opacity: 0.85 }}>
+                    Picked cells: <b>{overlayMaskKeys.size}</b>{" "}
+                    {overlayMaskKeys.size === 0 ? "(none yet)" : ""}
+                    {overlayPickingRef.current ? " • Picking…" : ""}
+                  </div>
+
+                  {overlayMaskKeys.size === 0 && (
+                    <div style={{ fontSize: 11, color: "#fbbf24" }}>
+                      Tip: click “Pick selection area”, then drag a selection. Press <b>Esc</b> to cancel.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                  const dataUrl = String(ev.target?.result || "");
+                  setOverlay((prev: any) => ({
+                    ...(prev ?? {}),
+                    dataUrl,
+                    scale: prev?.scale ?? 1,
+                    opacity: prev?.opacity ?? 0.8,
+                    offsetX: prev?.offsetX ?? 0,
+                    offsetY: prev?.offsetY ?? 0,
+                    tile: prev?.tile ?? true,
+                    // optional crop defaults to full image
+                    cropU0: prev?.cropU0 ?? 0,
+                    cropV0: prev?.cropV0 ?? 0,
+                    cropU1: prev?.cropU1 ?? 1,
+                    cropV1: prev?.cropV1 ?? 1,
+                  }));
+                };
+                reader.readAsDataURL(file);
+              }}
+            />
+
+            <label style={{ display: "grid", gap: 4 }}>
+              Scale
+              <input
+                type="range"
+                min={0.2}
+                max={6}
+                step={0.01}
+                value={Number((overlay as any)?.scale ?? 1)}
+                onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), scale: Number(e.target.value) }))}
+              />
+            </label>
+
+            <label style={{ display: "grid", gap: 4 }}>
+              Opacity
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={Number((overlay as any)?.opacity ?? 0.8)}
+                onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), opacity: Number(e.target.value) }))}
+              />
+            </label>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <label style={{ display: "grid", gap: 4 }}>
+                Offset X
+                <input
+                  type="number"
+                  value={Number((overlay as any)?.offsetX ?? 0)}
+                  onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), offsetX: Number(e.target.value) }))}
+                  style={{
+                    padding: 6,
+                    borderRadius: 10,
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "rgba(255,255,255,0.06)",
+                    color: "#f8fafc",
+                  }}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                Offset Y
+                <input
+                  type="number"
+                  value={Number((overlay as any)?.offsetY ?? 0)}
+                  onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), offsetY: Number(e.target.value) }))}
+                  style={{
+                    padding: 6,
+                    borderRadius: 10,
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "rgba(255,255,255,0.06)",
+                    color: "#f8fafc",
+                  }}
+                />
+              </label>
+            </div>
+
+            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                checked={!!(overlay as any)?.tile}
+                onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), tile: e.target.checked }))}
+              />
+              <span>Tile (repeat)</span>
+            </label>
+
+            <div style={{ fontSize: 11, opacity: 0.85 }}>
+              Crop (normalized 0..1). These values enable your “window selection” pipeline.
+              You can wire a drag-rect UI later to set these.
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              <label style={{ display: "grid", gap: 4 }}>
+                U0
+                <input
+                  type="number"
+                  step={0.01}
+                  min={0}
+                  max={1}
+                  value={Number((overlay as any)?.cropU0 ?? 0)}
+                  onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), cropU0: Number(e.target.value) }))}
+                  style={{
+                    padding: 6,
+                    borderRadius: 10,
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "rgba(255,255,255,0.06)",
+                    color: "#f8fafc",
+                  }}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                V0
+                <input
+                  type="number"
+                  step={0.01}
+                  min={0}
+                  max={1}
+                  value={Number((overlay as any)?.cropV0 ?? 0)}
+                  onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), cropV0: Number(e.target.value) }))}
+                  style={{
+                    padding: 6,
+                    borderRadius: 10,
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "rgba(255,255,255,0.06)",
+                    color: "#f8fafc",
+                  }}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                U1
+                <input
+                  type="number"
+                  step={0.01}
+                  min={0}
+                  max={1}
+                  value={Number((overlay as any)?.cropU1 ?? 1)}
+                  onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), cropU1: Number(e.target.value) }))}
+                  style={{
+                    padding: 6,
+                    borderRadius: 10,
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "rgba(255,255,255,0.06)",
+                    color: "#f8fafc",
+                  }}
+                />
+              </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                V1
+                <input
+                  type="number"
+                  step={0.01}
+                  min={0}
+                  max={1}
+                  value={Number((overlay as any)?.cropV1 ?? 1)}
+                  onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), cropV1: Number(e.target.value) }))}
+                  style={{
+                    padding: 6,
+                    borderRadius: 10,
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "rgba(255,255,255,0.06)",
+                    color: "#f8fafc",
+                  }}
+                />
+              </label>
+            </div>
+
+            <button
+              type="button"
+              onClick={applyOverlayToFreeform}
+              disabled={
+                !((overlay as any)?.dataUrl ?? (overlay as any)?.src ?? (overlay as any)?.url) ||
+                (overlayScope === "selection" && overlayMaskKeys.size === 0)
+              }
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.14)",
+                background: "#22c55e",
+                color: "#052e16",
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 900,
+                opacity:
+                  !((overlay as any)?.dataUrl ?? (overlay as any)?.src ?? (overlay as any)?.url) ||
+                  (overlayScope === "selection" && overlayMaskKeys.size === 0)
+                    ? 0.6
+                    : 1,
+              }}
+              title="Apply overlay colors to placed rings"
+            >
+              Transfer to Rings
+            </button>
+          </div>
+        </DraggablePill>
+      )}
+
       {finalizeOpen && (
         <FinalizeAndExportPanel
           rings={exportRings}
@@ -2968,7 +3663,7 @@ const FreeformChainmail2D: React.FC = () => {
             params={rendererParams}
             paint={paintMap}
             setPaint={() => {}}
-            activeColor={activeColor}
+            activeColor={renderActiveColor}
             initialPaintMode={false}
             initialEraseMode={false}
             initialRotationLocked={true}
@@ -3004,8 +3699,16 @@ const FreeformChainmail2D: React.FC = () => {
               const sel = selectionRef.current;
               setIsSelecting(false);
               if (sel) {
-                finalizeSelection();
-                applySelectionToRings(sel, selectionMode);
+                if (overlayPickingRef.current) {
+                  const keys = computeSelectionKeys(sel, selectionMode);
+                  setOverlayMaskKeys(keys);
+                  setOverlayScope("selection");
+                  setSelectedKeys(keys);
+                  overlayPickingRef.current = false;
+                } else {
+                  finalizeSelection();
+                  applySelectionToRings(sel, selectionMode);
+                }
               }
               selectionRef.current = null;
               clearInteractionCanvas();

@@ -203,7 +203,24 @@ function overlayGetString(
   }
   return fallback;
 }
+function overlayGetBool(o: any, keys: string[], fallback = false) {
+  for (const k of keys) {
+    const v = o?.[k];
+    if (typeof v === "boolean") return v;
+    if (typeof v === "number" && Number.isFinite(v)) return v !== 0;
+    if (typeof v === "string") {
+      const s = v.trim().toLowerCase();
+      if (s === "true" || s === "1" || s === "yes" || s === "on") return true;
+      if (s === "false" || s === "0" || s === "no" || s === "off") return false;
+    }
+  }
+  return fallback;
+}
 
+function wrap01(t: number) {
+  // wraps any real number into [0, 1)
+  return ((t % 1) + 1) % 1;
+}
 async function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -1159,135 +1176,273 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [paint, safeParams.ringColor]);
 
-    // ============================================================
-    // Overlay application: sample overlay image and paint rings
-    // ============================================================
-    const applyOverlayToRings = async (ov: OverlayState) => {
-      if (!ov) return;
-      if (!meshesRef.current || meshesRef.current.length === 0) return;
+// ============================================================
+// Overlay application: sample overlay image and paint rings
+// - Adds TRUE tiling (repeat) via wrap01()
+// - Adds optional crop/window selection support (normalized UV crop rect)
+//   Expected optional fields on OverlayState (robust):
+//     cropU0/cropV0/cropU1/cropV1  in [0..1]   (or crop: {u0,v0,u1,v1})
+//     tile / tiled / repeat / tilingEnabled OR tileMode:"repeat"
+//     tileX/tileY (optional)
+// ============================================================
 
-      const src =
-        overlayGetString(ov as any, ["dataUrl", "src", "url", "imageUrl"]) ??
-        null;
-      if (!src) return;
+type OverlaySample = { hex: string; alpha: number };
 
-      const offsetX = overlayGetNumeric(ov as any, ["offsetX", "x", "panX"], 0);
-      const offsetY = overlayGetNumeric(ov as any, ["offsetY", "y", "panY"], 0);
-      const scale = overlayGetNumeric(ov as any, ["scale"], 1);
-      const opacity = clamp01(overlayGetNumeric(ov as any, ["opacity"], 1));
+type OverlaySampler = {
+  key: string;
+  sampleWorld: (wx: number, wy: number) => OverlaySample | null;
+  sampleLogical: (lx: number, ly: number) => OverlaySample | null;
+};
 
-      const explicitW = overlayGetNumeric(
-        ov as any,
-        ["worldWidth", "widthWorld"],
-        NaN,
-      );
-      const explicitH = overlayGetNumeric(
-        ov as any,
-        ["worldHeight", "heightWorld"],
-        NaN,
-      );
+// ✅ Must be INSIDE the component (hooks)
+const overlaySamplerRef = useRef<OverlaySampler | null>(null);
 
-      const img = await loadImage(src);
+const getOverlayCropUV = (ov: any) => {
+  // Accept either flat fields or nested crop object. Defaults to full image.
+  const u0 =
+    overlayGetNumeric(ov, ["cropU0", "u0"], NaN) ??
+    overlayGetNumeric(ov?.crop, ["u0"], NaN);
+  const v0 =
+    overlayGetNumeric(ov, ["cropV0", "v0"], NaN) ??
+    overlayGetNumeric(ov?.crop, ["v0"], NaN);
+  const u1 =
+    overlayGetNumeric(ov, ["cropU1", "u1"], NaN) ??
+    overlayGetNumeric(ov?.crop, ["u1"], NaN);
+  const v1 =
+    overlayGetNumeric(ov, ["cropV1", "v1"], NaN) ??
+    overlayGetNumeric(ov?.crop, ["v1"], NaN);
 
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth || img.width;
-      canvas.height = img.naturalHeight || img.height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
+  const U0 = Number.isFinite(u0) ? clamp01(u0) : 0;
+  const V0 = Number.isFinite(v0) ? clamp01(v0) : 0;
+  const U1 = Number.isFinite(u1) ? clamp01(u1) : 1;
+  const V1 = Number.isFinite(v1) ? clamp01(v1) : 1;
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0);
+  // ensure ordering + non-zero size
+  const uu0 = Math.min(U0, U1);
+  const uu1 = Math.max(U0, U1);
+  const vv0 = Math.min(V0, V1);
+  const vv1 = Math.max(V0, V1);
 
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
+  const w = Math.max(1e-6, uu1 - uu0);
+  const h = Math.max(1e-6, vv1 - vv0);
 
-      // Compute ring bounds in world space
-      let minX = Infinity,
-        maxX = -Infinity,
-        minY = Infinity,
-        maxY = -Infinity;
+  return { u0: uu0, v0: vv0, uW: w, vH: h };
+};
 
-      for (const m of meshesRef.current) {
-        minX = Math.min(minX, m.position.x);
-        maxX = Math.max(maxX, m.position.x);
-        minY = Math.min(minY, m.position.y);
-        maxY = Math.max(maxY, m.position.y);
-      }
+const buildOverlaySampler = async (
+  ov: OverlayState,
+): Promise<OverlaySampler | null> => {
+  if (!ov) return null;
+  const meshes = meshesRef.current;
+  if (!meshes || meshes.length === 0) return null;
 
-      const worldW =
-        Number.isFinite(explicitW) && explicitW > 0
-          ? explicitW
-          : Math.max(1e-6, maxX - minX);
-      const worldH =
-        Number.isFinite(explicitH) && explicitH > 0
-          ? explicitH
-          : Math.max(1e-6, maxY - minY);
+  const src =
+    overlayGetString(ov as any, ["dataUrl", "src", "url", "imageUrl"]) ?? null;
+  if (!src) return null;
 
-      const cx = (minX + maxX) * 0.5 + offsetX;
-      const cy = (minY + maxY) * 0.5 + offsetY;
+  const offsetX = overlayGetNumeric(ov as any, ["offsetX", "x", "panX"], 0);
+  const offsetY = overlayGetNumeric(ov as any, ["offsetY", "y", "panY"], 0);
+  const scale = overlayGetNumeric(ov as any, ["scale"], 1);
+  const opacity = clamp01(overlayGetNumeric(ov as any, ["opacity"], 1));
 
-      const invScale = 1 / Math.max(1e-6, scale);
+  // --- tiling flags (robust) ---
+  const tileAny =
+    overlayGetBool(
+      ov as any,
+      ["tile", "tiled", "repeat", "tilingEnabled"],
+      false,
+    ) ||
+    (overlayGetString(ov as any, ["tileMode", "tiling"], "") || "")
+      .toLowerCase()
+      .includes("repeat");
 
-      const sampleAtWorld = (wx: number, wy: number) => {
-        const nx = ((wx - cx) / worldW) * invScale + 0.5;
-        const ny = ((wy - cy) / worldH) * invScale + 0.5;
+  const tileX = overlayGetBool(ov as any, ["tileX", "repeatX"], tileAny);
+  const tileY = overlayGetBool(ov as any, ["tileY", "repeatY"], tileAny);
 
-        if (nx < 0 || nx > 1 || ny < 0 || ny > 1) return null;
+  // --- optional explicit world size ---
+  const explicitW = overlayGetNumeric(
+    ov as any,
+    ["worldWidth", "widthWorld"],
+    NaN,
+  );
+  const explicitH = overlayGetNumeric(
+    ov as any,
+    ["worldHeight", "heightWorld"],
+    NaN,
+  );
 
-        const px = Math.floor(nx * (canvas.width - 1));
-        const py = Math.floor((1 - ny) * (canvas.height - 1));
+  // --- crop rect in normalized UV ---
+  const crop = getOverlayCropUV(ov as any);
 
-        const idx = (py * canvas.width + px) * 4;
-        const r = data[idx + 0];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-        const a = data[idx + 3] / 255;
+  // Compute ring bounds in world space
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
 
-        if (a <= 0.01) return null;
+  for (const m of meshes) {
+    minX = Math.min(minX, m.position.x);
+    maxX = Math.max(maxX, m.position.x);
+    minY = Math.min(minY, m.position.y);
+    maxY = Math.max(maxY, m.position.y);
+  }
 
-        const baseHex = normalizeColor6(paramsRef.current.ringColor || "#FFFFFF");
-        const base = new THREE.Color(baseHex);
-        const baseR = Math.round(base.r * 255);
-        const baseG = Math.round(base.g * 255);
-        const baseB = Math.round(base.b * 255);
+  const worldW =
+    Number.isFinite(explicitW) && explicitW > 0
+      ? explicitW
+      : Math.max(1e-6, maxX - minX);
+  const worldH =
+    Number.isFinite(explicitH) && explicitH > 0
+      ? explicitH
+      : Math.max(1e-6, maxY - minY);
 
-        const t = clamp01(a * opacity);
+  const cx = (minX + maxX) * 0.5 + offsetX;
+  const cy = (minY + maxY) * 0.5 + offsetY;
 
-        const outR = Math.round(baseR * (1 - t) + r * t);
-        const outG = Math.round(baseG * (1 - t) + g * t);
-        const outB = Math.round(baseB * (1 - t) + b * t);
+  const invScale = 1 / Math.max(1e-6, scale);
 
-        return rgbToHex(outR, outG, outB);
-      };
+  // Cache key includes everything that affects mapping
+  const baseHex = normalizeColor6(paramsRef.current.ringColor || "#FFFFFF");
+  const key = JSON.stringify({
+    src,
+    offsetX,
+    offsetY,
+    scale,
+    opacity,
+    explicitW: Number.isFinite(explicitW) ? explicitW : null,
+    explicitH: Number.isFinite(explicitH) ? explicitH : null,
+    tileX,
+    tileY,
+    crop,
+    bounds: [minX, maxX, minY, maxY],
+    baseHex,
+  });
 
-      // Overlay application is inherently "bulk"; do it in one state update
-      // and update materials immediately for responsiveness.
-      setPaint((prev) => {
-        const next = new Map(prev);
+  if (overlaySamplerRef.current?.key === key) return overlaySamplerRef.current;
 
-        for (const mesh of meshesRef.current) {
-          const row = mesh.userData.row as number;
-          const col = mesh.userData.col as number;
-          if (row == null || col == null) continue;
+  // Decode image once
+  const img = await loadImage(src);
 
-          const key = `${row},${col}`;
-          const wx = mesh.position.x;
-          const wy = mesh.position.y;
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth || img.width;
+  canvas.height = img.naturalHeight || img.height;
+  const ctx = canvas.getContext(
+  "2d",
+  { willReadFrequently: true } as CanvasRenderingContext2DSettings,
+) as CanvasRenderingContext2D | null;
+  if (!ctx) return null;
 
-          const sampled = sampleAtWorld(wx, wy);
-          if (sampled) {
-            const c = normalizeColor6(sampled);
-            next.set(key, c);
-            const mat = mesh.material as THREE.MeshStandardMaterial;
-            mat?.color?.set(c);
-          }
-        }
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0);
 
-        return next;
-      });
-    };
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imageData.data;
+  const w = canvas.width;
+  const h = canvas.height;
 
-    // ============================================================
+  // Precompute base blend color
+  const base = new THREE.Color(baseHex);
+  const baseR = Math.round(base.r * 255);
+  const baseG = Math.round(base.g * 255);
+  const baseB = Math.round(base.b * 255);
+
+  const sampleWorld = (wx: number, wy: number): OverlaySample | null => {
+    // world -> normalized in [0..1] (before crop)
+    let nx = ((wx - cx) / worldW) * invScale + 0.5;
+    let ny = ((wy - cy) / worldH) * invScale + 0.5;
+
+    // ✅ tiling: wrap first (if enabled), otherwise reject
+    if (tileX) nx = wrap01(nx);
+    if (tileY) ny = wrap01(ny);
+
+    if (!tileX && (nx < 0 || nx > 1)) return null;
+    if (!tileY && (ny < 0 || ny > 1)) return null;
+
+    // map into crop window (repeat happens within the crop window)
+    // u = crop.u0 + nx * crop.uW
+    // v = crop.v0 + ny * crop.vH
+    let u = crop.u0 + nx * crop.uW;
+    let v = crop.v0 + ny * crop.vH;
+
+    // If tiled, allow wrapping inside crop via wrap01 around crop span:
+    // (u - u0)/uW is periodic when tiled
+    if (tileX) u = crop.u0 + wrap01((u - crop.u0) / crop.uW) * crop.uW;
+    if (tileY) v = crop.v0 + wrap01((v - crop.v0) / crop.vH) * crop.vH;
+
+    // Non-tiled: clamp to crop window bounds
+    if (!tileX) u = crop.u0 + clamp01((u - crop.u0) / crop.uW) * crop.uW;
+    if (!tileY) v = crop.v0 + clamp01((v - crop.v0) / crop.vH) * crop.vH;
+
+    // UV -> pixel
+    let px = Math.floor(u * w);
+    let py = Math.floor((1 - v) * h);
+
+    // clamp edge case (u==1 or v==1)
+    if (px === w) px = w - 1;
+    if (py === h) py = h - 1;
+    if (px < 0 || px >= w || py < 0 || py >= h) return null;
+
+    const idx = (py * w + px) * 4;
+    const r = data[idx + 0];
+    const g = data[idx + 1];
+    const b = data[idx + 2];
+    const a255 = data[idx + 3];
+
+    if (a255 <= 2) return null; // transparent
+
+    const t = clamp01((a255 / 255) * opacity);
+
+    const outR = Math.round(baseR * (1 - t) + r * t);
+    const outG = Math.round(baseG * (1 - t) + g * t);
+    const outB = Math.round(baseB * (1 - t) + b * t);
+
+    return { hex: rgbToHex(outR, outG, outB), alpha: a255 };
+  };
+
+  // App logical coords use Y inverted vs mesh world Y
+  const sampleLogical = (lx: number, ly: number) => sampleWorld(lx, -ly);
+
+  const sampler: OverlaySampler = { key, sampleWorld, sampleLogical };
+  overlaySamplerRef.current = sampler;
+  return sampler;
+};
+
+const applyOverlayToRings = async (ov: OverlayState) => {
+  const meshes = meshesRef.current;
+  if (!meshes || meshes.length === 0) return;
+
+  const sampler = await buildOverlaySampler(ov);
+  if (!sampler) return;
+
+  setPaint((prev) => {
+    const next = new Map(prev);
+
+    for (const mesh of meshes) {
+      const row = mesh.userData.row as number;
+      const col = mesh.userData.col as number;
+      if (row == null || col == null) continue;
+
+      const key = `${row},${col}`;
+      const wx = mesh.position.x;
+      const wy = mesh.position.y;
+
+      const sampled = sampler.sampleWorld(wx, wy);
+      if (!sampled) continue;
+
+      const c = normalizeColor6(sampled.hex);
+      next.set(key, c);
+
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      mat?.color?.set(c);
+    }
+
+    return next;
+  });
+};
+
+// ============================================================
+
+     // ============================================================
     // Imperative Handle
     // ============================================================
     useImperativeHandle(ref, () => ({
