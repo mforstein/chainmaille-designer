@@ -180,6 +180,7 @@ function PasswordGateWrapper({ onUnlock }: { onUnlock: () => void }) {
 
 // ==============================
 // Draggable Floating Pill (Shared UI)
+// iPad-safe: Pointer Events + Text-node target handling
 // ==============================
 
 function DraggablePill({
@@ -196,11 +197,43 @@ function DraggablePill({
     return saved ? JSON.parse(saved) : defaultPosition;
   });
 
+  // keep a state so cursor updates (ref alone won't re-render)
+  const [dragging, setDragging] = useState(false);
+
   const draggingRef = useRef(false);
   const offsetRef = useRef({ x: 0, y: 0 });
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(`pill-pos-${id}`, JSON.stringify(pos));
+    } catch {
+      // ignore
+    }
+  }, [id, pos]);
+
+  // iOS Safari sometimes gives Text nodes (emoji) as event targets.
+  const getTargetElement = (t: EventTarget | null): Element | null => {
+    if (!t) return null;
+
+    const anyT = t as any;
+    // Text node: nodeType === 3
+    if (anyT?.nodeType === 3) return anyT.parentElement ?? null;
+
+    if (t instanceof Element) return t;
+    return null;
+  };
+
+  const isInteractive = (t: EventTarget | null) => {
+    const el = getTargetElement(t);
+    if (!el) return false;
+    return !!el.closest(
+      "button, input, select, textarea, label, a, [role='button'], [role='slider']",
+    );
+  };
+
   const start = (clientX: number, clientY: number) => {
     draggingRef.current = true;
+    setDragging(true);
     offsetRef.current = { x: clientX - pos.x, y: clientY - pos.y };
   };
 
@@ -214,17 +247,7 @@ function DraggablePill({
 
   const stop = () => {
     draggingRef.current = false;
-  };
-
-  useEffect(() => {
-    localStorage.setItem(`pill-pos-${id}`, JSON.stringify(pos));
-  }, [id, pos]);
-
-  const isInteractive = (el: EventTarget | null) => {
-    if (!(el instanceof HTMLElement)) return false;
-    return !!el.closest(
-      "button, input, select, textarea, label, a, [role='button'], [role='slider']",
-    );
+    setDragging(false);
   };
 
   return (
@@ -240,31 +263,46 @@ function DraggablePill({
         borderRadius: 24,
         padding: 12,
         userSelect: "none",
-        cursor: draggingRef.current ? "grabbing" : "grab",
+        cursor: dragging ? "grabbing" : "grab",
+        // ✅ critical for iPad Safari: prevents scroll/gesture interference during drag
+        touchAction: "none",
       }}
-      onMouseDown={(e) => {
+      onPointerDown={(e) => {
+        // If the user tapped a button/input inside the pill, do NOT drag.
         if (isInteractive(e.target)) return;
+
+        // Only react to primary pointer (prevents multi-touch weirdness)
+        if (!e.isPrimary) return;
+
+        // Capture so dragging continues even if pointer leaves pill bounds
+        try {
+          (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+        } catch {
+          // ignore
+        }
+
         start(e.clientX, e.clientY);
       }}
-      onMouseMove={(e) => move(e.clientX, e.clientY)}
-      onMouseUp={stop}
-      onMouseLeave={stop}
-      onTouchStart={(e) => {
-        if (isInteractive(e.target)) return;
-        const t = e.touches[0];
-        start(t.clientX, t.clientY);
+      onPointerMove={(e) => {
+        if (!draggingRef.current) return;
+        move(e.clientX, e.clientY);
       }}
-      onTouchMove={(e) => {
-        const t = e.touches[0];
-        move(t.clientX, t.clientY);
+      onPointerUp={(e) => {
+        stop();
+        try {
+          (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+        } catch {
+          // ignore
+        }
       }}
-      onTouchEnd={stop}
+      onPointerCancel={() => {
+        stop();
+      }}
     >
       {children}
     </div>
   );
 }
-
 // ---------------- Icon Button ----------------
 const IconBtn: React.FC<
   React.ButtonHTMLAttributes<HTMLButtonElement> & {
