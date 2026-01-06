@@ -911,10 +911,18 @@ function ChainmailDesigner() {
                   min={1}
                   max={400}
                   value={params.cols}
-                  onChange={(e) => {
-                    const val = clamp(parseInt(e.target.value), 1, 400);
-                    setParams({ ...params, cols: val });
-                  }}
+onChange={(e) => {
+  const raw = parseInt(e.target.value, 10);
+  const nextCols = Number.isFinite(raw) ? raw : params.cols;
+
+  const { rows: safeRows, cols: safeCols } = clampAndPersist(
+    "designer",
+    params.rows,
+    nextCols
+  );
+
+  setParams((p) => ({ ...p, rows: safeRows, cols: safeCols }));
+}}
                   style={{
                     width: 80,
                     textAlign: "right",
@@ -939,10 +947,19 @@ function ChainmailDesigner() {
                   min={1}
                   max={400}
                   value={params.rows}
-                  onChange={(e) => {
-                    const val = clamp(parseInt(e.target.value), 1, 400);
-                    setParams({ ...params, rows: val });
-                  }}
+onChange={(e) => {
+  const raw = parseInt(e.target.value, 10);
+  const nextRows = Number.isFinite(raw) ? raw : params.rows;
+
+  const { rows: safeRows, cols: safeCols } = clampAndPersist(
+    "designer",
+    nextRows,
+    params.cols
+  );
+
+  setParams((p) => ({ ...p, rows: safeRows, cols: safeCols }));
+}}
+
                   style={{
                     width: 80,
                     textAlign: "right",
