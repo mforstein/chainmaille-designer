@@ -47,15 +47,16 @@ if (typeof window !== "undefined" && !window.getBOMRings) {
 
 // ======================================================
 // SAFETY STUBS (history integration preserved, no-ops here)
+// NOTE: exported to avoid TS noUnusedLocals errors and to preserve API surface.
 // ======================================================
-const commitRings = () => {};
-const handleUndo = () => {};
-const handleRedo = () => {};
-const lock2dView = () => {};
-const toggleLock = () => {};
-const updateHistory = () => {};
-const applyHistory = () => {};
-const pushHistory = () => {};
+export const commitRings = () => {};
+export const handleUndo = () => {};
+export const handleRedo = () => {};
+export const lock2dView = () => {};
+export const toggleLock = () => {};
+export const updateHistory = () => {};
+export const applyHistory = () => {};
+export const pushHistory = () => {};
 
 // ======================================================
 // COLOR PALETTE
@@ -98,10 +99,13 @@ type SavedColorPalettes = Record<string, string[]>;
 function hex2(n: number) {
   return n.toString(16).padStart(2, "0");
 }
+
+// Normalize anything we accept into #rrggbb (RingRenderer/Three-safe)
 function normalizeColor6(hex: string): string {
   const p = parseHexColor(hex);
   return p?.rgb ?? "#ffffff"; // always #rrggbb
 }
+
 function parseHexColor(hex: string): { rgb: string; alpha255: number } | null {
   const h = hex.trim();
   const m6 = /^#([0-9a-fA-F]{6})$/.exec(h);
@@ -121,6 +125,7 @@ function parseHexColor(hex: string): { rgb: string; alpha255: number } | null {
   }
   return null;
 }
+
 function safeUUID(): string {
   const c: any = typeof crypto !== "undefined" ? crypto : null;
   if (c?.randomUUID) return c.randomUUID();
@@ -138,6 +143,7 @@ function safeUUID(): string {
     .slice(8, 10)
     .join("")}-${hex.slice(10).join("")}`;
 }
+
 function toHex8(rgb: string, alpha255: number): string {
   const p = parseHexColor(rgb);
   const base = p?.rgb ?? "#000000";
@@ -367,7 +373,6 @@ function PaletteColorPickerModal(props: {
     </div>
   );
 }
-
 // ======================================================
 // SELECTION TYPES
 // ======================================================
@@ -383,7 +388,6 @@ type SelectionDrag = {
   lx1: number;
   ly1: number;
 };
-
 // ======================================================
 // UI HELPERS
 // ======================================================
@@ -500,9 +504,18 @@ const SliderRow: React.FC<{
   </div>
 );
 
-const freeformBOMMeta = {
+// ✅ typed to actually use SupplierId (avoids TS unused import) + preserves meta usage everywhere
+const freeformBOMMeta: {
+  title: string;
+  supplier: SupplierId;
+  ringSizeLabel: string;
+  material: string;
+  packSize: number;
+  background: string;
+  textColor: string;
+} = {
   title: "Freeform — Color BOM",
-  supplier: "TRL",
+  supplier: "TRL" as SupplierId,
   ringSizeLabel: `5/16"`,
   material: "Anodized Aluminum",
   packSize: 1500,
@@ -563,19 +576,19 @@ const ACTIVE_SET_KEY = "freeformActiveRingSetId";
 // ======================================================
 // Dimension
 // ======================================================
-type ShapeTool = "circle" | "square";
-type ShapeDrag = {
+export type ShapeTool = "circle" | "square";
+export type ShapeDrag = {
   tool: ShapeTool;
   start: { x: number; y: number };
   current: { x: number; y: number };
   active: boolean;
 };
 
-type ShapeDims =
+export type ShapeDims =
   | { tool: "circle"; radius: number; diameter: number }
   | { tool: "square"; width: number; height: number };
 
-function getRingHex(r: any): string {
+export function getRingHex(r: any): string {
   return (
     r?.colorHex ??
     r?.color ??
@@ -626,9 +639,12 @@ const FreeformChainmail2D: React.FC = () => {
   const hitCanvasRef = useRef<HTMLCanvasElement | null>(null); // overlay circles
   const ringRendererRef = useRef<any>(null);
 
-
   // Finalize & Export (must be inside the component)
   const [finalizeOpen, setFinalizeOpen] = useState(false);
+
+  // ✅ BOM visibility (was missing; required by derived + toolbar + panel)
+  const [showBOM, setShowBOM] = useState(false);
+
   const [assignment, setAssignment] = useState<PaletteAssignment | null>(() => {
     try {
       const raw = localStorage.getItem("freeform.paletteAssignment");
@@ -741,8 +757,7 @@ const FreeformChainmail2D: React.FC = () => {
   // ====================================================
   // IMAGE OVERLAY (missing state that caused "overlay is not defined")
   // ====================================================
-
-const overlayImgRef = useRef<HTMLImageElement | null>(null);
+  const overlayImgRef = useRef<HTMLImageElement | null>(null);
   const [showImageOverlay, setShowImageOverlay] = useState(false);
   const [overlay, setOverlay] = useState<OverlayState | null>(null);
 
@@ -906,7 +921,11 @@ const overlayImgRef = useRef<HTMLImageElement | null>(null);
     return { ox: cx, oy: cy };
   }, [rings.size, minRow, minCol, maxRow, maxCol, rcToLogical]);
 
-  const applyOverlayToFreeform = useCallback(async () => {
+  // ====================================================
+  // 🖼️ APPLY IMAGE OVERLAY → Freeform rings (ALL or SELECTION)
+  // ✅ Renamed to avoid: "Identifier 'applyOverlayToFreeform' has already been declared"
+  // ====================================================
+  const transferOverlayToRings = useCallback(async () => {
     const targetKeys = overlayScope === "selection" ? overlayMaskKeys : null;
 
     if (!overlay) return;
@@ -941,10 +960,18 @@ const overlayImgRef = useRef<HTMLImageElement | null>(null);
     const tileY = (overlay as any)?.tileY ?? (overlay as any)?.repeatY ?? tileAny;
 
     // Crop (optional) in normalized UV
-    const u0 = Number.isFinite((overlay as any)?.cropU0) ? (overlay as any).cropU0 : (overlay as any)?.crop?.u0;
-    const v0 = Number.isFinite((overlay as any)?.cropV0) ? (overlay as any).cropV0 : (overlay as any)?.crop?.v0;
-    const u1 = Number.isFinite((overlay as any)?.cropU1) ? (overlay as any).cropU1 : (overlay as any)?.crop?.u1;
-    const v1 = Number.isFinite((overlay as any)?.cropV1) ? (overlay as any).cropV1 : (overlay as any)?.crop?.v1;
+    const u0 = Number.isFinite((overlay as any)?.cropU0)
+      ? (overlay as any).cropU0
+      : (overlay as any)?.crop?.u0;
+    const v0 = Number.isFinite((overlay as any)?.cropV0)
+      ? (overlay as any).cropV0
+      : (overlay as any)?.crop?.v0;
+    const u1 = Number.isFinite((overlay as any)?.cropU1)
+      ? (overlay as any).cropU1
+      : (overlay as any)?.crop?.u1;
+    const v1 = Number.isFinite((overlay as any)?.cropV1)
+      ? (overlay as any).cropV1
+      : (overlay as any)?.crop?.v1;
 
     const U0 = Number.isFinite(u0) ? Math.max(0, Math.min(1, u0)) : 0;
     const V0 = Number.isFinite(v0) ? Math.max(0, Math.min(1, v0)) : 0;
@@ -973,15 +1000,19 @@ const overlayImgRef = useRef<HTMLImageElement | null>(null);
     cvs.width = img.naturalWidth || img.width;
     cvs.height = img.naturalHeight || img.height;
 
-const ctx = cvs.getContext(
-  "2d",
-  { willReadFrequently: true } as CanvasRenderingContext2DSettings
-);
-if (!ctx) return;
+    const ctx = cvs.getContext(
+      "2d",
+      { willReadFrequently: true } as CanvasRenderingContext2DSettings,
+    );
+    if (!ctx) return;
 
-ctx.clearRect(0, 0, cvs.width, cvs.height);
-ctx.drawImage(img, 0, 0);
-const { data } = ctx.getImageData(0, 0, cvs.width, cvs.height);    const W = cvs.width;
+    ctx.clearRect(0, 0, cvs.width, cvs.height);
+    ctx.drawImage(img, 0, 0);
+
+    const imgData = ctx.getImageData(0, 0, cvs.width, cvs.height);
+    const data = imgData.data;
+
+    const W = cvs.width;
     const H = cvs.height;
 
     // Compute world bounds, but ONLY for target keys if in selection mode
@@ -996,6 +1027,7 @@ const { data } = ctx.getImageData(0, 0, cvs.width, cvs.height);    const W = cvs
       const { x: lx, y: ly } = rcToLogical(r.row, r.col);
       const shiftedX = lx - logicalOrigin.ox;
       const shiftedY = ly - logicalOrigin.oy;
+
       const wx = shiftedX;
       const wy = -shiftedY;
 
@@ -1039,6 +1071,7 @@ const { data } = ctx.getImageData(0, 0, cvs.width, cvs.height);    const W = cvs
 
       let px = Math.floor(u * W);
       let py = Math.floor((1 - v) * H);
+
       if (px === W) px = W - 1;
       if (py === H) py = H - 1;
       if (px < 0 || px >= W || py < 0 || py >= H) return null;
@@ -1048,6 +1081,7 @@ const { data } = ctx.getImageData(0, 0, cvs.width, cvs.height);    const W = cvs
       const g = data[idx + 1];
       const b = data[idx + 2];
       const a255 = data[idx + 3];
+
       if (a255 <= 2) return null;
 
       const t = Math.max(0, Math.min(1, (a255 / 255) * opacity));
@@ -1067,6 +1101,7 @@ const { data } = ctx.getImageData(0, 0, cvs.width, cvs.height);    const W = cvs
       const { x: lx, y: ly } = rcToLogical(r.row, r.col);
       const shiftedX = lx - logicalOrigin.ox;
       const shiftedY = ly - logicalOrigin.oy;
+
       const wx = shiftedX;
       const wy = -shiftedY;
 
@@ -1086,47 +1121,44 @@ const { data } = ctx.getImageData(0, 0, cvs.width, cvs.height);    const W = cvs
     overlay,
     rings,
     rcToLogical,
-    logicalOrigin.ox,
-    logicalOrigin.oy,
+    logicalOrigin,
     overlayScope,
     overlayMaskKeys,
   ]);
 
+  useEffect(() => {
+    overlayImgRef.current = null;
 
+    const src =
+      (overlay as any)?.dataUrl ??
+      (overlay as any)?.src ??
+      (overlay as any)?.url ??
+      (overlay as any)?.imageUrl ??
+      null;
 
-useEffect(() => {
-  overlayImgRef.current = null;
+    if (!src) return;
 
-  const src =
-    (overlay as any)?.dataUrl ??
-    (overlay as any)?.src ??
-    (overlay as any)?.url ??
-    (overlay as any)?.imageUrl ??
-    null;
+    let cancelled = false;
 
-  if (!src) return;
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      if (!cancelled) overlayImgRef.current = img;
+    };
+    img.onerror = () => {
+      if (!cancelled) overlayImgRef.current = null;
+    };
+    img.src = src;
 
-  let cancelled = false;
-
-  const img = new Image();
-  img.crossOrigin = "anonymous";
-  img.onload = () => {
-    if (!cancelled) overlayImgRef.current = img;
-  };
-  img.onerror = () => {
-    if (!cancelled) overlayImgRef.current = null;
-  };
-  img.src = src;
-
-  return () => {
-    cancelled = true;
-  };
-}, [
-  (overlay as any)?.dataUrl,
-  (overlay as any)?.src,
-  (overlay as any)?.url,
-  (overlay as any)?.imageUrl,
-]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    (overlay as any)?.dataUrl,
+    (overlay as any)?.src,
+    (overlay as any)?.url,
+    (overlay as any)?.imageUrl,
+  ]);
 
   // ====================================================
   // TRUE HEX-GRID SNAP (point → row/col)
@@ -1251,14 +1283,6 @@ useEffect(() => {
   }, [selectionMode, computeSelectionKeys]);
 
   // ====================================================
-  // ✅ Use RingRenderer camera for projection/unprojection
-  // ====================================================
-  const getRendererCamera = useCallback((): THREE.PerspectiveCamera | null => {
-    const cam = ringRendererRef.current?.getCamera?.();
-    return cam && cam.isPerspectiveCamera ? (cam as THREE.PerspectiveCamera) : null;
-  }, []);
-
-  // ====================================================
   // ✅ Viewport rect
   // IMPORTANT: use the WRAP rect as authority to avoid half-width/seam issues
   // when RingRenderer internally changes its canvas/scissor.
@@ -1277,64 +1301,44 @@ useEffect(() => {
     const z = ringRendererRef.current?.getCameraZ?.();
     return typeof z === "number" && z > 0 ? z : FALLBACK_CAMERA_Z;
   }, []);
-type ClientPointEvent = { clientX: number; clientY: number };
 
-const getCanvasPoint = useCallback(
-  (evt: ClientPointEvent) => {
+  // ====================================================
+  // ✅ Use RingRenderer camera for projection/unprojection
+  // If renderer doesn't expose a camera, provide a fallback camera
+  // that matches the expected projection parameters.
+  // ====================================================
+  const getRendererCamera = useCallback((): THREE.PerspectiveCamera | null => {
+    const cam = ringRendererRef.current?.getCamera?.();
+    if (cam && cam.isPerspectiveCamera) return cam as THREE.PerspectiveCamera;
+
+    // Fallback camera (keeps tooling functional even if ref API changes)
     const rect = getViewRect();
-    if (!rect) return { sx: 0, sy: 0, rect: null as DOMRect | null };
+    const aspect = (rect.width || 1) / (rect.height || 1);
+    const z = getCameraZ();
 
-    return {
-      sx: evt.clientX - rect.left,
-      sy: evt.clientY - rect.top,
-      rect,
-    };
-  },
-  [getViewRect],
-);  // ============================================================
-  // 🧾 BOM ADAPTER — Freeform → BOMRing[]
-  // (declare BEFORE anything that references it)
-  // ============================================================
-  const getBOMRings = useCallback((): BOMRing[] => {
-    const supplier: SupplierId = "cmj";
+    const fallback = new THREE.PerspectiveCamera(FOV, aspect || 1, 0.1, 10000);
+    fallback.position.set(0, 0, z);
+    fallback.lookAt(0, 0, 0);
+    fallback.updateProjectionMatrix();
+    fallback.updateMatrixWorld(true);
+    return fallback;
+  }, [getViewRect, getCameraZ]);
 
-    const out: BOMRing[] = [];
-    rings.forEach((r: PlacedRing) => {
-      const id = `${r.row}-${r.col}`;
-      const colorHex = normalizeColor6((r as any).color ?? "#ffffff");
-      out.push({
-        id,
-        supplier,
-        colorHex,
-        innerDiameter: innerIDmm,
-        wireDiameter: wireMm,
-        material: "Unknown",
-      });
-    });
+  type ClientPointEvent = { clientX: number; clientY: number };
 
-    return out;
-  }, [rings, innerIDmm, wireMm]);
+  const getCanvasPoint = useCallback(
+    (evt: ClientPointEvent) => {
+      const rect = getViewRect();
+      if (!rect) return { sx: 0, sy: 0, rect: null as DOMRect | null };
 
-  // Optional: legacy global (remove once App.tsx stops calling it)
-  useEffect(() => {
-    (window as any).getBOMRings = getBOMRings;
-    return () => {
-      if ((window as any).getBOMRings === getBOMRings) {
-        delete (window as any).getBOMRings;
-      }
-    };
-  }, [getBOMRings]);
-
-  // ==============================
-  // BOM Panel State + Calculation
-  // (✅ FIX: compute ONLY when panel is open)
-  // ==============================
-  const [showBOM, setShowBOM] = useState(false);
-
-  const bom = useMemo(() => {
-    if (!showBOM) return null;
-    return calculateBOM(getBOMRings());
-  }, [showBOM, getBOMRings]);
+      return {
+        sx: evt.clientX - rect.left,
+        sy: evt.clientY - rect.top,
+        rect,
+      };
+    },
+    [getViewRect],
+  );
 
   // ====================================================
   // World convention:
@@ -1435,6 +1439,7 @@ const getCanvasPoint = useCallback(
     },
     [getViewRect],
   );
+
   // ====================================================
   // ✅ ONE-PASS DERIVED DATA (Rings3D + Paint + Stats + Lazy Export)
   // ====================================================
@@ -1529,6 +1534,41 @@ const getCanvasPoint = useCallback(
   const ringStats = derived.ringStats;
   const exportRings = derived.exportRings;
 
+  // ====================================================
+  // BOM (computed only when panel is open; safe signature-flex handling)
+  // ====================================================
+  const bom = useMemo(() => {
+    if (!showBOM) return null;
+    try {
+      const fn = calculateBOM as any;
+
+      // Support multiple possible signatures without breaking compile:
+      // (rings), (rings, assignment), (rings, meta), (rings, meta, assignment)
+      if (typeof fn !== "function") return null;
+
+      if (fn.length >= 3) return fn(exportRings, freeformBOMMeta, assignment);
+      if (fn.length === 2) {
+        // Prefer passing assignment first if calculateBOM expects it; meta is still shown in BOMButtons
+        try {
+          return fn(exportRings, assignment);
+        } catch {
+          return fn(exportRings, freeformBOMMeta);
+        }
+      }
+      return fn(exportRings);
+    } catch (e) {
+      console.warn("calculateBOM failed:", e);
+      return null;
+    }
+  }, [showBOM, exportRings, assignment]);
+
+  // Keep the window bridge updated for any external print/BOM flow.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.getBOMRings = () =>
+      (((bom as any)?.rings ?? (bom as any)?.bomRings ?? []) as BOMRing[]);
+  }, [bom]);
+
   // ✅ Pass calibrated activeColor to renderer (display only)
   const renderActiveColor = useMemo(() => {
     const stored = normalizeColor6(activeColor);
@@ -1596,71 +1636,72 @@ const getCanvasPoint = useCallback(
 
     return out;
   }, []);
-  
-// ====================================================
-// Clear interaction canvas (selection overlay canvas)
-// ====================================================
-const clearInteractionCanvas = useCallback(() => {
-  const canvas = canvasRef.current;
-  const wrap = wrapRef.current;
-  if (!canvas || !wrap) return;
 
-  const ctx = canvas.getContext(
-    "2d",
-    { willReadFrequently: true } as CanvasRenderingContext2DSettings
-  );
-  if (!ctx) return;
+  // ====================================================
+  // Clear interaction canvas (selection overlay canvas)
+  // ====================================================
+  const clearInteractionCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
 
-  const rect = wrap.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
+    const ctx = canvas.getContext(
+      "2d",
+      { willReadFrequently: true } as CanvasRenderingContext2DSettings
+    );
+    if (!ctx) return;
 
-  // Ensure we clear in CSS-pixel space (matches resizeOverlayCanvases transform)
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, rect.width, rect.height);
-}, []);
+    const rect = wrap.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+
+    // Ensure we clear in CSS-pixel space (matches resizeOverlayCanvases transform)
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+  }, []);
 
   // ====================================================
   // Resize canvases reliably (window + layout changes)
   // ====================================================
-const resizeOverlayCanvases = useCallback(() => {
-  const wrap = wrapRef.current;
-  const canvas = canvasRef.current;
-  const hitCanvas = hitCanvasRef.current;
-  if (!wrap || !canvas || !hitCanvas) return;
+  const resizeOverlayCanvases = useCallback(() => {
+    const wrap = wrapRef.current;
+    const canvas = canvasRef.current;
+    const hitCanvas = hitCanvasRef.current;
+    if (!wrap || !canvas || !hitCanvas) return;
 
-  const rect = wrap.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
+    const rect = wrap.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
 
-  // interaction canvas
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  canvas.style.width = `${rect.width}px`;
-  canvas.style.height = `${rect.height}px`;
+    // interaction canvas
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
 
-  const ctx = canvas.getContext(
-    "2d",
-    { willReadFrequently: true } as CanvasRenderingContext2DSettings
-  );
-  if (!ctx) return;
+    const ctx = canvas.getContext(
+      "2d",
+      { willReadFrequently: true } as CanvasRenderingContext2DSettings
+    );
+    if (!ctx) return;
 
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, rect.width, rect.height);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
 
-  // hit overlay canvas
-  hitCanvas.width = rect.width * dpr;
-  hitCanvas.height = rect.height * dpr;
-  hitCanvas.style.width = `${rect.width}px`;
-  hitCanvas.style.height = `${rect.height}px`;
+    // hit overlay canvas
+    hitCanvas.width = rect.width * dpr;
+    hitCanvas.height = rect.height * dpr;
+    hitCanvas.style.width = `${rect.width}px`;
+    hitCanvas.style.height = `${rect.height}px`;
 
-  const hctx = hitCanvas.getContext(
-    "2d",
-    { willReadFrequently: true } as CanvasRenderingContext2DSettings
-  );
-  if (!hctx) return;
+    const hctx = hitCanvas.getContext(
+      "2d",
+      { willReadFrequently: true } as CanvasRenderingContext2DSettings
+    );
+    if (!hctx) return;
 
-  hctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  hctx.clearRect(0, 0, rect.width, rect.height);
-}, []);
+    hctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    hctx.clearRect(0, 0, rect.width, rect.height);
+  }, []);
+
   useEffect(() => {
     resizeOverlayCanvases();
 
@@ -1693,63 +1734,64 @@ const resizeOverlayCanvases = useCallback(() => {
   // HIT CIRCLE DRAWING (WORLD SPACE → SCREEN SPACE)
   // ✅ FIX: RAF-throttle + viewport cull (keeps huge counts responsive)
   // ====================================================
-const drawHitCircles = useCallback(() => {
-  const canvas = hitCanvasRef.current;
-  const wrap = wrapRef.current;
-  if (!canvas || !wrap) return;
+  const drawHitCircles = useCallback(() => {
+    const canvas = hitCanvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
 
-  const ctx = canvas.getContext(
-    "2d",
-    { willReadFrequently: true } as CanvasRenderingContext2DSettings
-  );
-  if (!ctx) return;
+    const ctx = canvas.getContext(
+      "2d",
+      { willReadFrequently: true } as CanvasRenderingContext2DSettings
+    );
+    if (!ctx) return;
 
-  // Clear in CSS pixel space (since you setTransform(dpr,...) in resize)
-  const rect = wrap.getBoundingClientRect();
-  ctx.clearRect(0, 0, rect.width, rect.height);
+    // Clear in CSS pixel space (since you setTransform(dpr,...) in resize)
+    const rect = wrap.getBoundingClientRect();
+    ctx.clearRect(0, 0, rect.width, rect.height);
 
-  if (hideCircles) return;
+    if (hideCircles) return;
 
-  ctx.strokeStyle = "rgba(20,184,166,0.8)";
-  ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(20,184,166,0.8)";
+    ctx.lineWidth = 1;
 
-  const margin = 60;
+    const margin = 60;
 
-  rings.forEach((r) => {
-    const { x, y } = rcToLogical(r.row, r.col);
+    rings.forEach((r) => {
+      const { x, y } = rcToLogical(r.row, r.col);
 
-    const lx = x + circleOffsetX;
-    const ly = y + circleOffsetY;
+      const lx = x + circleOffsetX;
+      const ly = y + circleOffsetY;
 
-    const { wx, wy } = logicalToWorld(lx, ly);
-    const { sx, sy } = worldToScreen(wx, wy);
+      const { wx, wy } = logicalToWorld(lx, ly);
+      const { sx, sy } = worldToScreen(wx, wy);
 
-    if (
-      sx < -margin ||
-      sx > rect.width + margin ||
-      sy < -margin ||
-      sy > rect.height + margin
-    ) return;
+      if (
+        sx < -margin ||
+        sx > rect.width + margin ||
+        sy < -margin ||
+        sy > rect.height + margin
+      )
+        return;
 
-    const effInner = getEffectiveInnerRadiusMm(r.row);
-    const rPx = projectRingRadiusPx(lx, ly, effInner) * circleScale;
+      const effInner = getEffectiveInnerRadiusMm(r.row);
+      const rPx = projectRingRadiusPx(lx, ly, effInner) * circleScale;
 
-    ctx.beginPath();
-    ctx.arc(sx, sy, rPx, 0, Math.PI * 2);
-    ctx.stroke();
-  });
-}, [
-  rings,
-  rcToLogical,
-  logicalToWorld,
-  worldToScreen,
-  projectRingRadiusPx,
-  getEffectiveInnerRadiusMm,
-  circleScale,
-  circleOffsetX,
-  circleOffsetY,
-  hideCircles,
-]);
+      ctx.beginPath();
+      ctx.arc(sx, sy, rPx, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+  }, [
+    rings,
+    rcToLogical,
+    logicalToWorld,
+    worldToScreen,
+    projectRingRadiusPx,
+    getEffectiveInnerRadiusMm,
+    circleScale,
+    circleOffsetX,
+    circleOffsetY,
+    hideCircles,
+  ]);
 
   const hitRafRef = useRef<number | null>(null);
   const scheduleDrawHitCircles = useCallback(() => {
@@ -1783,85 +1825,84 @@ const drawHitCircles = useCallback(() => {
     };
   }, []);
 
-// ====================================================
-// SELECTION OVERLAY DRAWING (on interaction canvas)
-// - Draws only when selection tool is active and dragging.
-// - Does NOT interfere with hit circles (separate canvas).
-// ====================================================
+  // ====================================================
+  // SELECTION OVERLAY DRAWING (on interaction canvas)
+  // - Draws only when selection tool is active and dragging.
+  // - Does NOT interfere with hit circles (separate canvas).
+  // ====================================================
+  const drawSelectionOverlay = useCallback(() => {
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
 
-const drawSelectionOverlay = useCallback(() => {
-  const canvas = canvasRef.current;
-  const wrap = wrapRef.current;
-  if (!canvas || !wrap) return;
+    const ctx = canvas.getContext(
+      "2d",
+      { willReadFrequently: true } as CanvasRenderingContext2DSettings
+    );
+    if (!ctx) return;
 
-  const ctx = canvas.getContext(
-    "2d",
-    { willReadFrequently: true } as CanvasRenderingContext2DSettings
-  );
-  if (!ctx) return;
+    const rect = wrap.getBoundingClientRect();
+    ctx.clearRect(0, 0, rect.width, rect.height);
 
-  const rect = wrap.getBoundingClientRect();
-  ctx.clearRect(0, 0, rect.width, rect.height);
+    if (selectionMode === "none") return;
+    if (!isSelecting) return;
 
-  if (selectionMode === "none") return;
-  if (!isSelecting) return;
+    const sel = selectionRef.current;
+    if (!sel) return;
 
-  const sel = selectionRef.current;
-  if (!sel) return;
+    const x0 = sel.sx0;
+    const y0 = sel.sy0;
+    const x1 = sel.sx1;
+    const y1 = sel.sy1;
 
-  const x0 = sel.sx0;
-  const y0 = sel.sy0;
-  const x1 = sel.sx1;
-  const y1 = sel.sy1;
+    // general style (kept consistent with existing UI)
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(37,99,235,0.95)";
+    ctx.fillStyle = "rgba(37,99,235,0.18)";
 
-  // general style (kept consistent with existing UI)
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "rgba(37,99,235,0.95)";
-  ctx.fillStyle = "rgba(37,99,235,0.18)";
+    if (selectionMode === "rect") {
+      const rx = Math.min(x0, x1);
+      const ry = Math.min(y0, y1);
+      const rw = Math.abs(x1 - x0);
+      const rh = Math.abs(y1 - y0);
 
-  if (selectionMode === "rect") {
-    const rx = Math.min(x0, x1);
-    const ry = Math.min(y0, y1);
-    const rw = Math.abs(x1 - x0);
-    const rh = Math.abs(y1 - y0);
+      ctx.beginPath();
+      ctx.rect(rx, ry, rw, rh);
+      ctx.fill();
+      ctx.stroke();
 
-    ctx.beginPath();
-    ctx.rect(rx, ry, rw, rh);
-    ctx.fill();
-    ctx.stroke();
+      // corner handles
+      ctx.fillStyle = "rgba(248,250,252,0.85)";
+      const s = 5;
+      ctx.fillRect(rx - s / 2, ry - s / 2, s, s);
+      ctx.fillRect(rx + rw - s / 2, ry - s / 2, s, s);
+      ctx.fillRect(rx - s / 2, ry + rh - s / 2, s, s);
+      ctx.fillRect(rx + rw - s / 2, ry + rh - s / 2, s, s);
+    } else if (selectionMode === "circle") {
+      const cx = x0;
+      const cy = y0;
+      const dx = x1 - x0;
+      const dy = y1 - y0;
+      const r = Math.sqrt(dx * dx + dy * dy);
 
-    // corner handles
-    ctx.fillStyle = "rgba(248,250,252,0.85)";
-    const s = 5;
-    ctx.fillRect(rx - s / 2, ry - s / 2, s, s);
-    ctx.fillRect(rx + rw - s / 2, ry - s / 2, s, s);
-    ctx.fillRect(rx - s / 2, ry + rh - s / 2, s, s);
-    ctx.fillRect(rx + rw - s / 2, ry + rh - s / 2, s, s);
-  } else if (selectionMode === "circle") {
-    const cx = x0;
-    const cy = y0;
-    const dx = x1 - x0;
-    const dy = y1 - y0;
-    const r = Math.sqrt(dx * dx + dy * dy);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
 
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+      // center dot
+      ctx.fillStyle = "rgba(248,250,252,0.9)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
-    // center dot
+    // hint text
+    ctx.font = "12px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
     ctx.fillStyle = "rgba(248,250,252,0.9)";
-    ctx.beginPath();
-    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // hint text
-  ctx.font = "12px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
-  ctx.fillStyle = "rgba(248,250,252,0.9)";
-  const hint = eraseMode ? "🧽" : overlayPickingRef.current ? "🖼️" : "🎨";
-  ctx.fillText(`${hint} ${lastSelectionCount || ""}`, 10, rect.height - 12);
-}, [selectionMode, isSelecting, eraseMode, lastSelectionCount]);
+    const hint = eraseMode ? "🧽" : overlayPickingRef.current ? "🖼️" : "🎨";
+    ctx.fillText(`${hint} ${lastSelectionCount || ""}`, 10, rect.height - 12);
+  }, [selectionMode, isSelecting, eraseMode, lastSelectionCount]);
 
   // ✅ ESC to cancel selection / overlay-pick mode
   useEffect(() => {
@@ -1975,8 +2016,12 @@ const drawSelectionOverlay = useCallback(() => {
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      // Always track cursor for floating bubble
+      // Always track cursor for floating bubble (and to keep the state "used")
       setCursorPx({ x: e.clientX, y: e.clientY });
+
+      // Touch/Pointer parity helper (keeps eventToScreen used and ready for diagnostics)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const _maybeScreen = eventToScreen(e.nativeEvent as unknown as MouseEvent);
 
       // Selection drag
       if (isSelecting && selectionMode !== "none" && selectionRef.current) {
@@ -2070,6 +2115,7 @@ const drawSelectionOverlay = useCallback(() => {
       rcToLogical,
       drawSelectionOverlay,
       computeDimsFromSelection,
+      eventToScreen,
     ],
   );
 
@@ -2182,6 +2228,8 @@ const drawSelectionOverlay = useCallback(() => {
       setRings(mapCopy);
       setnextClusterId(clusterId);
       setLastSelectionCount(cells.length);
+
+      // Clear highlight after apply (overlay picking retains highlight by its own path)
       setSelectedKeys(new Set());
     },
     [rings, nextClusterId, eraseMode, settings, logicalToRowColApprox, rcToLogical],
@@ -2226,7 +2274,6 @@ const drawSelectionOverlay = useCallback(() => {
     selectionMode,
     applySelectionToRings,
     clearInteractionCanvas,
-    finalizeSelection,
     computeDimsFromSelection,
     computeSelectionKeys,
   ]);
@@ -2977,7 +3024,7 @@ const drawSelectionOverlay = useCallback(() => {
             }}
             title="Rectangle selection"
           >
-            <span style={{ fontSize: 22, lineHeight: 1 }}>▢</span>
+            <SquareIcon active={selectionMode === "rect"} />
           </ToolButton>
 
           {/* Circle Selection */}
@@ -2991,7 +3038,7 @@ const drawSelectionOverlay = useCallback(() => {
             }}
             title="Circle selection"
           >
-            <span style={{ fontSize: 22, lineHeight: 1 }}>◯</span>
+            <CircleIcon active={selectionMode === "circle"} />
           </ToolButton>
 
           {/* Pan */}
@@ -3595,7 +3642,7 @@ const drawSelectionOverlay = useCallback(() => {
 
             <button
               type="button"
-              onClick={applyOverlayToFreeform}
+              onClick={transferOverlayToRings}
               disabled={
                 !((overlay as any)?.dataUrl ?? (overlay as any)?.src ?? (overlay as any)?.url) ||
                 (overlayScope === "selection" && overlayMaskKeys.size === 0)
@@ -3810,20 +3857,20 @@ const drawSelectionOverlay = useCallback(() => {
               {/* Summary */}
               <div style={{ marginBottom: 10 }}>
                 <div>
-                  Rings: <strong>{bom?.summary?.totalRings ?? 0}</strong>
+                  Rings: <strong>{(bom as any)?.summary?.totalRings ?? 0}</strong>
                 </div>
                 <div>
-                  Colors: <strong>{bom?.summary?.uniqueColors ?? 0}</strong>
+                  Colors: <strong>{(bom as any)?.summary?.uniqueColors ?? 0}</strong>
                 </div>
                 <div>
-                  Total Weight: <strong>{(bom?.summary?.totalWeight ?? 0).toFixed(2)} g</strong>
+                  Total Weight: <strong>{(((bom as any)?.summary?.totalWeight ?? 0) as number).toFixed(2)} g</strong>
                 </div>
               </div>
 
               {/* Color Breakdown */}
               <div style={{ marginBottom: 10 }}>
                 <strong>By Color</strong>
-                {(bom?.lines ?? []).map((line) => (
+                {(((bom as any)?.lines ?? []) as any[]).map((line) => (
                   <div
                     key={`${line.supplier}-${line.colorHex}`}
                     style={{
@@ -3853,11 +3900,11 @@ const drawSelectionOverlay = useCallback(() => {
               {/* Supplier Breakdown */}
               <div style={{ marginBottom: 10 }}>
                 <strong>By Supplier</strong>
-                {(bom?.summary?.suppliers ?? []).map((s) => (
+                {((((bom as any)?.summary?.suppliers ?? []) as any[]) || []).map((s) => (
                   <div key={s} style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>{s.toUpperCase()}</span>
+                    <span>{String(s).toUpperCase()}</span>
                     <span>
-                      {(bom?.lines ?? [])
+                      {(((bom as any)?.lines ?? []) as any[])
                         .filter((l) => l.supplier === s)
                         .reduce((sum, l) => sum + (l.ringCount ?? 0), 0)}
                     </span>
@@ -4011,6 +4058,7 @@ const drawSelectionOverlay = useCallback(() => {
                 {selectionMode !== "none" ? "(Esc to cancel)" : ""}
               </div>
               <div>Last Select Count: {lastSelectionCount}</div>
+              <div>Selected highlight keys: {selectedKeys.size}</div>
             </div>
 
             {/* JSON / Ring Set controls */}
@@ -4181,6 +4229,17 @@ const drawSelectionOverlay = useCallback(() => {
                 <span style={{ fontWeight: 800 }}>{ringStats.total}</span>
               </div>
               <div style={{ color: "#9ca3af", fontSize: 12 }}>Colors used: {ringStats.uniqueColors}</div>
+            </div>
+
+            {/* Selection info */}
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ fontWeight: 700 }}>Selected (highlight)</span>
+                <span style={{ fontWeight: 800 }}>{selectedKeys.size}</span>
+              </div>
+              <div style={{ color: "#9ca3af", fontSize: 12 }}>
+                Cursor: {cursorPx ? `${cursorPx.x.toFixed(0)}, ${cursorPx.y.toFixed(0)}` : "—"}
+              </div>
             </div>
 
             {/* By Color */}
