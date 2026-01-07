@@ -739,41 +739,33 @@ function ChainmailDesigner() {
 
 const doReset = () => rendererRef.current?.resetView();
 
-// ✅ iPad-safe broom: clear state first (source of truth), then force redraw
 const doClearPaint = () => {
-  // 1) Clear React state (this drives RingRenderer paint prop)
+  // 1) Clear React state (source of truth)
   setPaint(() => new Map());
 
-  // 2) Ask renderer to clear any internal caches AND repaint
-  // (If clearPaint already exists, keep calling it. But do NOT rely on it alone.)
+  // 2) Clear renderer internal caches (if any)
   try {
     rendererRef.current?.clearPaint?.();
-  } catch {
-    // ignore
-  }
+  } catch {}
 
-  // 3) iOS Safari sometimes needs an extra frame to show the updated WebGL result
+  const rr: any = rendererRef.current;
+
+  // 3) iOS Safari: extra frame(s) to ensure repaint
   requestAnimationFrame(() => {
     try {
-      // If your renderer exposes any of these, call them defensively.
-      rendererRef.current?.requestRender?.();
-      rendererRef.current?.invalidate?.();
-      rendererRef.current?.renderOnce?.();
-      rendererRef.current?.clearPaint?.(); // harmless if idempotent
-    } catch {
-      // ignore
-    }
+      rr?.requestRender?.();
+      rr?.invalidate?.();
+      rr?.renderOnce?.();
+      rr?.clearPaint?.();
+    } catch {}
   });
 
-  // 4) One more frame for stubborn iPad WebGL repaint issues
   requestAnimationFrame(() => {
     try {
-      rendererRef.current?.requestRender?.();
-      rendererRef.current?.invalidate?.();
-      rendererRef.current?.renderOnce?.();
-    } catch {
-      // ignore
-    }
+      rr?.requestRender?.();
+      rr?.invalidate?.();
+      rr?.renderOnce?.();
+    } catch {}
   });
 };
   // ==============================
