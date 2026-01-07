@@ -177,6 +177,21 @@ function PasswordGateWrapper({ onUnlock }: { onUnlock: () => void }) {
     />
   );
 }
+const UI_MARGIN = 12;
+
+
+function clampToViewport(
+  pos: { x: number; y: number },
+  size: { w: number; h: number },
+) {
+  const maxX = Math.max(UI_MARGIN, window.innerWidth - size.w - UI_MARGIN);
+  const maxY = Math.max(UI_MARGIN, window.innerHeight - size.h - UI_MARGIN);
+
+  return {
+    x: clamp(pos.x, UI_MARGIN, maxX), // ✅ uses your existing clamp()
+    y: clamp(pos.y, UI_MARGIN, maxY), // ✅ uses your existing clamp()
+  };
+}
 
 // ==============================
 // Draggable Floating Pill (Shared UI)
@@ -192,33 +207,74 @@ function DraggablePill({
   defaultPosition?: { x: number; y: number };
   children: React.ReactNode;
 }) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
   const [pos, setPos] = useState<{ x: number; y: number }>(() => {
+    // load saved position if any
+    let initial = defaultPosition;
     const saved = localStorage.getItem(`pill-pos-${id}`);
-    return saved ? JSON.parse(saved) : defaultPosition;
+    if (saved) {
+      try {
+        initial = JSON.parse(saved);
+      } catch {
+        initial = defaultPosition;
+      }
+    }
+
+    // initial clamp using a conservative size guess (refine after mount)
+    const guessedSize = { w: 220, h: 220 };
+    return clampToViewport(initial, guessedSize);
   });
 
-  // keep a state so cursor updates (ref alone won't re-render)
   const [dragging, setDragging] = useState(false);
-
   const draggingRef = useRef(false);
   const offsetRef = useRef({ x: 0, y: 0 });
 
+  // Persist position
   useEffect(() => {
     try {
       localStorage.setItem(`pill-pos-${id}`, JSON.stringify(pos));
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, [id, pos]);
+
+  // ✅ After first paint (and on resize/orientation change), measure and clamp.
+  useEffect(() => {
+    const clampNow = () => {
+      const el = rootRef.current;
+      if (!el) return;
+
+      const rect = el.getBoundingClientRect();
+      const size = {
+        w: Math.max(1, Math.round(rect.width)),
+        h: Math.max(1, Math.round(rect.height)),
+      };
+
+      setPos((p) => {
+        const clamped = clampToViewport(p, size);
+        // avoid extra renders if already ok
+        if (clamped.x === p.x && clamped.y === p.y) return p;
+        return clamped;
+      });
+    };
+
+    // clamp after mount
+    requestAnimationFrame(() => clampNow());
+
+    // clamp on resize + orientation changes
+    window.addEventListener("resize", clampNow);
+    window.addEventListener("orientationchange", clampNow);
+
+    return () => {
+      window.removeEventListener("resize", clampNow);
+      window.removeEventListener("orientationchange", clampNow);
+    };
+  }, []);
 
   // iOS Safari sometimes gives Text nodes (emoji) as event targets.
   const getTargetElement = (t: EventTarget | null): Element | null => {
     if (!t) return null;
-
     const anyT = t as any;
-    // Text node: nodeType === 3
     if (anyT?.nodeType === 3) return anyT.parentElement ?? null;
-
     if (t instanceof Element) return t;
     return null;
   };
@@ -239,10 +295,20 @@ function DraggablePill({
 
   const move = (clientX: number, clientY: number) => {
     if (!draggingRef.current) return;
-    setPos({
-      x: clientX - offsetRef.current.x,
-      y: clientY - offsetRef.current.y,
-    });
+
+    // During drag, keep it clamped using current element size.
+    const el = rootRef.current;
+    const rect = el?.getBoundingClientRect();
+    const size = rect
+      ? { w: Math.max(1, rect.width), h: Math.max(1, rect.height) }
+      : { w: 220, h: 220 };
+
+    const next = clampToViewport(
+      { x: clientX - offsetRef.current.x, y: clientY - offsetRef.current.y },
+      size,
+    );
+
+    setPos(next);
   };
 
   const stop = () => {
@@ -252,6 +318,7 @@ function DraggablePill({
 
   return (
     <div
+      ref={rootRef}
       style={{
         position: "fixed",
         left: pos.x,
@@ -264,23 +331,16 @@ function DraggablePill({
         padding: 12,
         userSelect: "none",
         cursor: dragging ? "grabbing" : "grab",
-        // ✅ critical for iPad Safari: prevents scroll/gesture interference during drag
         touchAction: "none",
+        // Optional: ensure it never visually “bleeds” offscreen
+        maxWidth: "min(92vw, 520px)",
       }}
       onPointerDown={(e) => {
-        // If the user tapped a button/input inside the pill, do NOT drag.
         if (isInteractive(e.target)) return;
-
-        // Only react to primary pointer (prevents multi-touch weirdness)
         if (!e.isPrimary) return;
-
-        // Capture so dragging continues even if pointer leaves pill bounds
         try {
           (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
-        } catch {
-          // ignore
-        }
-
+        } catch {}
         start(e.clientX, e.clientY);
       }}
       onPointerMove={(e) => {
@@ -291,13 +351,9 @@ function DraggablePill({
         stop();
         try {
           (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
-        } catch {
-          // ignore
-        }
+        } catch {}
       }}
-      onPointerCancel={() => {
-        stop();
-      }}
+      onPointerCancel={() => stop()}
     >
       {children}
     </div>
@@ -334,7 +390,15 @@ const IconBtn: React.FC<
     </button>
   </div>
 );
-
+function resetAllPills() {
+  try {
+    Object.keys(localStorage).forEach((k) => {
+      if (k.startsWith("pill-pos-")) localStorage.removeItem(k);
+    });
+  } catch {}
+  // force reload so each pill re-initializes to defaults
+  window.location.reload();
+}
 // ==============================================
 // === CHAINMAIL DESIGNER COMPONENT STARTS HERE ===
 // ==============================================
@@ -748,15 +812,15 @@ const doClearPaint = () => {
     rendererRef.current?.clearPaint?.();
   } catch {}
 
+  // 3) iOS Safari: extra frame(s) to ensure repaint
   const rr: any = rendererRef.current;
 
-  // 3) iOS Safari: extra frame(s) to ensure repaint
   requestAnimationFrame(() => {
     try {
+      rr?.clearPaint?.();
       rr?.requestRender?.();
       rr?.invalidate?.();
       rr?.renderOnce?.();
-      rr?.clearPaint?.();
     } catch {}
   });
 
@@ -899,6 +963,7 @@ const doClearPaint = () => {
           >
             ▶
           </IconBtn>
+
         </div>
 
         {/* --- Controls (▶) Menu — rows/cols dialog --- */}
@@ -1619,20 +1684,38 @@ onChange={(e) => {
         />
       )}
 
-      {finalizeOpen && (
-        <FinalizeAndExportPanel
-          rings={exportRings}
-          initialAssignment={assignment}
-          onAssignmentChange={setAssignment}
-          getRendererCanvas={getDesignerCanvas}
-          onClose={() => setFinalizeOpen(false)}
-          mapMode="grid" // ✅ Designer wants the grid map
-        />
-      )}
+{finalizeOpen && (
+  <FinalizeAndExportPanel
+    rings={exportRings}
+    initialAssignment={assignment}
+    onAssignmentChange={setAssignment}
+    getRendererCanvas={getDesignerCanvas}
+    onClose={() => setFinalizeOpen(false)}
+    mapMode="grid"
+  />
+)}
+      {/* ✅ Global Reset Floating Panels Button */}
+      <button
+        onClick={resetAllPills}
+        title="Reset floating panels"
+        style={{
+          position: "fixed",
+          right: 12,
+          bottom: 12,
+          zIndex: 100000,
+          padding: "8px 10px",
+          borderRadius: 10,
+          border: "1px solid rgba(255,255,255,.12)",
+          background: "rgba(15,23,42,.92)",
+          color: "#dbeafe",
+          cursor: "pointer",
+        }}
+      >
+        Reset UI
+      </button>
     </div>
   );
 } // ✅ ChainmailDesigner ends here
-
 // ==============================================
 // 🧭 Draggable Navigation Panel
 // ==============================================

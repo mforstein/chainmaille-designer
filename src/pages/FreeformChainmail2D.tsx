@@ -2720,7 +2720,90 @@ const FreeformChainmail2D: React.FC = () => {
     setAngleIn(25);
     setAngleOut(-25);
   }, []);
+  // ===============================
+  // UI RESET (tools/pan/zoom/panels/overlays/drag positions)
+  // ===============================
+  const resetUI = useCallback(() => {
+    // Panels / toggles
+    setShowControls(false);
+    setShowDiagnostics(false);
+    setShowImageOverlay(false);
+    setShowCompass(false);
 
+    // Stats panel (show it again)
+    setShowFreeformStats(true);
+
+    // Tool modes
+    setEraseMode(false);
+    setSelectionMode("none");
+    setPanMode(false);
+    setIsPanning(false);
+
+    // Selection state
+    setIsSelecting(false);
+    selectionRef.current = null;
+    overlayPickingRef.current = false;
+
+    setSelectedKeys(new Set());
+    setOverlayMaskKeys(new Set());
+    setOverlayScope("all");
+    setLastSelectionCount(0);
+    setLiveDims(null);
+    setLastDims(null);
+
+    // Diagnostics
+    setDiagLog("");
+    setDebugClicks([]);
+
+    // Overlay data itself
+    setOverlay(null);
+    overlayImgRef.current = null;
+
+    // Palette UI popups
+    setPaletteManagerOpen(false);
+    setPickerState(null);
+
+    // Cursor info
+    setCursorPx(null);
+
+    // Pan/Zoom defaults
+    setZoom(1.0);
+    setPanWorldX(0);
+    setPanWorldY(0);
+
+    // Hit-circle UI defaults
+    setCircleOffsetX(0);
+    setCircleOffsetY(0);
+    setCircleScale(1.0);
+    setHideCircles(true);
+
+    // Clear any in-progress overlay drawings
+    clearInteractionCanvas();
+
+    // Redraw hit circles in the new state
+    scheduleDrawHitCircles();
+
+    // Attempt to reset DraggablePill positions by clearing any stored keys
+    // that reference our pill ids (safe no-ops if nothing matches).
+    try {
+      const pillIds = [
+        "freeform-toolbar",
+        "freeform-palette",
+        "freeform-stats",
+        "freeform-image-overlay",
+      ];
+
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (pillIds.some((id) => k.includes(id))) {
+          localStorage.removeItem(k);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [clearInteractionCanvas, scheduleDrawHitCircles]);
   // ===============================
   // Ring Set loading (Tuner + JSON)
   // ===============================
@@ -3142,7 +3225,16 @@ const FreeformChainmail2D: React.FC = () => {
               loadFreeformProject(json);
             }}
           />
-
+          {/* Reset UI */}
+          <ToolButton
+            onClick={() => {
+              if (!window.confirm("Reset UI layout and view settings?")) return;
+              resetUI();
+            }}
+            title="Reset UI (layout + view + tool states)"
+          >
+            ♻️
+          </ToolButton>
           {/* Navigation */}
           <ToolButton
             active={showCompass}
