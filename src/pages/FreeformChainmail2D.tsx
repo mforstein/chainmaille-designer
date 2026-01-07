@@ -20,7 +20,6 @@ import {
   applyCalibrationHex,
   calibrationUpdatedEventName,
 } from "../utils/colorCalibration";
-import { calculateBOM } from "../BOM/bomCalculator";
 import {
   WEAVE_SETTINGS_DEFAULT,
   RingMap,
@@ -29,14 +28,12 @@ import {
 } from "../utils/e4in1Placement";
 
 import { DraggablePill, DraggableCompassNav } from "../App";
-import type { BOMRing, SupplierId } from "../App";
-import BOMButtons from "../components/BOMButtons";
 import type { ExportRing, PaletteAssignment } from "../types/project";
 
-// ⬇️ ADD THIS BLOCK HERE (after imports, before SAFETY STUBS)
+// ⬇️ SAFETY STUB (keeps App.tsx safe if it calls this early; BOM UI removed)
 declare global {
   interface Window {
-    getBOMRings?: () => BOMRing[];
+    getBOMRings?: () => any[];
   }
 }
 
@@ -132,16 +129,17 @@ function safeUUID(): string {
 
   const bytes = new Uint8Array(16);
   if (c?.getRandomValues) c.getRandomValues(bytes);
-  else for (let i = 0; i < bytes.length; i++) bytes[i] = (Math.random() * 256) | 0;
+  else
+    for (let i = 0; i < bytes.length; i++) bytes[i] = (Math.random() * 256) | 0;
 
   // RFC4122 v4
   bytes[6] = (bytes[6] & 0x0f) | 0x40;
   bytes[8] = (bytes[8] & 0x3f) | 0x80;
 
   const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0"));
-  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex
-    .slice(8, 10)
-    .join("")}-${hex.slice(10).join("")}`;
+  return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex
+    .slice(6, 8)
+    .join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
 }
 
 function toHex8(rgb: string, alpha255: number): string {
@@ -179,7 +177,8 @@ function loadSavedColorPalettes(): SavedColorPalettes {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const out: SavedColorPalettes = {};
       for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
-        if (Array.isArray(v) && v.every((x) => typeof x === "string")) out[k] = v as string[];
+        if (Array.isArray(v) && v.every((x) => typeof x === "string"))
+          out[k] = v as string[];
       }
       return out;
     }
@@ -293,7 +292,9 @@ function PaletteColorPickerModal(props: {
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10 }}>Choose color</div>
+        <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 10 }}>
+          Choose color
+        </div>
 
         <div style={{ display: "grid", gap: 10 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -301,7 +302,12 @@ function PaletteColorPickerModal(props: {
               type="color"
               value={state.rgb}
               onChange={(e) => onChange({ ...state, rgb: e.target.value })}
-              style={{ width: 54, height: 36, border: "none", background: "transparent" }}
+              style={{
+                width: 54,
+                height: 36,
+                border: "none",
+                background: "transparent",
+              }}
             />
             <div style={{ display: "grid", gap: 4, flex: 1 }}>
               <div style={{ fontSize: 12, opacity: 0.85 }}>Alpha</div>
@@ -310,12 +316,21 @@ function PaletteColorPickerModal(props: {
                 min={0}
                 max={255}
                 value={state.alpha255}
-                onChange={(e) => onChange({ ...state, alpha255: Number(e.target.value) })}
+                onChange={(e) =>
+                  onChange({ ...state, alpha255: Number(e.target.value) })
+                }
               />
             </div>
           </div>
 
-          <label style={{ display: "grid", gap: 6, fontSize: 12, opacity: 0.9 }}>
+          <label
+            style={{
+              display: "grid",
+              gap: 6,
+              fontSize: 12,
+              opacity: 0.9,
+            }}
+          >
             Hex (#RRGGBBAA)
             <input
               value={hex8}
@@ -330,7 +345,8 @@ function PaletteColorPickerModal(props: {
                 border: "1px solid rgba(255,255,255,0.12)",
                 background: "rgba(255,255,255,0.06)",
                 color: "#f8fafc",
-                fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                fontFamily:
+                  "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
               }}
             />
           </label>
@@ -504,25 +520,6 @@ const SliderRow: React.FC<{
   </div>
 );
 
-// ✅ typed to actually use SupplierId (avoids TS unused import) + preserves meta usage everywhere
-const freeformBOMMeta: {
-  title: string;
-  supplier: SupplierId;
-  ringSizeLabel: string;
-  material: string;
-  packSize: number;
-  background: string;
-  textColor: string;
-} = {
-  title: "Freeform — Color BOM",
-  supplier: "TRL" as SupplierId,
-  ringSizeLabel: `5/16"`,
-  material: "Anodized Aluminum",
-  packSize: 1500,
-  background: "#0b1220",
-  textColor: "#e5e7eb",
-};
-
 // ======================================================
 // ICONS (Selection tools) — MUST NOT BE INSIDE HOOKS
 // ======================================================
@@ -589,14 +586,7 @@ export type ShapeDims =
   | { tool: "square"; width: number; height: number };
 
 export function getRingHex(r: any): string {
-  return (
-    r?.colorHex ??
-    r?.color ??
-    r?.hex ??
-    r?.fill ??
-    r?.stroke ??
-    "#000000"
-  );
+  return r?.colorHex ?? r?.color ?? r?.hex ?? r?.fill ?? r?.stroke ?? "#000000";
 }
 
 // ======================================================
@@ -604,7 +594,7 @@ export function getRingHex(r: any): string {
 // ======================================================
 const FALLBACK_CAMERA_Z = 52;
 const FOV = 45;
-const MIN_ZOOM = 0.2; // allow wider zoom-out than before
+const MIN_ZOOM = 0.02; // allow wider zoom-out than before
 const MAX_ZOOM = 6.0; // allow wider zoom-in than before
 
 type FreeformDims =
@@ -642,9 +632,6 @@ const FreeformChainmail2D: React.FC = () => {
   // Finalize & Export (must be inside the component)
   const [finalizeOpen, setFinalizeOpen] = useState(false);
 
-  // ✅ BOM visibility (was missing; required by derived + toolbar + panel)
-  const [showBOM, setShowBOM] = useState(false);
-
   const [assignment, setAssignment] = useState<PaletteAssignment | null>(() => {
     try {
       const raw = localStorage.getItem("freeform.paletteAssignment");
@@ -660,7 +647,8 @@ const FreeformChainmail2D: React.FC = () => {
   useEffect(() => {
     const onUpdate = () => setCalibrationVersion((v) => v + 1);
     window.addEventListener(calibrationUpdatedEventName(), onUpdate);
-    return () => window.removeEventListener(calibrationUpdatedEventName(), onUpdate);
+    return () =>
+      window.removeEventListener(calibrationUpdatedEventName(), onUpdate);
   }, []);
 
   // ====================================================
@@ -676,12 +664,17 @@ const FreeformChainmail2D: React.FC = () => {
   // ====================================================
   // COLOR PALETTE (editable + persisted)
   // ====================================================
-  const [colorPalette, setColorPalette] = useState<string[]>(() => loadColorPalette());
-  const [savedColorPalettes, setSavedColorPalettes] = useState<SavedColorPalettes>(() => loadSavedColorPalettes());
+  const [colorPalette, setColorPalette] = useState<string[]>(() =>
+    loadColorPalette()
+  );
+  const [savedColorPalettes, setSavedColorPalettes] =
+    useState<SavedColorPalettes>(() => loadSavedColorPalettes());
   const [paletteManagerOpen, setPaletteManagerOpen] = useState(false);
   const [paletteName, setPaletteName] = useState<string>("");
-  const [selectedSavedPalette, setSelectedSavedPalette] = useState<string>("");
-  const [pickerState, setPickerState] = useState<PaletteColorPickerState | null>(null);
+  const [selectedSavedPalette, setSelectedSavedPalette] =
+    useState<string>("");
+  const [pickerState, setPickerState] =
+    useState<PaletteColorPickerState | null>(null);
 
   useEffect(() => {
     saveColorPalette(colorPalette);
@@ -694,10 +687,11 @@ const FreeformChainmail2D: React.FC = () => {
   const openPickerForIndex = useCallback(
     (index: number) => {
       const current = colorPalette[index] ?? "#ffffffff";
-      const parsed = parseHexColor(current) ?? { rgb: "#ffffff", alpha255: 255 };
+      const parsed =
+        parseHexColor(current) ?? { rgb: "#ffffff", alpha255: 255 };
       setPickerState({ index, rgb: parsed.rgb, alpha255: parsed.alpha255 });
     },
-    [colorPalette],
+    [colorPalette]
   );
 
   const applyPicker = useCallback(() => {
@@ -706,7 +700,9 @@ const FreeformChainmail2D: React.FC = () => {
     const next = [...colorPalette];
 
     // ✅ store as #RRGGBB so RingRenderer/Three always understands it
-    const normalized = normalizeColor6(toHex8(pickerState.rgb, pickerState.alpha255));
+    const normalized = normalizeColor6(
+      toHex8(pickerState.rgb, pickerState.alpha255)
+    );
     next[pickerState.index] = normalized;
 
     setColorPalette(next);
@@ -728,7 +724,9 @@ const FreeformChainmail2D: React.FC = () => {
   // 📏 Freeform Stats (dims + counts)
   // ==============================
   const [showFreeformStats, setShowFreeformStats] = useState(true);
-  const [cursorPx, setCursorPx] = useState<{ x: number; y: number } | null>(null);
+  const [cursorPx, setCursorPx] = useState<{ x: number; y: number } | null>(
+    null
+  );
   const [liveDims, setLiveDims] = useState<FreeformDims | null>(null);
   const [lastDims, setLastDims] = useState<FreeformDims | null>(null);
 
@@ -749,7 +747,9 @@ const FreeformChainmail2D: React.FC = () => {
   const selectionRef = useRef<SelectionDrag | null>(null);
 
   // authoritative selected ring keys: `${row}-${col}`
-  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
+    () => new Set()
+  );
 
   // Optional: show a lightweight selection stats line (kept inside diag log)
   const [lastSelectionCount, setLastSelectionCount] = useState<number>(0);
@@ -765,7 +765,9 @@ const FreeformChainmail2D: React.FC = () => {
   const [overlayScope, setOverlayScope] = useState<OverlayScope>("all");
 
   // Keys used when user chooses "selection" scope for overlay transfer
-  const [overlayMaskKeys, setOverlayMaskKeys] = useState<Set<string>>(() => new Set());
+  const [overlayMaskKeys, setOverlayMaskKeys] = useState<Set<string>>(
+    () => new Set()
+  );
 
   // When true: next selection drag defines overlayMaskKeys instead of painting/erasing
   const overlayPickingRef = useRef(false);
@@ -781,7 +783,7 @@ const FreeformChainmail2D: React.FC = () => {
 
   const aspectRatio = useMemo(
     () => (wireMm > 0 ? innerIDmm / wireMm : 0),
-    [innerIDmm, wireMm],
+    [innerIDmm, wireMm]
   );
 
   // ====================================================
@@ -801,7 +803,7 @@ const FreeformChainmail2D: React.FC = () => {
       spacingY: centerSpacing * 0.866,
       wireD: wireMm,
     }),
-    [centerSpacing, wireMm],
+    [centerSpacing, wireMm]
   );
 
   // ====================================================
@@ -853,11 +855,13 @@ const FreeformChainmail2D: React.FC = () => {
       const y = row * spacingY;
       return { x, y };
     },
-    [centerSpacing, spacingY],
+    [centerSpacing, spacingY]
   );
 
   // ✅ Debug markers stored in LOGICAL coords
-  const [debugClicks, setDebugClicks] = useState<{ id: number; lx: number; ly: number }[]>([]);
+  const [debugClicks, setDebugClicks] = useState<
+    { id: number; lx: number; ly: number }[]
+  >([]);
 
   const addDebugMarker = useCallback((lx: number, ly: number) => {
     setDebugClicks((prev) => [...prev, { id: prev.length + 1, lx, ly }]);
@@ -867,42 +871,45 @@ const FreeformChainmail2D: React.FC = () => {
   // DYNAMIC GRID EXTENTS (unbounded freeform)
   // IMPORTANT: must be INSIDE component (needs rings)
   // ====================================================
-  const { maxRowSpan, maxColSpan, minRow, minCol, maxRow, maxCol } = useMemo(() => {
-    if (!rings.size) {
+  const { maxRowSpan, maxColSpan, minRow, minCol, maxRow, maxCol } = useMemo(
+    () => {
+      if (!rings.size) {
+        return {
+          maxRowSpan: 128,
+          maxColSpan: 128,
+          minRow: 0,
+          minCol: 0,
+          maxRow: 0,
+          maxCol: 0,
+        };
+      }
+
+      let _minRow = Infinity;
+      let _maxRow = -Infinity;
+      let _minCol = Infinity;
+      let _maxCol = -Infinity;
+
+      rings.forEach((r) => {
+        _minRow = Math.min(_minRow, r.row);
+        _maxRow = Math.max(_maxRow, r.row);
+        _minCol = Math.min(_minCol, r.col);
+        _maxCol = Math.max(_maxCol, r.col);
+      });
+
+      // Larger padding so camera never clips edge rings
+      const PAD = 24;
+
       return {
-        maxRowSpan: 128,
-        maxColSpan: 128,
-        minRow: 0,
-        minCol: 0,
-        maxRow: 0,
-        maxCol: 0,
+        maxRowSpan: Math.max(128, _maxRow - _minRow + 1 + PAD),
+        maxColSpan: Math.max(128, _maxCol - _minCol + 1 + PAD),
+        minRow: _minRow,
+        minCol: _minCol,
+        maxRow: _maxRow,
+        maxCol: _maxCol,
       };
-    }
-
-    let _minRow = Infinity;
-    let _maxRow = -Infinity;
-    let _minCol = Infinity;
-    let _maxCol = -Infinity;
-
-    rings.forEach((r) => {
-      _minRow = Math.min(_minRow, r.row);
-      _maxRow = Math.max(_maxRow, r.row);
-      _minCol = Math.min(_minCol, r.col);
-      _maxCol = Math.max(_maxCol, r.col);
-    });
-
-    // Larger padding so camera never clips edge rings
-    const PAD = 24;
-
-    return {
-      maxRowSpan: Math.max(128, _maxRow - _minRow + 1 + PAD),
-      maxColSpan: Math.max(128, _maxCol - _minCol + 1 + PAD),
-      minRow: _minRow,
-      minCol: _minCol,
-      maxRow: _maxRow,
-      maxCol: _maxCol,
-    };
-  }, [rings]);
+    },
+    [rings]
+  );
 
   // ====================================================
   // FLOATING ORIGIN (prevents huge world coords => seam/clipping/precision loss)
@@ -945,7 +952,10 @@ const FreeformChainmail2D: React.FC = () => {
     const offsetX = Number((overlay as any)?.offsetX ?? 0);
     const offsetY = Number((overlay as any)?.offsetY ?? 0);
     const scale = Math.max(1e-6, Number((overlay as any)?.scale ?? 1));
-    const opacity = Math.max(0, Math.min(1, Number((overlay as any)?.opacity ?? 1)));
+    const opacity = Math.max(
+      0,
+      Math.min(1, Number((overlay as any)?.opacity ?? 1))
+    );
 
     const tileAny =
       !!(overlay as any)?.tile ||
@@ -1002,7 +1012,7 @@ const FreeformChainmail2D: React.FC = () => {
 
     const ctx = cvs.getContext(
       "2d",
-      { willReadFrequently: true } as CanvasRenderingContext2DSettings,
+      { willReadFrequently: true } as CanvasRenderingContext2DSettings
     );
     if (!ctx) return;
 
@@ -1117,14 +1127,7 @@ const FreeformChainmail2D: React.FC = () => {
     });
 
     setRings(next);
-  }, [
-    overlay,
-    rings,
-    rcToLogical,
-    logicalOrigin,
-    overlayScope,
-    overlayMaskKeys,
-  ]);
+  }, [overlay, rings, rcToLogical, logicalOrigin, overlayScope, overlayMaskKeys]);
 
   useEffect(() => {
     overlayImgRef.current = null;
@@ -1177,7 +1180,7 @@ const FreeformChainmail2D: React.FC = () => {
 
       return { row, col };
     },
-    [centerSpacing, spacingY],
+    [centerSpacing, spacingY]
   );
 
   const computeDimsFromSelection = useCallback(
@@ -1223,7 +1226,7 @@ const FreeformChainmail2D: React.FC = () => {
         heightRings: hRings,
       };
     },
-    [centerSpacing, logicalToRowColApprox],
+    [centerSpacing, logicalToRowColApprox]
   );
 
   const computeSelectionKeys = useCallback(
@@ -1248,7 +1251,13 @@ const FreeformChainmail2D: React.FC = () => {
         for (let r = minRowS; r <= maxRowS; r++) {
           for (let c = minColS; c <= maxColS; c++) {
             const p = rcToLogical(r, c);
-            if (p.x >= minLX && p.x <= maxLX && p.y >= minLY && p.y <= maxLY) next.add(`${r}-${c}`);
+            if (
+              p.x >= minLX &&
+              p.x <= maxLX &&
+              p.y >= minLY &&
+              p.y <= maxLY
+            )
+              next.add(`${r}-${c}`);
           }
         }
       } else if (mode === "circle") {
@@ -1270,7 +1279,7 @@ const FreeformChainmail2D: React.FC = () => {
 
       return next;
     },
-    [logicalToRowColApprox, rcToLogical],
+    [logicalToRowColApprox, rcToLogical]
   );
 
   // ====================================================
@@ -1337,7 +1346,7 @@ const FreeformChainmail2D: React.FC = () => {
         rect,
       };
     },
-    [getViewRect],
+    [getViewRect]
   );
 
   // ====================================================
@@ -1351,7 +1360,7 @@ const FreeformChainmail2D: React.FC = () => {
       const oy = logicalOrigin.oy;
       return { wx: lx - ox, wy: -(ly - oy) };
     },
-    [logicalOrigin],
+    [logicalOrigin]
   );
 
   const worldToLogical = useCallback(
@@ -1360,7 +1369,7 @@ const FreeformChainmail2D: React.FC = () => {
       const oy = logicalOrigin.oy;
       return { lx: wx + ox, ly: -wy + oy };
     },
-    [logicalOrigin],
+    [logicalOrigin]
   );
 
   const worldToScreen = useCallback(
@@ -1380,7 +1389,7 @@ const FreeformChainmail2D: React.FC = () => {
         sy: (-v.y + 1) * 0.5 * H,
       };
     },
-    [getRendererCamera, getViewRect],
+    [getRendererCamera, getViewRect]
   );
 
   const screenToWorld = useCallback(
@@ -1411,7 +1420,7 @@ const FreeformChainmail2D: React.FC = () => {
 
       return { wx, wy, lx, ly };
     },
-    [getRendererCamera, getViewRect, worldToLogical],
+    [getRendererCamera, getViewRect, worldToLogical]
   );
 
   const projectRingRadiusPx = useCallback(
@@ -1424,7 +1433,7 @@ const FreeformChainmail2D: React.FC = () => {
 
       return Math.abs(sx2 - sx1);
     },
-    [logicalToWorld, worldToScreen],
+    [logicalToWorld, worldToScreen]
   );
 
   const eventToScreen = useCallback(
@@ -1437,7 +1446,7 @@ const FreeformChainmail2D: React.FC = () => {
         sy: evt.clientY - rect.top,
       };
     },
-    [getViewRect],
+    [getViewRect]
   );
 
   // ====================================================
@@ -1447,13 +1456,13 @@ const FreeformChainmail2D: React.FC = () => {
     const rings3D: any[] = [];
     const paintMap = new Map<string, string>();
 
-    // ✅ Stats/BOM should remain on STORED (true) colors, not calibrated render colors
+    // ✅ Stats should remain on STORED (true) colors, not calibrated render colors
     const colorCountsStored = new Map<string, number>();
 
     const outerRadiusMm = (innerIDmm + 2 * wireMm) / 2;
 
-    // Lazy: only build export list when needed
-    const wantExport = finalizeOpen || showBOM;
+    // Lazy: only build export list when needed (Finalize panel)
+    const wantExport = finalizeOpen;
     const exportRings: ExportRing[] = wantExport ? [] : [];
 
     rings.forEach((r: PlacedRing) => {
@@ -1494,7 +1503,10 @@ const FreeformChainmail2D: React.FC = () => {
       paintMap.set(key, renderColor);
 
       // Stats should reflect true chosen colors
-      colorCountsStored.set(storedColor, (colorCountsStored.get(storedColor) ?? 0) + 1);
+      colorCountsStored.set(
+        storedColor,
+        (colorCountsStored.get(storedColor) ?? 0) + 1
+      );
 
       if (wantExport) {
         exportRings.push({
@@ -1509,8 +1521,14 @@ const FreeformChainmail2D: React.FC = () => {
       }
     });
 
-    const byColor = Array.from(colorCountsStored.entries()).sort((a, b) => b[1] - a[1]);
-    const ringStats = { total: rings.size, byColor, uniqueColors: byColor.length };
+    const byColor = Array.from(colorCountsStored.entries()).sort(
+      (a, b) => b[1] - a[1]
+    );
+    const ringStats = {
+      total: rings.size,
+      byColor,
+      uniqueColors: byColor.length,
+    };
 
     return { rings3D, paintMap, ringStats, exportRings };
   }, [
@@ -1524,7 +1542,6 @@ const FreeformChainmail2D: React.FC = () => {
     angleIn,
     angleOut,
     finalizeOpen,
-    showBOM,
     // ✅ Recompute render colors when calibration changes
     calibrationVersion,
   ]);
@@ -1534,40 +1551,11 @@ const FreeformChainmail2D: React.FC = () => {
   const ringStats = derived.ringStats;
   const exportRings = derived.exportRings;
 
-  // ====================================================
-  // BOM (computed only when panel is open; safe signature-flex handling)
-  // ====================================================
-  const bom = useMemo(() => {
-    if (!showBOM) return null;
-    try {
-      const fn = calculateBOM as any;
-
-      // Support multiple possible signatures without breaking compile:
-      // (rings), (rings, assignment), (rings, meta), (rings, meta, assignment)
-      if (typeof fn !== "function") return null;
-
-      if (fn.length >= 3) return fn(exportRings, freeformBOMMeta, assignment);
-      if (fn.length === 2) {
-        // Prefer passing assignment first if calculateBOM expects it; meta is still shown in BOMButtons
-        try {
-          return fn(exportRings, assignment);
-        } catch {
-          return fn(exportRings, freeformBOMMeta);
-        }
-      }
-      return fn(exportRings);
-    } catch (e) {
-      console.warn("calculateBOM failed:", e);
-      return null;
-    }
-  }, [showBOM, exportRings, assignment]);
-
-  // Keep the window bridge updated for any external print/BOM flow.
+  // ✅ keep window bridge valid (BOM UI removed)
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.getBOMRings = () =>
-      (((bom as any)?.rings ?? (bom as any)?.bomRings ?? []) as BOMRing[]);
-  }, [bom]);
+    window.getBOMRings = () => [];
+  }, []);
 
   // ✅ Pass calibrated activeColor to renderer (display only)
   const renderActiveColor = useMemo(() => {
@@ -1588,12 +1576,18 @@ const FreeformChainmail2D: React.FC = () => {
     const src: HTMLCanvasElement | null =
       (fromRef as HTMLCanvasElement) ??
       (() => {
-        const list = Array.from(document.querySelectorAll("canvas")) as HTMLCanvasElement[];
+        const list = Array.from(
+          document.querySelectorAll("canvas")
+        ) as HTMLCanvasElement[];
 
         // Prefer a WebGL canvas (Three.js)
         const gl = list.find((c) => {
           try {
-            return !!(c.getContext("webgl2") || c.getContext("webgl") || c.getContext("experimental-webgl"));
+            return !!(
+              c.getContext("webgl2") ||
+              c.getContext("webgl") ||
+              c.getContext("experimental-webgl")
+            );
           } catch {
             return false;
           }
@@ -1727,7 +1721,7 @@ const FreeformChainmail2D: React.FC = () => {
     (_row: number) => {
       return Math.max(0.1, innerIDmm / 2); // inner diameter → radius
     },
-    [innerIDmm],
+    [innerIDmm]
   );
 
   // ====================================================
@@ -1900,7 +1894,11 @@ const FreeformChainmail2D: React.FC = () => {
     // hint text
     ctx.font = "12px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
     ctx.fillStyle = "rgba(248,250,252,0.9)";
-    const hint = eraseMode ? "🧽" : overlayPickingRef.current ? "🖼️" : "🎨";
+    const hint = eraseMode
+      ? "🧽"
+      : overlayPickingRef.current
+        ? "🖼️"
+        : "🎨";
     ctx.fillText(`${hint} ${lastSelectionCount || ""}`, 10, rect.height - 12);
   }, [selectionMode, isSelecting, eraseMode, lastSelectionCount]);
 
@@ -2011,7 +2009,7 @@ const FreeformChainmail2D: React.FC = () => {
       panWorldY,
       drawSelectionOverlay,
       computeDimsFromSelection,
-    ],
+    ]
   );
 
   const handleMouseMove = useCallback(
@@ -2021,7 +2019,9 @@ const FreeformChainmail2D: React.FC = () => {
 
       // Touch/Pointer parity helper (keeps eventToScreen used and ready for diagnostics)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const _maybeScreen = eventToScreen(e.nativeEvent as unknown as MouseEvent);
+      const _maybeScreen = eventToScreen(
+        e.nativeEvent as unknown as MouseEvent
+      );
 
       // Selection drag
       if (isSelecting && selectionMode !== "none" && selectionRef.current) {
@@ -2037,7 +2037,9 @@ const FreeformChainmail2D: React.FC = () => {
         selectionRef.current.ly1 = ly;
 
         // 2) Then compute live dims from the updated selection
-        setLiveDims(computeDimsFromSelection(selectionRef.current, selectionMode));
+        setLiveDims(
+          computeDimsFromSelection(selectionRef.current, selectionMode)
+        );
 
         // update selection count estimate cheaply (bounds-based)
         const sel = selectionRef.current;
@@ -2060,7 +2062,12 @@ const FreeformChainmail2D: React.FC = () => {
           for (let r = minRowC; r <= maxRowC; r++) {
             for (let c = minColC; c <= maxColC; c++) {
               const p = rcToLogical(r, c);
-              if (p.x >= minLX && p.x <= maxLX && p.y >= minLY && p.y <= maxLY) {
+              if (
+                p.x >= minLX &&
+                p.x <= maxLX &&
+                p.y >= minLY &&
+                p.y <= maxLY
+              ) {
                 cells.add(`${r}-${c}`);
               }
             }
@@ -2116,7 +2123,7 @@ const FreeformChainmail2D: React.FC = () => {
       drawSelectionOverlay,
       computeDimsFromSelection,
       eventToScreen,
-    ],
+    ]
   );
 
   // ====================================================
@@ -2147,7 +2154,12 @@ const FreeformChainmail2D: React.FC = () => {
         for (let r = minRowC; r <= maxRowC; r++) {
           for (let c = minColC; c <= maxColC; c++) {
             const p = rcToLogical(r, c);
-            if (p.x >= minLX && p.x <= maxLX && p.y >= minLY && p.y <= maxLY) {
+            if (
+              p.x >= minLX &&
+              p.x <= maxLX &&
+              p.y >= minLY &&
+              p.y <= maxLY
+            ) {
               cells.push({ row: r, col: c });
             }
           }
@@ -2215,7 +2227,7 @@ const FreeformChainmail2D: React.FC = () => {
             mapCopy,
             clusterId,
             eraseMode ? "#000000" : normalizeColor6(activeColorRef.current),
-            settings,
+            settings
           );
 
           clusterId = newCluster;
@@ -2232,7 +2244,7 @@ const FreeformChainmail2D: React.FC = () => {
       // Clear highlight after apply (overlay picking retains highlight by its own path)
       setSelectedKeys(new Set());
     },
-    [rings, nextClusterId, eraseMode, settings, logicalToRowColApprox, rcToLogical],
+    [rings, nextClusterId, eraseMode, settings, logicalToRowColApprox, rcToLogical]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -2298,7 +2310,7 @@ const FreeformChainmail2D: React.FC = () => {
       setPanWorldX((p) => p + dx);
       setPanWorldY((p) => p + dy);
     },
-    [zoom, screenToWorld],
+    [zoom, screenToWorld]
   );
 
   // ====================================================
@@ -2312,7 +2324,7 @@ const FreeformChainmail2D: React.FC = () => {
       const { sx, sy } = getCanvasPoint(e);
       zoomAroundPoint(sx, sy, factor);
     },
-    [getCanvasPoint, zoomAroundPoint],
+    [getCanvasPoint, zoomAroundPoint]
   );
 
   const handleTouchStartNative = useCallback(
@@ -2396,7 +2408,7 @@ const FreeformChainmail2D: React.FC = () => {
       panWorldX,
       panWorldY,
       computeDimsFromSelection,
-    ],
+    ]
   );
 
   const handleTouchMoveNative = useCallback(
@@ -2463,7 +2475,8 @@ const FreeformChainmail2D: React.FC = () => {
       }
 
       // Pan drag (single finger)
-      if (!panMode || !isPanning || !panStart.current || e.touches.length !== 1) return;
+      if (!panMode || !isPanning || !panStart.current || e.touches.length !== 1)
+        return;
 
       e.preventDefault();
 
@@ -2492,7 +2505,7 @@ const FreeformChainmail2D: React.FC = () => {
       getViewRect,
       drawSelectionOverlay,
       computeDimsFromSelection,
-    ],
+    ]
   );
 
   const handleTouchEndNative = useCallback(() => {
@@ -2550,10 +2563,16 @@ const FreeformChainmail2D: React.FC = () => {
     canvas.addEventListener("wheel", handleWheelNative, { passive: false });
 
     // Touch (pinch + drag)
-    canvas.addEventListener("touchstart", handleTouchStartNative, { passive: false });
-    canvas.addEventListener("touchmove", handleTouchMoveNative, { passive: false });
+    canvas.addEventListener("touchstart", handleTouchStartNative, {
+      passive: false,
+    });
+    canvas.addEventListener("touchmove", handleTouchMoveNative, {
+      passive: false,
+    });
     canvas.addEventListener("touchend", handleTouchEndNative, { passive: true });
-    canvas.addEventListener("touchcancel", handleTouchEndNative, { passive: true });
+    canvas.addEventListener("touchcancel", handleTouchEndNative, {
+      passive: true,
+    });
 
     return () => {
       canvas.removeEventListener("wheel", handleWheelNative as any);
@@ -2563,7 +2582,12 @@ const FreeformChainmail2D: React.FC = () => {
       canvas.removeEventListener("touchend", handleTouchEndNative as any);
       canvas.removeEventListener("touchcancel", handleTouchEndNative as any);
     };
-  }, [handleWheelNative, handleTouchStartNative, handleTouchMoveNative, handleTouchEndNative]);
+  }, [
+    handleWheelNative,
+    handleTouchStartNative,
+    handleTouchMoveNative,
+    handleTouchEndNative,
+  ]);
 
   // ===============================
   // CLICK → place / erase nearest ring
@@ -2585,12 +2609,16 @@ const FreeformChainmail2D: React.FC = () => {
       const adjLx = lx - circleOffsetX;
       const adjLy = ly - circleOffsetY;
 
-      const { row: approxRow, col: approxCol } = logicalToRowColApprox(adjLx, adjLy);
+      const { row: approxRow, col: approxCol } = logicalToRowColApprox(
+        adjLx,
+        adjLy
+      );
 
       const effectiveInnerRadiusMm = getEffectiveInnerRadiusMm(approxRow);
       const baseCircleRmm = effectiveInnerRadiusMm;
 
-      const hitRadiusPx = projectRingRadiusPx(adjLx, adjLy, baseCircleRmm * circleScale) * 1.05;
+      const hitRadiusPx =
+        projectRingRadiusPx(adjLx, adjLy, baseCircleRmm * circleScale) * 1.05;
 
       let bestRow = approxRow;
       let bestCol = approxCol;
@@ -2627,7 +2655,7 @@ const FreeformChainmail2D: React.FC = () => {
         rings,
         nextClusterId,
         eraseMode ? "#000000" : normalizeColor6(activeColorRef.current),
-        settings,
+        settings
       );
       const mapCopy: RingMap = new Map(rings);
 
@@ -2646,7 +2674,9 @@ const FreeformChainmail2D: React.FC = () => {
       // ✅ Diagnostics log only when enabled
       if (showDiagnostics) {
         setDiagLog((prev) => {
-          const line = `lx=${lx.toFixed(3)} ly=${ly.toFixed(3)} row=${bestRow} col=${bestCol}\n`;
+          const line = `lx=${lx.toFixed(3)} ly=${ly.toFixed(
+            3
+          )} row=${bestRow} col=${bestCol}\n`;
           return (prev || "") + line;
         });
       }
@@ -2671,7 +2701,7 @@ const FreeformChainmail2D: React.FC = () => {
       nextClusterId,
       eraseMode,
       settings,
-    ],
+    ]
   );
 
   // ===============================
@@ -2743,7 +2773,8 @@ const FreeformChainmail2D: React.FC = () => {
     reloadRingSets();
 
     const storedAuto = localStorage.getItem(AUTO_FOLLOW_KEY);
-    const auto = storedAuto === null ? true : storedAuto === "true" || storedAuto === "1";
+    const auto =
+      storedAuto === null ? true : storedAuto === "true" || storedAuto === "1";
     setAutoFollowTuner(auto);
 
     const storedActive = localStorage.getItem(ACTIVE_SET_KEY);
@@ -2770,7 +2801,8 @@ const FreeformChainmail2D: React.FC = () => {
   }, [autoFollowTuner]);
 
   useEffect(() => {
-    if (activeRingSetId) localStorage.setItem(ACTIVE_SET_KEY, activeRingSetId);
+    if (activeRingSetId)
+      localStorage.setItem(ACTIVE_SET_KEY, activeRingSetId);
   }, [activeRingSetId]);
 
   // Prevent panning inside RingRenderer; we own pan/zoom here
@@ -2847,7 +2879,16 @@ const FreeformChainmail2D: React.FC = () => {
     localStorage.setItem(`chainmail.project:${id}`, JSON.stringify(payload));
 
     return payload; // ProjectSaveLoadButtons will still download this JSON
-  }, [rings, innerIDmm, wireMm, centerSpacing, angleIn, angleOut, assignment, getRendererCanvas]);
+  }, [
+    rings,
+    innerIDmm,
+    wireMm,
+    centerSpacing,
+    angleIn,
+    angleOut,
+    assignment,
+    getRendererCanvas,
+  ]);
 
   const loadFreeformProject = useCallback(
     (data: any) => {
@@ -2873,7 +2914,9 @@ const FreeformChainmail2D: React.FC = () => {
       }
 
       setRings(map);
-      setnextClusterId(Math.max(1, ...Array.from(map.values()).map((r) => r.cluster ?? 1)) + 1);
+      setnextClusterId(
+        Math.max(1, ...Array.from(map.values()).map((r) => r.cluster ?? 1)) + 1
+      );
 
       if (data.geometry) {
         setInnerIDmm(data.geometry.innerDiameter ?? innerIDmm);
@@ -2885,41 +2928,47 @@ const FreeformChainmail2D: React.FC = () => {
 
       if (data.paletteAssignment) {
         setAssignment(data.paletteAssignment);
-        localStorage.setItem("freeform.paletteAssignment", JSON.stringify(data.paletteAssignment));
+        localStorage.setItem(
+          "freeform.paletteAssignment",
+          JSON.stringify(data.paletteAssignment)
+        );
       }
     },
-    [innerIDmm, wireMm, centerSpacing, angleIn, angleOut],
+    [innerIDmm, wireMm, centerSpacing, angleIn, angleOut]
   );
 
   // ====================================================
   // Manual JSON load
   // ====================================================
-  const handleFileJSONLoad = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const handleFileJSONLoad = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
 
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      try {
-        const data = JSON.parse(String(ev.target?.result || "{}"));
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        try {
+          const data = JSON.parse(String(ev.target?.result || "{}"));
 
-        if (typeof data.innerDiameter === "number") setInnerIDmm(data.innerDiameter);
-        if (typeof data.wireDiameter === "number") setWireMm(data.wireDiameter);
-        if (typeof data.centerSpacing === "number") setCenterSpacing(data.centerSpacing);
-        if (typeof data.angleIn === "number") setAngleIn(data.angleIn);
-        if (typeof data.angleOut === "number") setAngleOut(data.angleOut);
+          if (typeof data.innerDiameter === "number") setInnerIDmm(data.innerDiameter);
+          if (typeof data.wireDiameter === "number") setWireMm(data.wireDiameter);
+          if (typeof data.centerSpacing === "number") setCenterSpacing(data.centerSpacing);
+          if (typeof data.angleIn === "number") setAngleIn(data.angleIn);
+          if (typeof data.angleOut === "number") setAngleOut(data.angleOut);
 
-        const newId = data.id || `file:${file.name}`;
-        setActiveRingSetId(newId);
-        setAutoFollowTuner(false);
-      } catch (err) {
-        alert("Could not parse JSON file.");
-        console.error(err);
-      }
-    };
+          const newId = data.id || `file:${file.name}`;
+          setActiveRingSetId(newId);
+          setAutoFollowTuner(false);
+        } catch (err) {
+          alert("Could not parse JSON file.");
+          console.error(err);
+        }
+      };
 
-    reader.readAsText(file);
-  }, []);
+      reader.readAsText(file);
+    },
+    []
+  );
 
   // ====================================================
   // External view state passed to RingRenderer
@@ -2941,7 +2990,7 @@ const FreeformChainmail2D: React.FC = () => {
       bgColor: "#020617",
       centerSpacing,
     }),
-    [innerIDmm, wireMm, centerSpacing, maxRowSpan, maxColSpan],
+    [innerIDmm, wireMm, centerSpacing, maxRowSpan, maxColSpan]
   );
 
   // ====================================================
@@ -3086,15 +3135,6 @@ const FreeformChainmail2D: React.FC = () => {
             🧹
           </ToolButton>
 
-          {/* BOM */}
-          <ToolButton
-            active={showBOM}
-            onClick={() => setShowBOM((v) => !v)}
-            title="Bill of Materials"
-          >
-            🧾
-          </ToolButton>
-
           <ProjectSaveLoadButtons
             onSave={saveFreeformProject}
             onLoad={(json) => {
@@ -3147,7 +3187,14 @@ const FreeformChainmail2D: React.FC = () => {
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
         >
-          <div style={{ display: "flex", gap: 6, width: "100%", justifyContent: "space-between" }}>
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              width: "100%",
+              justifyContent: "space-between",
+            }}
+          >
             <button
               type="button"
               onClick={() => setPaletteManagerOpen((v) => !v)}
@@ -3202,7 +3249,9 @@ const FreeformChainmail2D: React.FC = () => {
               onMouseDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
             >
-              <div style={{ fontSize: 12, fontWeight: 800, color: "#f8fafc" }}>Saved palettes</div>
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#f8fafc" }}>
+                Saved palettes
+              </div>
               <select
                 value={selectedSavedPalette}
                 onChange={(e) => setSelectedSavedPalette(e.target.value)}
@@ -3228,7 +3277,10 @@ const FreeformChainmail2D: React.FC = () => {
               <div style={{ display: "flex", gap: 6 }}>
                 <button
                   type="button"
-                  disabled={!selectedSavedPalette || !savedColorPalettes[selectedSavedPalette]}
+                  disabled={
+                    !selectedSavedPalette ||
+                    !savedColorPalettes[selectedSavedPalette]
+                  }
                   onClick={() => {
                     const p = savedColorPalettes[selectedSavedPalette];
                     if (!p) return;
@@ -3278,7 +3330,14 @@ const FreeformChainmail2D: React.FC = () => {
 
               <div style={{ height: 1, background: "rgba(255,255,255,0.08)" }} />
 
-              <label style={{ display: "grid", gap: 6, fontSize: 12, color: "#f8fafc" }}>
+              <label
+                style={{
+                  display: "grid",
+                  gap: 6,
+                  fontSize: 12,
+                  color: "#f8fafc",
+                }}
+              >
                 Save as
                 <input
                   value={paletteName}
@@ -3300,7 +3359,10 @@ const FreeformChainmail2D: React.FC = () => {
                 onClick={() => {
                   const name = paletteName.trim();
                   if (!name) return;
-                  setSavedColorPalettes({ ...savedColorPalettes, [name]: [...colorPalette] });
+                  setSavedColorPalettes({
+                    ...savedColorPalettes,
+                    [name]: [...colorPalette],
+                  });
                   setSelectedSavedPalette(name);
                 }}
                 style={{
@@ -3380,7 +3442,13 @@ const FreeformChainmail2D: React.FC = () => {
               <strong style={{ fontSize: 13 }}>🖼️ Image Overlay</strong>
               <button
                 onClick={() => setShowImageOverlay(false)}
-                style={{ background: "none", border: "none", color: "#9ca3af", cursor: "pointer", fontSize: 16 }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#9ca3af",
+                  cursor: "pointer",
+                  fontSize: 16,
+                }}
                 title="Close"
               >
                 ✕
@@ -3502,7 +3570,9 @@ const FreeformChainmail2D: React.FC = () => {
                 max={6}
                 step={0.01}
                 value={Number((overlay as any)?.scale ?? 1)}
-                onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), scale: Number(e.target.value) }))}
+                onChange={(e) =>
+                  setOverlay((p: any) => ({ ...(p ?? {}), scale: Number(e.target.value) }))
+                }
               />
             </label>
 
@@ -3514,7 +3584,9 @@ const FreeformChainmail2D: React.FC = () => {
                 max={1}
                 step={0.01}
                 value={Number((overlay as any)?.opacity ?? 0.8)}
-                onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), opacity: Number(e.target.value) }))}
+                onChange={(e) =>
+                  setOverlay((p: any) => ({ ...(p ?? {}), opacity: Number(e.target.value) }))
+                }
               />
             </label>
 
@@ -3524,7 +3596,9 @@ const FreeformChainmail2D: React.FC = () => {
                 <input
                   type="number"
                   value={Number((overlay as any)?.offsetX ?? 0)}
-                  onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), offsetX: Number(e.target.value) }))}
+                  onChange={(e) =>
+                    setOverlay((p: any) => ({ ...(p ?? {}), offsetX: Number(e.target.value) }))
+                  }
                   style={{
                     padding: 6,
                     borderRadius: 10,
@@ -3539,7 +3613,9 @@ const FreeformChainmail2D: React.FC = () => {
                 <input
                   type="number"
                   value={Number((overlay as any)?.offsetY ?? 0)}
-                  onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), offsetY: Number(e.target.value) }))}
+                  onChange={(e) =>
+                    setOverlay((p: any) => ({ ...(p ?? {}), offsetY: Number(e.target.value) }))
+                  }
                   style={{
                     padding: 6,
                     borderRadius: 10,
@@ -3555,7 +3631,9 @@ const FreeformChainmail2D: React.FC = () => {
               <input
                 type="checkbox"
                 checked={!!(overlay as any)?.tile}
-                onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), tile: e.target.checked }))}
+                onChange={(e) =>
+                  setOverlay((p: any) => ({ ...(p ?? {}), tile: e.target.checked }))
+                }
               />
               <span>Tile (repeat)</span>
             </label>
@@ -3574,7 +3652,9 @@ const FreeformChainmail2D: React.FC = () => {
                   min={0}
                   max={1}
                   value={Number((overlay as any)?.cropU0 ?? 0)}
-                  onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), cropU0: Number(e.target.value) }))}
+                  onChange={(e) =>
+                    setOverlay((p: any) => ({ ...(p ?? {}), cropU0: Number(e.target.value) }))
+                  }
                   style={{
                     padding: 6,
                     borderRadius: 10,
@@ -3592,7 +3672,9 @@ const FreeformChainmail2D: React.FC = () => {
                   min={0}
                   max={1}
                   value={Number((overlay as any)?.cropV0 ?? 0)}
-                  onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), cropV0: Number(e.target.value) }))}
+                  onChange={(e) =>
+                    setOverlay((p: any) => ({ ...(p ?? {}), cropV0: Number(e.target.value) }))
+                  }
                   style={{
                     padding: 6,
                     borderRadius: 10,
@@ -3610,7 +3692,9 @@ const FreeformChainmail2D: React.FC = () => {
                   min={0}
                   max={1}
                   value={Number((overlay as any)?.cropU1 ?? 1)}
-                  onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), cropU1: Number(e.target.value) }))}
+                  onChange={(e) =>
+                    setOverlay((p: any) => ({ ...(p ?? {}), cropU1: Number(e.target.value) }))
+                  }
                   style={{
                     padding: 6,
                     borderRadius: 10,
@@ -3628,7 +3712,9 @@ const FreeformChainmail2D: React.FC = () => {
                   min={0}
                   max={1}
                   value={Number((overlay as any)?.cropV1 ?? 1)}
-                  onChange={(e) => setOverlay((p: any) => ({ ...(p ?? {}), cropV1: Number(e.target.value) }))}
+                  onChange={(e) =>
+                    setOverlay((p: any) => ({ ...(p ?? {}), cropV1: Number(e.target.value) }))
+                  }
                   style={{
                     padding: 6,
                     borderRadius: 10,
@@ -3808,130 +3894,6 @@ const FreeformChainmail2D: React.FC = () => {
             );
           })}
 
-        {/* ==============================
-            🧾 Floating BOM Panel (Freeform)
-           ============================== */}
-        {showBOM && (
-          <DraggablePill id="freeform-bom-panel" defaultPosition={{ x: 420, y: 120 }}>
-            <div
-              style={{
-                minWidth: 280,
-                maxWidth: 360,
-                background: "rgba(17,24,39,0.97)",
-                border: "1px solid rgba(0,0,0,.6)",
-                borderRadius: 14,
-                padding: 12,
-                color: "#e5e7eb",
-                fontSize: 13,
-                boxShadow: "0 12px 40px rgba(0,0,0,.45)",
-              }}
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-            >
-              {/* Header */}
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: 8,
-                }}
-              >
-                <strong style={{ fontSize: 14 }}>🧾 Bill of Materials</strong>
-                <button
-                  onClick={() => setShowBOM(false)}
-                  style={{
-                    background: "none",
-                    border: "none",
-                    color: "#9ca3af",
-                    cursor: "pointer",
-                    fontSize: 16,
-                  }}
-                >
-                  ✕
-                </button>
-              </div>
-              <div style={{ marginTop: 8 }}>
-                <BOMButtons rings={exportRings} meta={freeformBOMMeta} compact />
-              </div>
-              {/* Summary */}
-              <div style={{ marginBottom: 10 }}>
-                <div>
-                  Rings: <strong>{(bom as any)?.summary?.totalRings ?? 0}</strong>
-                </div>
-                <div>
-                  Colors: <strong>{(bom as any)?.summary?.uniqueColors ?? 0}</strong>
-                </div>
-                <div>
-                  Total Weight: <strong>{(((bom as any)?.summary?.totalWeight ?? 0) as number).toFixed(2)} g</strong>
-                </div>
-              </div>
-
-              {/* Color Breakdown */}
-              <div style={{ marginBottom: 10 }}>
-                <strong>By Color</strong>
-                {(((bom as any)?.lines ?? []) as any[]).map((line) => (
-                  <div
-                    key={`${line.supplier}-${line.colorHex}`}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginTop: 4,
-                    }}
-                  >
-                    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span
-                        style={{
-                          width: 12,
-                          height: 12,
-                          background: line.colorHex,
-                          borderRadius: 3,
-                          border: "1px solid #000",
-                        }}
-                      />
-                      {line.colorHex}
-                    </span>
-                    <span>{line.ringCount}</span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Supplier Breakdown */}
-              <div style={{ marginBottom: 10 }}>
-                <strong>By Supplier</strong>
-                {((((bom as any)?.summary?.suppliers ?? []) as any[]) || []).map((s) => (
-                  <div key={s} style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span>{String(s).toUpperCase()}</span>
-                    <span>
-                      {(((bom as any)?.lines ?? []) as any[])
-                        .filter((l) => l.supplier === s)
-                        .reduce((sum, l) => sum + (l.ringCount ?? 0), 0)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Print */}
-              <button
-                onClick={() => window.print()}
-                style={{
-                  width: "100%",
-                  marginTop: 8,
-                  padding: "6px 8px",
-                  borderRadius: 8,
-                  background: "#2563eb",
-                  color: "white",
-                  border: "none",
-                  cursor: "pointer",
-                }}
-              >
-                🖨 Print BOM
-              </button>
-            </div>
-          </DraggablePill>
-        )}
-
         {/* RIGHT CONTROL PANEL */}
         {showControls && (
           <div
@@ -4008,331 +3970,252 @@ const FreeformChainmail2D: React.FC = () => {
 
               <div style={{ fontWeight: 700, fontSize: 12, textAlign: "left" }}>Circles (on placed rings only)</div>
 
-              <label>Offset X (mm)</label>
-              <input
-                type="range"
-                min={-innerIDmm * 20}
-                max={innerIDmm * 20}
-                step={0.05}
+              <SliderRow
+                label="Circle Offset X (mm)"
                 value={circleOffsetX}
-                onChange={(e) => setCircleOffsetX(Number(e.target.value))}
+                setValue={(v) => setCircleOffsetX(v)}
+                min={-50}
+                max={50}
+                step={0.1}
+                unit="mm"
               />
 
-              <label>Offset Y (mm)</label>
-              <input
-                type="range"
-                min={-innerIDmm * 20}
-                max={innerIDmm * 20}
-                step={0.05}
+              <SliderRow
+                label="Circle Offset Y (mm)"
                 value={circleOffsetY}
-                onChange={(e) => setCircleOffsetY(Number(e.target.value))}
+                setValue={(v) => setCircleOffsetY(v)}
+                min={-50}
+                max={50}
+                step={0.1}
+                unit="mm"
               />
 
-              <label>Scale</label>
-              <input
-                type="range"
-                min={0.2}
-                max={2.5}
-                step={0.01}
+              <SliderRow
+                label="Circle Scale"
                 value={circleScale}
-                onChange={(e) => setCircleScale(Number(e.target.value))}
+                setValue={(v) => setCircleScale(v)}
+                min={0.2}
+                max={3}
+                step={0.01}
               />
-            </div>
 
-            <div
-              style={{
-                marginTop: 4,
-                fontSize: 12,
-                lineHeight: 1.4,
-                borderTop: "1px solid rgba(148,163,184,0.35)",
-                paddingTop: 6,
-              }}
-            >
-              <div>Inner ID: {innerIDmm.toFixed(2)} mm</div>
-              <div>Wire: {wireMm.toFixed(2)} mm</div>
-              <div>AR ≈ {aspectRatio.toFixed(2)}</div>
-              <div>Zoom: {zoom.toFixed(2)}×</div>
-              <div>
-                Select:{" "}
-                {selectionMode === "none" ? "—" : selectionMode === "rect" ? "Rectangle" : "Circle"}{" "}
-                {selectionMode !== "none" ? "(Esc to cancel)" : ""}
-              </div>
-              <div>Last Select Count: {lastSelectionCount}</div>
-              <div>Selected highlight keys: {selectedKeys.size}</div>
-            </div>
-
-            {/* JSON / Ring Set controls */}
-            <div
-              style={{
-                borderTop: "1px solid rgba(148,163,184,0.35)",
-                paddingTop: 6,
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-              }}
-            >
-              <div style={{ fontWeight: 600 }}>Ring Set (from Tuner JSON)</div>
-
-              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <input type="checkbox" checked={autoFollowTuner} onChange={(e) => setAutoFollowTuner(e.target.checked)} />
-                <span>Follow latest Tuner save automatically</span>
-              </label>
-
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <span style={{ flexShrink: 0 }}>Ring Set:</span>
-                <select
-                  value={activeRingSetId ?? ""}
-                  disabled={autoFollowTuner}
-                  onChange={(e) => {
-                    const id = e.target.value || null;
-                    setActiveRingSetId(id);
-                    setAutoFollowTuner(false);
-                    if (id) {
-                      const found = ringSets.find((r) => r.id === id);
-                      if (found) applyRingSet(found);
-                    }
-                  }}
-                  style={{
-                    flex: 1,
-                    padding: "2px 6px",
-                    borderRadius: 6,
-                    border: "1px solid rgba(148,163,184,0.4)",
-                    background: "#020617",
-                    color: "#e5e7eb",
-                  }}
-                >
-                  <option value="">(none)</option>
-                  {ringSets.map((rs) => (
-                    <option key={rs.id} value={rs.id}>
-                      {rs.id}
-                      {rs.status ? ` (${rs.status})` : ""}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 8 }}>
                 <button
+                  type="button"
+                  style={smallBtn}
+                  onClick={() => {
+                    setCircleOffsetX(0);
+                    setCircleOffsetY(0);
+                    setCircleScale(1);
+                  }}
+                  title="Reset circle offset/scale"
+                >
+                  Reset circles
+                </button>
+                <button
+                  type="button"
                   style={smallBtnBlue}
                   onClick={() => {
-                    reloadRingSets();
-                    setAutoFollowTuner(true);
+                    setHideCircles((v) => !v);
                   }}
+                  title="Toggle circle visibility"
                 >
-                  🔄 Refresh from Tuner
+                  {hideCircles ? "Show circles" : "Hide circles"}
                 </button>
-                <button style={smallBtn} onClick={() => navigate("/tuner")}>
-                  🧭 Edit in Tuner
-                </button>
-              </div>
-
-              <div style={{ marginTop: 4 }}>
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>Load JSON File</div>
-                <input type="file" accept="application/json" onChange={handleFileJSONLoad} style={{ fontSize: 11 }} />
-                <div style={{ opacity: 0.7, marginTop: 2 }}>
-                  JSON structure: <code>innerDiameter, wireDiameter, centerSpacing, angleIn, angleOut</code>
-                </div>
               </div>
             </div>
 
-            <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-              <button onClick={resetGeometryToDefaults} style={smallBtn}>
-                Reset Geometry
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ==============================
-            ✅ FREEFORM STATS PANEL (BOTTOM-RIGHT)
-           ============================== */}
-        {showFreeformStats && (
-          <div
-            style={{
-              position: "fixed",
-              right: 18,
-              bottom: 18,
-              zIndex: 99999,
-              width: 260,
-              maxHeight: 320,
-              overflow: "auto",
-              background: "rgba(17,24,39,0.96)",
-              border: "1px solid rgba(0,0,0,0.6)",
-              borderRadius: 14,
-              padding: 12,
-              color: "#e5e7eb",
-              boxShadow: "0 12px 40px rgba(0,0,0,.45)",
-              fontSize: 13,
-              userSelect: "none",
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
-          >
+            {/* RING SETS (Tuner-linked) */}
             <div
               style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 8,
+                marginTop: 6,
+                padding: 10,
+                borderRadius: 12,
+                background: "rgba(15,23,42,0.95)",
+                border: "1px solid rgba(148,163,184,0.25)",
+                display: "grid",
+                gap: 8,
               }}
             >
-              <strong style={{ fontSize: 14 }}>📏 Freeform Stats</strong>
-              <button
-                onClick={() => setShowFreeformStats(false)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#9ca3af",
-                  cursor: "pointer",
-                  fontSize: 16,
-                  lineHeight: 1,
+              <div style={{ fontWeight: 800, fontSize: 12 }}>Ring Sets (from Tuner)</div>
+
+              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={autoFollowTuner}
+                  onChange={(e) => setAutoFollowTuner(e.target.checked)}
+                />
+                <span>Auto-follow latest tuner set</span>
+              </label>
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  style={smallBtn}
+                  onClick={reloadRingSets}
+                  title="Reload ring sets from localStorage"
+                >
+                  Reload
+                </button>
+
+                <label
+                  style={{
+                    ...smallBtn,
+                    display: "grid",
+                    placeItems: "center",
+                    cursor: "pointer",
+                    textAlign: "center",
+                  }}
+                  title="Load a ring set JSON file from disk"
+                >
+                  Load JSON…
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    onChange={handleFileJSONLoad}
+                    style={{ display: "none" }}
+                  />
+                </label>
+              </div>
+
+              <select
+                value={activeRingSetId ?? ""}
+                onChange={(e) => {
+                  const id = e.target.value || null;
+                  setActiveRingSetId(id);
+                  setAutoFollowTuner(false);
+                  const rs = ringSets.find((r) => r.id === id);
+                  if (rs) applyRingSet(rs);
                 }}
-                title="Close"
+                style={{
+                  padding: 8,
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "rgba(255,255,255,0.06)",
+                  color: "#f8fafc",
+                  fontSize: 12,
+                }}
               >
-                ✕
-              </button>
+                <option value="">(select ring set)</option>
+                {ringSets.map((rs) => (
+                  <option key={rs.id} value={rs.id}>
+                    {rs.aspectRatio ? `${rs.aspectRatio} • ` : ""}
+                    {rs.status ? `${rs.status} • ` : ""}
+                    {rs.savedAt ? new Date(rs.savedAt).toLocaleString() : rs.id}
+                  </option>
+                ))}
+              </select>
+
+              <div style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.35 }}>
+                Current:{" "}
+                <b>
+                  ID {formatNum(innerIDmm, 2)}mm • Wire {formatNum(wireMm, 2)}mm • Center{" "}
+                  {formatNum(centerSpacing, 2)}mm
+                </b>
+                <br />
+                Aspect ratio: <b>{formatNum(aspectRatio, 2)}</b>
+              </div>
             </div>
 
-            {/* Dimensions */}
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ fontWeight: 700, marginBottom: 4 }}>Dimensions</div>
+            {/* VIEW CONTROLS */}
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontWeight: 800, fontSize: 12 }}>View</div>
 
-              {!dimsNow ? (
-                <div style={{ color: "#9ca3af" }}>—</div>
-              ) : dimsNow.kind === "circle" ? (
-                <div style={{ display: "grid", gap: 2, color: "#cbd5e1" }}>
-                  <div>Circle</div>
-                  <div>
-                    Radius: {formatNum(dimsNow.radiusMm, 1)} mm ({formatNum(dimsNow.radiusRings, 1)} rings)
-                  </div>
-                  <div>
-                    Diameter: {formatNum(dimsNow.diameterMm, 1)} mm ({formatNum(dimsNow.diameterRings, 1)} rings)
-                  </div>
+              <div style={{ display: "grid", gap: 6 }}>
+                <div style={{ fontSize: 11, opacity: 0.9 }}>
+                  Zoom: <b>{formatNum(zoom, 2)}</b> • Pan:{" "}
+                  <b>
+                    {formatNum(panWorldX, 1)}, {formatNum(panWorldY, 1)}
+                  </b>
                 </div>
-              ) : (
-                <div style={{ display: "grid", gap: 2, color: "#cbd5e1" }}>
-                  <div>Square</div>
-                  <div>
-                    {formatNum(dimsNow.widthMm, 1)} × {formatNum(dimsNow.heightMm, 1)} mm
-                  </div>
-                  <div>
-                    {formatNum(dimsNow.widthRings, 0)} × {formatNum(dimsNow.heightRings, 0)} rings
-                  </div>
-                </div>
-              )}
-            </div>
 
-            {/* Total */}
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontWeight: 800 }}>Total</span>
-                <span style={{ fontWeight: 800 }}>{ringStats.total}</span>
-              </div>
-              <div style={{ color: "#9ca3af", fontSize: 12 }}>Colors used: {ringStats.uniqueColors}</div>
-            </div>
-
-            {/* Selection info */}
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontWeight: 700 }}>Selected (highlight)</span>
-                <span style={{ fontWeight: 800 }}>{selectedKeys.size}</span>
-              </div>
-              <div style={{ color: "#9ca3af", fontSize: 12 }}>
-                Cursor: {cursorPx ? `${cursorPx.x.toFixed(0)}, ${cursorPx.y.toFixed(0)}` : "—"}
-              </div>
-            </div>
-
-            {/* By Color */}
-            <div>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>By Color</div>
-
-              {ringStats.byColor.length === 0 ? (
-                <div style={{ color: "#9ca3af" }}>No rings yet</div>
-              ) : (
-                ringStats.byColor.map(([hex, count]) => (
-                  <div
-                    key={hex}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 8,
-                      padding: "4px 0",
-                      borderTop: "1px solid rgba(255,255,255,0.06)",
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    type="button"
+                    style={smallBtn}
+                    onClick={() => {
+                      setZoom(1);
+                      setPanWorldX(0);
+                      setPanWorldY(0);
                     }}
+                    title="Reset view"
                   >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <div
-                        style={{
-                          width: 12,
-                          height: 12,
-                          borderRadius: 3,
-                          background: hex,
-                          border: "1px solid rgba(0,0,0,0.75)",
-                        }}
-                      />
-                      <span style={{ color: "#cbd5e1" }}>{hex}</span>
-                    </div>
-                    <span style={{ fontWeight: 700 }}>{count}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
+                    Reset view
+                  </button>
 
-        {/* DIAGNOSTIC PANEL (copyable text) */}
-        {showDiagnostics && (
-          <div
-            style={{
-              position: "fixed",
-              left: 88,
-              top: 16,
-              width: 420,
-              maxHeight: "40vh",
-              background: "rgba(15,23,42,0.96)",
-              borderRadius: 12,
-              padding: 8,
-              border: "1px solid rgba(248,250,252,0.3)",
-              boxShadow: "0 10px 30px rgba(0,0,0,0.7)",
-              zIndex: 20,
-              display: "flex",
-              flexDirection: "column",
-              gap: 4,
-              fontFamily:
-                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-              fontSize: 11,
-              userSelect: "text",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontWeight: 600 }}>Diagnostics (copy text)</span>
-              <button
+                  <button
+                    type="button"
+                    style={smallBtnBlue}
+                    onClick={() => {
+                      // gentle zoom-in to help visibility
+                      setZoom((z) => Math.min(MAX_ZOOM, z * 1.2));
+                    }}
+                    title="Zoom in"
+                  >
+                    Zoom +
+                  </button>
+
+                  <button
+                    type="button"
+                    style={smallBtnBlue}
+                    onClick={() => {
+                      setZoom((z) => Math.max(MIN_ZOOM, z / 1.2));
+                    }}
+                    title="Zoom out"
+                  >
+                    Zoom –
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* DIAGNOSTICS */}
+            {showDiagnostics && (
+              <div
                 style={{
-                  ...smallBtn,
-                  flex: "none",
-                  padding: "2px 6px",
-                  fontSize: 10,
+                  marginTop: 6,
+                  padding: 10,
+                  borderRadius: 12,
+                  background: "rgba(2,6,23,0.85)",
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  display: "grid",
+                  gap: 8,
                 }}
-                onClick={() => setDiagLog("")}
               >
-                Clear
-              </button>
-            </div>
+                <div style={{ fontWeight: 800, fontSize: 12 }}>Diagnostics</div>
 
-            <div
-              style={{
-                whiteSpace: "pre",
-                overflowY: "auto",
-                borderRadius: 8,
-                background: "rgba(15,23,42,0.9)",
-                padding: 6,
-                border: "1px solid rgba(30,64,175,0.6)",
-                userSelect: "text",
-              }}
-            >
-              {diagLog || "Click on the canvas to log diagnostics..."}
-            </div>
+                <div style={{ fontSize: 11, opacity: 0.85 }}>
+                  Rings: <b>{rings.size}</b> • Selected: <b>{lastSelectionCount}</b>
+                </div>
+
+                <textarea
+                  value={diagLog}
+                  readOnly
+                  placeholder="Click rings while diagnostics is on to append log lines…"
+                  style={{
+                    width: "100%",
+                    minHeight: 120,
+                    resize: "vertical",
+                    padding: 10,
+                    borderRadius: 10,
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "rgba(255,255,255,0.06)",
+                    color: "#f8fafc",
+                    fontFamily:
+                      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                    fontSize: 11,
+                  }}
+                />
+                <button
+                  type="button"
+                  style={smallBtn}
+                  onClick={() => setDiagLog("")}
+                  title="Clear diagnostics log"
+                >
+                  Clear log
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
