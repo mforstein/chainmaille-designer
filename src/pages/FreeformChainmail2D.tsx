@@ -29,7 +29,7 @@ import {
 
 import { DraggablePill, DraggableCompassNav } from "../App";
 import type { ExportRing, PaletteAssignment } from "../types/project";
-
+import { IconCircle, IconSquare } from "../components/icons/ToolIcons";
 // ⬇️ SAFETY STUB (keeps App.tsx safe if it calls this early; BOM UI removed)
 declare global {
   interface Window {
@@ -3156,7 +3156,7 @@ const FreeformChainmail2D: React.FC = () => {
             }}
             title="Rectangle selection"
           >
-            <SquareIcon active={selectionMode === "rect"} />
+            <IconSquare />
           </ToolButton>
 
           {/* Circle Selection */}
@@ -3170,7 +3170,7 @@ const FreeformChainmail2D: React.FC = () => {
             }}
             title="Circle selection"
           >
-            <CircleIcon active={selectionMode === "circle"} />
+            <IconCircle />
           </ToolButton>
 
           {/* Pan */}
@@ -3186,14 +3186,6 @@ const FreeformChainmail2D: React.FC = () => {
             ✋
           </ToolButton>
 
-          {/* Diagnostics */}
-          <ToolButton
-            active={showDiagnostics}
-            onClick={() => setShowDiagnostics((v) => !v)}
-            title="Diagnostics"
-          >
-            🧪
-          </ToolButton>
 
           {/* Controls */}
           <ToolButton
