@@ -3416,7 +3416,283 @@ const FreeformChainmail2D: React.FC = () => {
           onApply={applyPicker}
         />
       )}
+{/* ==============================
+    📏 Floating Stats Panel (Freeform)
+   ============================== */}
+{showFreeformStats && (
+  <DraggablePill
+    id="freeform-stats"
+    defaultPosition={{
+      x: 20,
+      y: 120,
+    }}
+  >
+    <div
+      style={{
+        minWidth: 260,
+        maxWidth: 340,
+        background: "rgba(17,24,39,0.97)",
+        border: "1px solid rgba(0,0,0,.6)",
+        borderRadius: 14,
+        padding: 12,
+        color: "#e5e7eb",
+        fontSize: 13,
+        boxShadow: "0 12px 40px rgba(0,0,0,.45)",
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+    >
+      {/* Header */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 8,
+        }}
+      >
+        <strong style={{ fontSize: 14 }}>📏 Freeform Stats</strong>
+        <button
+          onClick={() => setShowFreeformStats(false)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#9ca3af",
+            cursor: "pointer",
+            fontSize: 16,
+          }}
+          title="Close"
+        >
+          ✕
+        </button>
+      </div>
 
+      {/* Cursor */}
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ color: "#9ca3af" }}>Cursor (px)</span>
+          <span
+            style={{
+              fontFamily:
+                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+            }}
+          >
+            {cursorPx ? `${Math.round(cursorPx.x)}, ${Math.round(cursorPx.y)}` : "—"}
+          </span>
+        </div>
+      </div>
+
+      {/* Ring + geometry summary */}
+      <div style={{ marginBottom: 10, display: "grid", gap: 6 }}>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ color: "#9ca3af" }}>Rings</span>
+          <span style={{ fontWeight: 800 }}>{ringStats?.total ?? 0}</span>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ color: "#9ca3af" }}>Colors used</span>
+          <span style={{ fontWeight: 800 }}>{ringStats?.uniqueColors ?? 0}</span>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ color: "#9ca3af" }}>Inner ID</span>
+          <span
+            style={{
+              fontFamily:
+                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+            }}
+          >
+            {typeof innerIDmm === "number" ? `${formatNum(innerIDmm, 2)} mm` : "—"}
+          </span>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ color: "#9ca3af" }}>Wire</span>
+          <span
+            style={{
+              fontFamily:
+                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+            }}
+          >
+            {typeof wireMm === "number" ? `${formatNum(wireMm, 2)} mm` : "—"}
+          </span>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ color: "#9ca3af" }}>Center spacing</span>
+          <span
+            style={{
+              fontFamily:
+                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+            }}
+          >
+            {typeof centerSpacing === "number"
+              ? `${formatNum(centerSpacing, 2)} mm`
+              : "—"}
+          </span>
+        </div>
+      </div>
+
+      {/* Dimensions */}
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontWeight: 800, marginBottom: 6 }}>Design bounds</div>
+
+        {!dimsNow ? (
+          <div style={{ color: "#9ca3af" }}>—</div>
+        ) : dimsNow.kind === "square" ? (
+          <div style={{ display: "grid", gap: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "#9ca3af" }}>Width</span>
+              <span
+                style={{
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                }}
+              >
+                {`${formatNum(dimsNow.widthMm, 1)} mm`}
+              </span>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "#9ca3af" }}>Height</span>
+              <span
+                style={{
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                }}
+              >
+                {`${formatNum(dimsNow.heightMm, 1)} mm`}
+              </span>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "#9ca3af" }}>Width (rings)</span>
+              <span
+                style={{
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                }}
+              >
+                {dimsNow.widthRings}
+              </span>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "#9ca3af" }}>Height (rings)</span>
+              <span
+                style={{
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                }}
+              >
+                {dimsNow.heightRings}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "#9ca3af" }}>Radius</span>
+              <span
+                style={{
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                }}
+              >
+                {`${formatNum(dimsNow.radiusMm, 1)} mm`}
+              </span>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "#9ca3af" }}>Diameter</span>
+              <span
+                style={{
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                }}
+              >
+                {`${formatNum(dimsNow.diameterMm, 1)} mm`}
+              </span>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "#9ca3af" }}>Radius (rings)</span>
+              <span
+                style={{
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                }}
+              >
+                {formatNum(dimsNow.radiusRings, 1)}
+              </span>
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ color: "#9ca3af" }}>Diameter (rings)</span>
+              <span
+                style={{
+                  fontFamily:
+                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                }}
+              >
+                {formatNum(dimsNow.diameterRings, 1)}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Color breakdown */}
+      <div>
+        <div style={{ fontWeight: 800, marginBottom: 6 }}>By color</div>
+
+        {!ringStats?.byColor?.length ? (
+          <div style={{ color: "#9ca3af" }}>No rings placed.</div>
+        ) : (
+          <div style={{ display: "grid", gap: 6 }}>
+            {ringStats.byColor.slice(0, 12).map(([hex, count]: [string, number]) => (
+              <div
+                key={hex}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 10,
+                }}
+              >
+                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span
+                    style={{
+                      width: 12,
+                      height: 12,
+                      borderRadius: 3,
+                      background: hex,
+                      border: "1px solid rgba(0,0,0,.8)",
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontFamily:
+                        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                    }}
+                  >
+                    {hex}
+                  </span>
+                </span>
+                <span style={{ fontWeight: 800 }}>{count}</span>
+              </div>
+            ))}
+            {ringStats.byColor.length > 12 && (
+              <div style={{ color: "#9ca3af", fontSize: 12 }}>
+                + {ringStats.byColor.length - 12} more…
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  </DraggablePill>
+)}
       {/* ============================= */}
       {/* ✅ IMAGE OVERLAY PANEL (Freeform) */}
       {/* ============================= */}
