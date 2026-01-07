@@ -737,12 +737,45 @@ function ChainmailDesigner() {
     );
   };
 
-  const doReset = () => rendererRef.current?.resetView();
-  const doClearPaint = () => {
-    rendererRef.current?.clearPaint();
-    setPaint(new Map());
-  };
+const doReset = () => rendererRef.current?.resetView();
 
+// ✅ iPad-safe broom: clear state first (source of truth), then force redraw
+const doClearPaint = () => {
+  // 1) Clear React state (this drives RingRenderer paint prop)
+  setPaint(() => new Map());
+
+  // 2) Ask renderer to clear any internal caches AND repaint
+  // (If clearPaint already exists, keep calling it. But do NOT rely on it alone.)
+  try {
+    rendererRef.current?.clearPaint?.();
+  } catch {
+    // ignore
+  }
+
+  // 3) iOS Safari sometimes needs an extra frame to show the updated WebGL result
+  requestAnimationFrame(() => {
+    try {
+      // If your renderer exposes any of these, call them defensively.
+      rendererRef.current?.requestRender?.();
+      rendererRef.current?.invalidate?.();
+      rendererRef.current?.renderOnce?.();
+      rendererRef.current?.clearPaint?.(); // harmless if idempotent
+    } catch {
+      // ignore
+    }
+  });
+
+  // 4) One more frame for stubborn iPad WebGL repaint issues
+  requestAnimationFrame(() => {
+    try {
+      rendererRef.current?.requestRender?.();
+      rendererRef.current?.invalidate?.();
+      rendererRef.current?.renderOnce?.();
+    } catch {
+      // ignore
+    }
+  });
+};
   // ==============================
   // BOM Panel State
   // ==============================
