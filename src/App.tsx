@@ -1955,6 +1955,24 @@ function RequireErin2DAuth({ children }: { children: JSX.Element }) {
 // ✅ APP ROOT — Routing Hub (NO FEATURE REMOVAL)
 // ==============================================
 function App() {
+  useEffect(() => {
+    const onPageShow = (e: PageTransitionEvent) => {
+      if (e.persisted) window.location.reload();
+    };
+    window.addEventListener("pageshow", onPageShow);
+    return () => window.removeEventListener("pageshow", onPageShow);
+  }, []);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const root = document.getElementById("root");
+      if (!root || root.children.length === 0) {
+        console.warn("App failed to mount — forcing reload");
+        window.location.href = "/wovenrainbowsbyerin";
+      }
+    }, 1500);
+    return () => clearTimeout(t);
+  }, []);
   return (
     <Routes>
       {/* Public landing */}
