@@ -1096,47 +1096,53 @@ onChange={(e) => {
           </div>
         )}
 
-        {/* ✅ Base Material Label */}
-        <div
-          onClick={() => setShowMaterialPalette((v) => !v)}
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            textAlign: "center",
-            gap: 2,
-            padding: "4px 2px",
-            fontSize: 11,
-            color: "#f1f5f9",
-            marginTop: 6,
-            maxWidth: 80,
-            lineHeight: 1.25,
-            userSelect: "none",
-            cursor: "pointer",
-            whiteSpace: "normal",
-            wordBreak: "break-word",
-            overflowWrap: "break-word",
-            margin: "8px auto 0",
-          }}
-          title="Click to choose base material"
-        >
-          <div style={{ fontWeight: 600, fontSize: 12 }}>
-            {MATERIALS.find((m) => m.hex === params.ringColor)?.name ||
-              "Base Material"}
-          </div>
-          <div
-            style={{ fontSize: 10, color: "#9ca3af" }}
-            dangerouslySetInnerHTML={{
-              __html: params.ringSpec
-                ? params.ringSpec
-                    .replace(/\s*\/\s*/g, "<br/>")
-                    .replace(/\s*mm/g, " mm")
-                    .replace(/\s*\(AR/g, "<br/>(AR")
-                : "ID — mm<br/>WD — mm<br/>(AR≈—)",
-            }}
-          />
-        </div>
+{/* ✅ Base Material Label */}
+<button
+  type="button"
+  onClick={(e) => {
+    e.stopPropagation();
+    setShowMaterialPalette((v) => !v);
+  }}
+  style={{
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    textAlign: "center",
+    gap: 2,
+    padding: "4px 2px",
+    fontSize: 11,
+    color: "#f1f5f9",
+    marginTop: 6,
+    maxWidth: 80,
+    lineHeight: 1.25,
+    userSelect: "none",
+    cursor: "pointer",
+    whiteSpace: "normal",
+    wordBreak: "break-word",
+    overflowWrap: "break-word",
+    margin: "8px auto 0",
+    background: "transparent",
+    border: "none",
+  }}
+  title="Click to choose base material"
+>
+  <div style={{ fontWeight: 600, fontSize: 12 }}>
+    {MATERIALS.find((m) => m.hex === params.ringColor)?.name || "Base Material"}
+  </div>
+
+  <div
+    style={{ fontSize: 10, color: "#9ca3af" }}
+    dangerouslySetInnerHTML={{
+      __html: params.ringSpec
+        ? params.ringSpec
+            .replace(/\s*\/\s*/g, "<br/>")
+            .replace(/\s*mm/g, " mm")
+            .replace(/\s*\(AR/g, "<br/>(AR")
+        : "ID — mm<br/>WD — mm<br/>(AR≈—)",
+    }}
+  />
+</button>
       </DraggablePill>
 
       {/* === Draggable Universal Color Palette === */}
