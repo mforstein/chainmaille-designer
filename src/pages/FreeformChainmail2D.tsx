@@ -407,6 +407,11 @@ type SelectionDrag = {
 // ======================================================
 // UI HELPERS
 // ======================================================
+// ======================================================
+// ToolButton (Copy/paste replacement)
+// Keeps all existing behavior + makes SVG icons visible
+// ======================================================
+
 const ToolButton: React.FC<
   React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }
 > = ({ active, children, ...rest }) => (
@@ -427,9 +432,23 @@ const ToolButton: React.FC<
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
+      // ✅ helps iOS Safari + ensures SVG inherits currentColor cleanly
+      lineHeight: 1,
     }}
   >
-    {children}
+    {/* ✅ ensures SVG icons have a predictable visible size without changing your callsites */}
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 32,
+        height: 32,
+        color: "inherit",
+      }}
+    >
+      {children}
+    </span>
   </button>
 );
 
@@ -449,7 +468,6 @@ const smallBtnBlue: React.CSSProperties = {
   ...smallBtn,
   background: "#2563eb",
 };
-
 const SliderRow: React.FC<{
   label: string;
   value: number;
