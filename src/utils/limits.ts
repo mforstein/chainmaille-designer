@@ -13,8 +13,8 @@ export const SAFE_DEFAULT = { rows: 20, cols: 20 };
 
 export function getDeviceLimits(): Limits {
   // You can relax desktop limits later if you like
-  if (IS_IOS) return { MAX_ROWS: 60, MAX_COLS: 60, MAX_AREA: 60 * 60 };
-  return { MAX_ROWS: 120, MAX_COLS: 120, MAX_AREA: 120 * 120 };
+  if (IS_IOS) return { MAX_ROWS: 160, MAX_COLS: 160, MAX_AREA: 160 * 160 };
+  return { MAX_ROWS: 400, MAX_COLS: 400, MAX_AREA: 400 * 400 };
 }
 
 function toInt(n: any, fallback: number) {

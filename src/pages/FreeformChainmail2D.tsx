@@ -734,9 +734,13 @@ const FreeformChainmail2D: React.FC = () => {
 
   const [eraseMode, setEraseMode] = useState(false);
   const [showControls, setShowControls] = useState(false);
+  const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
 
   // ✅ Floating submenu (Designer pattern) — show/hide compass nav
   const [showCompass, setShowCompass] = useState(false);
+
+  // ✅ Secondary utility panel (toolbox/save-load/reset)
+  const [showUtilityPanel, setShowUtilityPanel] = useState(false);
 
   // ==============================
   // 📏 Freeform Stats (dims + counts)
@@ -3123,6 +3127,9 @@ const FreeformChainmail2D: React.FC = () => {
             alignItems: "center",
             width: 76,
             padding: 10,
+            paddingBottom: "calc(10px + env(safe-area-inset-bottom))",
+            maxHeight: "calc(100vh - 24px - env(safe-area-inset-bottom))",
+            overflowY: "auto",
             background: "#0f172a",
             border: "1px solid #0b1020",
             borderRadius: 20,
@@ -3132,11 +3139,42 @@ const FreeformChainmail2D: React.FC = () => {
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
         >
-          {/* ✨ Identity */}
-          <ToolButton active title="Freeform">
-            ✨
-          </ToolButton>
 
+{/* Quick actions + Roll-up (keep reachable on iPhone) */}
+<ToolButton
+  active={showCompass}
+  onClick={() => setShowCompass((v) => !v)}
+  title="Navigation Menu"
+>
+  🧭
+</ToolButton>
+
+<ToolButton
+  onClick={() => setFinalizeOpen(true)}
+  title="Finalize & Export (SKU mapping, numbered maps, true-size print)"
+>
+  📦
+</ToolButton>
+
+<ToolButton
+  active={!toolbarCollapsed}
+  onClick={() => setToolbarCollapsed((v) => !v)}
+  title={toolbarCollapsed ? "Expand tools" : "Collapse tools"}
+>
+  {toolbarCollapsed ? "▸" : "▾"}
+</ToolButton>
+
+
+<ToolButton
+  active={showUtilityPanel}
+  onClick={() => setShowUtilityPanel((v) => !v)}
+  title={showUtilityPanel ? "Hide utility panel" : "Show utility panel (toolbox, save/load, reset)"}
+>
+  ⚙️
+</ToolButton>
+
+{!toolbarCollapsed && (
+            <>
           {/* Paint */}
           <ToolButton
             active={!eraseMode && selectionMode === "none"}
@@ -3203,18 +3241,7 @@ const FreeformChainmail2D: React.FC = () => {
           >
             ✋
           </ToolButton>
-
-
-          {/* Controls */}
-          <ToolButton
-            active={showControls}
-            onClick={() => setShowControls((v) => !v)}
-            title="Geometry & JSON controls"
-          >
-            🧰
-          </ToolButton>
-
-          {/* Image Overlay */}
+{/* Image Overlay */}
           <ToolButton
             active={showImageOverlay}
             onClick={() => setShowImageOverlay((v) => !v)}
@@ -3227,41 +3254,79 @@ const FreeformChainmail2D: React.FC = () => {
           <ToolButton onClick={handleClear} title="Clear all">
             🧹
           </ToolButton>
-
-          <ProjectSaveLoadButtons
-            onSave={saveFreeformProject}
-            onLoad={(json) => {
-              if (!window.confirm("Load project and replace current work?")) return;
-              loadFreeformProject(json);
-            }}
-          />
-          {/* Reset UI */}
-          <ToolButton
-            onClick={() => {
-              if (!window.confirm("Reset UI layout and view settings?")) return;
-              resetUI();
-            }}
-            title="Reset UI (layout + view + tool states)"
-          >
-            ♻️
-          </ToolButton>
-          {/* Navigation */}
-          <ToolButton
-            active={showCompass}
-            onClick={() => setShowCompass((v) => !v)}
-            title="Navigation Menu"
-          >
-            🧭
-          </ToolButton>
-
-          <ToolButton
-            onClick={() => setFinalizeOpen(true)}
-            title="Finalize & Export (SKU mapping, numbered maps, true-size print)"
-          >
-            📦
-          </ToolButton>
+</>
+          )}
         </div>
       </DraggablePill>
+
+      {/* ============================= */}
+      {/* ✅ SECONDARY UTILITY PANEL (toolbox + save/load + reset) */}
+      {/* ============================= */}
+      {showUtilityPanel && (
+        <DraggablePill id="freeform-utility" defaultPosition={{ x: 110, y: 20 }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+              alignItems: "center",
+              width: 76,
+              padding: 10,
+              paddingBottom: "calc(10px + env(safe-area-inset-bottom))",
+              maxHeight: "calc(100vh - 24px - env(safe-area-inset-bottom))",
+              overflowY: "auto",
+              background: "rgba(15,23,42,0.96)",
+              border: "1px solid #0b1020",
+              borderRadius: 20,
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+              userSelect: "none",
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+            <ToolButton
+              active={showControls}
+              onClick={() => setShowControls((v) => !v)}
+              title="Geometry & JSON controls"
+            >
+              🧰
+            </ToolButton>
+
+            <ProjectSaveLoadButtons
+              onSave={saveFreeformProject}
+              onLoad={(json) => {
+                if (!window.confirm("Load project and replace current work?")) return;
+                loadFreeformProject(json);
+              }}
+            />
+
+            <ToolButton
+              onClick={() => {
+                if (!window.confirm("Reset UI layout and view settings?")) return;
+                resetUI();
+              }}
+              title="Reset UI (layout + view + tool states)"
+            >
+              ♻️
+            </ToolButton>
+            <button
+  onClick={() => setShowFreeformStats((v) => !v)}
+  title={showFreeformStats ? "Hide Freeform Stats" : "Show Freeform Stats"}
+  style={{
+    width: 44,              // match your toolbox button size if different
+    height: 44,
+    borderRadius: 14,
+    border: "1px solid rgba(255,255,255,0.10)",
+    background: showFreeformStats ? "rgba(59,130,246,0.25)" : "rgba(255,255,255,0.06)",
+    color: "#e5e7eb",
+    cursor: "pointer",
+  }}
+>
+  ✨
+</button>
+          </div>
+        </DraggablePill>
+      )}
 
       {/* ============================= */}
       {/* ✅ FLOATING COLOR PALETTE (Designer style) */}
@@ -3521,12 +3586,37 @@ const FreeformChainmail2D: React.FC = () => {
 {/* ==============================
     📏 Floating Stats Panel (Freeform)
    ============================== */}
-{showFreeformStats && (
+
+      {!showFreeformStats && (
+        <button
+          onClick={() => setShowFreeformStats(true)}
+          title="Show stats"
+          style={{
+            position: "absolute",
+            right: 20,
+            bottom: 20,
+            width: 44,
+            height: 44,
+            borderRadius: 16,
+            border: "1px solid rgba(255,255,255,0.10)",
+            background: "rgba(17,24,39,0.92)",
+            color: "#e5e7eb",
+            cursor: "pointer",
+            boxShadow: "0 6px 18px rgba(0,0,0,0.45)",
+          }}
+        >
+          ✨
+        </button>
+      )}
+
+      {showFreeformStats && (
   <DraggablePill
     id="freeform-stats"
     defaultPosition={{
-      x: 20,
-      y: 120,
+      x:
+        (typeof window !== "undefined" ? window.innerWidth : 1200) - 360,
+      y:
+        (typeof window !== "undefined" ? window.innerHeight : 900) - 320,
     }}
   >
     <div
@@ -3553,7 +3643,10 @@ const FreeformChainmail2D: React.FC = () => {
           marginBottom: 8,
         }}
       >
-        <strong style={{ fontSize: 14 }}>📏 Freeform Stats</strong>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+
+  <strong style={{ fontSize: 14 }}>📏 Freeform Stats</strong>
+</div>
         <button
           onClick={() => setShowFreeformStats(false)}
           style={{

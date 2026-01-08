@@ -17,8 +17,8 @@ export type RingMap = Map<string, PlacedRing>;
 // ======================================================
 
 export const WEAVE_SETTINGS_DEFAULT = {
-  spacingX: 8.0, // horizontal spacing
-  spacingY: 8.0 * 0.866, // vertical spacing (hex)
+  spacingX: 7.0, // horizontal spacing
+  spacingY: 7.0 * 0.866, // vertical spacing (hex)
   wireD: 1.6,
 };
 
