@@ -418,6 +418,8 @@ function ChainmailDesigner() {
   const [activeMenu, setActiveMenu] = useState<"camera" | "controls" | null>(
     null,
   );
+  const [showGearMenu, setShowGearMenu] = useState(false);
+
   const [showMagnet, setShowMagnet] = useState(false);
   const [showMaterialPalette, setShowMaterialPalette] = useState(false);
   const [showCompass, setShowCompass] = useState(false);
@@ -954,6 +956,21 @@ const doClearPaint = () => {
           </IconBtn>
 
           <IconBtn
+            tooltip="Finalize & Export (PDF / CSV / Map / Preview)"
+            onClick={() => setFinalizeOpen(true)}
+          >
+            📦
+          </IconBtn>
+
+          <IconBtn
+            tooltip="Navigation Menu"
+            active={showCompass}
+            onClick={() => setShowCompass((v) => !v)}
+          >
+            🧭
+          </IconBtn>
+
+<IconBtn
             tooltip="Controls Menu"
             active={activeMenu === "controls"}
             onClick={(e) => {
@@ -971,6 +988,9 @@ const doClearPaint = () => {
           <div
             style={{
               marginTop: 12,
+              maxHeight: "calc(100vh - 180px - env(safe-area-inset-bottom))",
+              overflowY: "auto",
+              paddingBottom: "calc(8px + env(safe-area-inset-bottom))",
               display: "flex",
               flexDirection: "column",
               gap: 10,
@@ -1064,127 +1084,167 @@ onChange={(e) => {
           </div>
         )}
 
-        {/* --- Camera Tools Menu (Image overlay, paint, zoom, etc.) --- */}
-        {activeMenu === "camera" && (
-          <div
-            style={{
-              marginTop: 12,
-              display: "flex",
-              flexDirection: "column",
-              gap: 16,
-              alignItems: "center",
-              width: 76,
-              padding: 14,
-              background: "#0b1324",
-              border: "1px solid #0b1020",
-              borderRadius: 20,
-              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
-            }}
-            onMouseDown={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
-          >
-            <ProjectSaveLoadButtons
-              onSave={saveDesignerProject}
-              onLoad={loadDesignerProject}
-              defaultFileName="chainmail-designer"
-            />
+{/* --- Camera Tools Menu (Image overlay, paint, zoom, etc.) --- */}
+{activeMenu === "camera" && (
+  <div
+    style={{
+      marginTop: 12,
+      display: "flex",
+      flexDirection: "column",
+      gap: 16,
+      alignItems: "center",
+      width: 76,
+      padding: 14,
+      background: "#0b1324",
+      border: "1px solid #0b1020",
+      borderRadius: 20,
+      boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+    }}
+    onMouseDown={(e) => e.stopPropagation()}
+    onTouchStart={(e) => e.stopPropagation()}
+    onPointerDown={(e) => e.stopPropagation()}
+  >
+    <div
+      style={{
+        width: "100%",
+        height: 1,
+        background: "rgba(255,255,255,0.08)",
+        margin: "6px 0",
+      }}
+    />
 
-            <div
-              style={{
-                width: "100%",
-                height: 1,
-                background: "rgba(255,255,255,0.08)",
-                margin: "6px 0",
-              }}
-            />
+    <IconBtn
+      tooltip="Image Overlay"
+      onClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        setShowOverlayPanel((v) => !v);
+      }}
+    >
+      🖼️
+    </IconBtn>
 
-            <IconBtn
-              tooltip="Image Overlay"
-              onClick={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                setShowOverlayPanel((v) => !v);
-              }}
-            >
-              🖼️
-            </IconBtn>
+    <IconBtn
+      tooltip="Paint Mode"
+      active={paintMode}
+      onClick={(e) => {
+        e.stopPropagation();
+        const next = !paintMode;
+        setPaintMode(next);
 
-            <IconBtn
-              tooltip="Paint Mode"
-              active={paintMode}
-              onClick={() => {
-                const next = !paintMode;
-                setPaintMode(next);
+        setTimeout(() => {
+          rendererRef.current?.setPaintMode?.(next);
+          rendererRef.current?.setEraseMode?.(false);
+          rendererRef.current?.setPanEnabled?.(!next);
+        }, 0);
+      }}
+    >
+      🎨
+    </IconBtn>
 
-                setTimeout(() => {
-                  rendererRef.current?.setPaintMode?.(next);
-                  rendererRef.current?.setEraseMode?.(false);
-                  rendererRef.current?.setPanEnabled?.(!next);
-                }, 0);
-              }}
-            >
-              🎨
-            </IconBtn>
+    {paintMode && (
+      <IconBtn
+        tooltip="Erase Mode"
+        active={eraseMode}
+        onClick={(e) => {
+          e.stopPropagation();
+          const next = !eraseMode;
+          setEraseMode(next);
+          rendererRef.current?.setEraseMode?.(next);
+        }}
+      >
+        🧽
+      </IconBtn>
+    )}
 
-            {paintMode && (
-              <IconBtn
-                tooltip="Erase Mode"
-                active={eraseMode}
-                onClick={() => {
-                  const next = !eraseMode;
-                  setEraseMode(next);
-                  rendererRef.current?.setEraseMode?.(next);
-                }}
-              >
-                🧽
-              </IconBtn>
-            )}
+    <IconBtn
+      tooltip="Reset View"
+      onClick={(e) => {
+        e.stopPropagation();
+        doReset();
+      }}
+    >
+      ↺
+    </IconBtn>
 
-            <IconBtn tooltip="Reset View" onClick={doReset}>
-              ↺
-            </IconBtn>
+    <IconBtn
+      tooltip="Clear Paint"
+      onClick={(e) => {
+        e.stopPropagation();
+        doClearPaint();
+      }}
+    >
+      🧹
+    </IconBtn>
 
-            <IconBtn
-              tooltip={rotationLocked ? "Unlock 3D Rotation" : "Lock to Flat 2D"}
-              onClick={() => setLock(!rotationLocked)}
-              active={!rotationLocked}
-            >
-              {rotationLocked ? "🔒" : "🔓"}
-            </IconBtn>
+    {/* ✅ Gear opens the thin draggable tools subpanel */}
+    <IconBtn
+      tooltip="Tools Menu"
+      active={showGearMenu}
+      onClick={(e) => {
+        e.stopPropagation();
+        setShowGearMenu((v) => !v);
+      }}
+    >
+      ⚙️
+    </IconBtn>
+  </div>
+)}
 
-            <IconBtn tooltip="Clear Paint" onClick={doClearPaint}>
-              🧹
-            </IconBtn>
+{/* ✅ Designer Gear Subpanel (thin, draggable) */}
+{showGearMenu && (
+  <DraggablePill id="designer-gear-menu" defaultPosition={{ x: 110, y: 520 }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        alignItems: "center",
+        width: 76,
+        padding: 12,
+        background: "#0b1324",
+        border: "1px solid #0b1020",
+        borderRadius: 20,
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* 🧰 toolbox toggles the existing magnet dialog (leave magnet dialog unchanged) */}
+      <IconBtn
+        tooltip="Supplier & Atlas"
+        active={showMagnet}
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowMagnet((v) => !v);
+        }}
+      >
+        🧰
+      </IconBtn>
 
-            <IconBtn
-              tooltip="Supplier & Atlas"
-              onClick={() => setShowMagnet((v) => !v)}
-            >
-              🧲
-            </IconBtn>
+      {/* Save / Open */}
+      <ProjectSaveLoadButtons
+        onSave={saveDesignerProject}
+        onLoad={loadDesignerProject}
+        defaultFileName="chainmail-designer"
+      />
 
-            <IconBtn
-              tooltip="Bill of Materials"
-              onClick={() => setShowBOM((v) => !v)}
-            >
-              🧾
-            </IconBtn>
-
-            <IconBtn
-              tooltip="Finalize & Export (PDF / CSV / Map / Preview)"
-              onClick={() => setFinalizeOpen(true)}
-            >
-              📦
-            </IconBtn>
-
-            <IconBtn
-              tooltip="Navigation Menu"
-              onClick={() => setShowCompass((v) => !v)}
-            >
-              🧭
-            </IconBtn>
-          </div>
-        )}
+      {/* BOM */}
+      <IconBtn
+        tooltip="Bill of Materials"
+        active={showBOM}
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowBOM((v) => !v);
+        }}
+      >
+        🧾
+      </IconBtn>
+    </div>
+  </DraggablePill>
+)}
 
 {/* ✅ Base Material Label */}
 <button
@@ -1256,6 +1316,7 @@ onChange={(e) => {
             }}
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
           >
             <div
               style={{
@@ -1267,7 +1328,13 @@ onChange={(e) => {
               {UNIVERSAL_COLORS.map((hex) => (
                 <div
                   key={hex}
-                  onClick={() => setActiveColor(hex)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveColor(hex);
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
                   style={{
                     background: hex,
                     width: 22,
@@ -1289,7 +1356,6 @@ onChange={(e) => {
           </div>
         </DraggablePill>
       )}
-
       {/* === Quick Base Material Palette === */}
       {showMaterialPalette && (
         <DraggablePill
