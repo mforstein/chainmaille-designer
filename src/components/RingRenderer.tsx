@@ -20,7 +20,6 @@ import RingRendererInstanced from "./RingRendererInstanced";
 // Utility Constants & Conversions
 // ============================================================
 const INCH_TO_MM = 25.4;
-
 // If rings are above this threshold, use instanced renderer.
 // Tune this number if you want; 5k is a safe default for torus-per-mesh.
 const LARGE_THRESHOLD = 5000;
@@ -341,29 +340,24 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
 
   const shouldUseInstanced = useInstanced && !instancedFailed;
 
-  // IMPORTANT: do NOT put hooks behind conditionals. We delegate to two different components.
-  if (shouldUseInstanced) {
-    return (
-      <RingRendererErrorBoundary
-        onError={(err) => {
-          console.warn(
-            "[RingRenderer] Instanced renderer failed; falling back to non-instanced.",
-            err,
-          );
-          setInstancedFailed(true);
-        }}
-        fallback={<RingRendererNonInstanced {...props} ref={ref} />}
-      >
-        <RingRendererInstanced
-          {...(props as any)}
-          ref={ref as any}
-          // Instanced renderer should manage internally using the same props.
-        />
-      </RingRendererErrorBoundary>
-    );
-  }
+  const child = shouldUseInstanced ? (
+    <RingRendererErrorBoundary
+      onError={(err) => {
+        console.warn(
+          "[RingRenderer] Instanced renderer failed; falling back to non-instanced.",
+          err,
+        );
+        setInstancedFailed(true);
+      }}
+      fallback={<RingRendererNonInstanced {...props} ref={ref} />}
+    >
+      <RingRendererInstanced {...(props as any)} ref={ref as any} />
+    </RingRendererErrorBoundary>
+  ) : (
+    <RingRendererNonInstanced {...props} ref={ref} />
+  );
 
-  return <RingRendererNonInstanced {...props} ref={ref} />;
+  return child;
 });
 
 export default RingRenderer;
@@ -387,6 +381,13 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
     },
     ref,
   ) {
+    // ============================================================
+    // iPad/WebGL recovery refs MUST be inside component (Rules of Hooks)
+    // ============================================================
+    const rafRef = useRef<number | null>(null);
+    const contextLostRef = useRef(false);
+    const [glEpoch, setGlEpoch] = useState(0); // bump to re-init WebGL
+
     // ----------------------------
     // Safe Params State
     // ----------------------------
@@ -629,11 +630,104 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
     };
 
     // ============================================================
-    // Scene Initialization + Renderer Setup (single loop, safe scope)
+    // ✅ Painting (mouse + finger) — FIXED FOR iOS SAFARI
+    // - keeps existing mouse paint working
+    // - adds touchAction:none + touch fallback so finger-drag paints reliably
+    // ============================================================
+    const raycasterRef = useRef(new THREE.Raycaster());
+    const ndcRef = useRef(new THREE.Vector2());
+    const isPaintingGestureRef = useRef(false);
+    const lastKeyRef = useRef<string | null>(null);
+
+    const applyPaintToMesh = (mesh: THREE.Mesh | null) => {
+      if (!mesh) return;
+
+      const row = mesh.userData.row as number;
+      const col = mesh.userData.col as number;
+      if (row == null || col == null) return;
+
+      const key = `${row},${col}`;
+
+      // Avoid hammering the same ring repeatedly during continuous move
+      if (lastKeyRef.current === key) return;
+      lastKeyRef.current = key;
+
+      const erase = eraseModeRef.current;
+      const nextColor = erase ? null : normalizeColor6(activeColorRef.current);
+
+      // Queue map patch (batched) + update mesh immediately for responsiveness
+      queuePaintPatch(key, nextColor);
+
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      if (mat?.color) {
+        const fallback = normalizeColor6(paramsRef.current.ringColor || "#CCCCCC");
+        mat.color.set(nextColor ?? fallback);
+      }
+    };
+
+    const paintAtClient = (clientX: number, clientY: number) => {
+      const cam = cameraRef.current;
+      const renderer = rendererRef.current;
+      const meshes = meshesRef.current;
+
+      if (!paintModeRef.current) return;
+      if (!cam || !renderer || !meshes || meshes.length === 0) return;
+
+      const rect = renderer.domElement.getBoundingClientRect();
+      const x = ((clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+      const y = -(((clientY - rect.top) / Math.max(1, rect.height)) * 2 - 1);
+
+      ndcRef.current.set(x, y);
+
+      // First try raycast intersection against torus meshes (accurate on desktop)
+      try {
+        raycasterRef.current.setFromCamera(ndcRef.current, cam);
+        const hits = raycasterRef.current.intersectObjects(meshes, false);
+        if (hits && hits.length > 0) {
+          applyPaintToMesh(hits[0].object as THREE.Mesh);
+          return;
+        }
+      } catch {
+        // fall through
+      }
+
+      // Fallback: project ray to Z=0 plane and pick nearest ring center (works great on iOS)
+      try {
+        raycasterRef.current.setFromCamera(ndcRef.current, cam);
+        const ray = raycasterRef.current.ray;
+
+        const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+        const hit = new THREE.Vector3();
+        const ok = ray.intersectPlane(plane, hit);
+        if (ok) {
+          const nearest = findNearestMeshByWorldPoint(hit.x, hit.y);
+          applyPaintToMesh(nearest);
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    // ============================================================
+    // Scene Initialization + Renderer Setup (single loop, iPad-safe + recovery)
     // ============================================================
     useEffect(() => {
       if (!mountRef.current) return;
       const mount = mountRef.current;
+
+      // iOS: mount can be 0x0 on first paint; retry next frame
+      if ((mount.clientWidth || 0) < 2 || (mount.clientHeight || 0) < 2) {
+        const id = requestAnimationFrame(() => setGlEpoch((v) => v + 1));
+        return () => cancelAnimationFrame(id);
+      }
+
+      // ---- hard stop anything previous ----
+      contextLostRef.current = false;
+
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
 
       // If there was an old renderer, dispose it and clear mount
       if (rendererRef.current) {
@@ -643,12 +737,15 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         try {
           mount.replaceChildren();
         } catch {}
+        rendererRef.current = null;
       }
 
+      // ---- Scene ----
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(safeParams.bgColor);
       sceneRef.current = scene;
 
+      // ---- Camera ----
       const camera = new THREE.PerspectiveCamera(
         30,
         Math.max(1, mount.clientWidth) / Math.max(1, mount.clientHeight),
@@ -660,26 +757,108 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       camera.far = 100000;
       cameraRef.current = camera;
 
-      // Create renderer (webgl2 if available)
+      // ---- Renderer (iPad/Safari hardened) ----
       const canvas = document.createElement("canvas");
-      const gl = canvas.getContext("webgl2", {
-        antialias: true,
-        alpha: false,
-        depth: true,
-        powerPreference: "high-performance",
-      }) as WebGL2RenderingContext | null;
 
-      const renderer = new THREE.WebGLRenderer({
-        canvas,
-        context: gl ?? undefined,
-        antialias: true,
-        precision: "mediump",
-        powerPreference: "high-performance",
+      // ✅ Three r163+ requires WebGL2. Do NOT request WebGL1.
+      const contextAttrs: WebGLContextAttributes = {
+        alpha: true,
+        antialias: false,
+        depth: true,
+        stencil: false,
+        premultipliedAlpha: true, // ✅ more typical + stable for compositing
+        preserveDrawingBuffer: false,
+        powerPreference: "low-power",
+        failIfMajorPerformanceCaveat: false,
+      };
+
+      // Context lost / restored hooks
+      const onContextLost = (e: Event) => {
+        try {
+          (e as any).preventDefault?.();
+        } catch {}
+        console.warn("[RingRenderer] WebGL context lost");
+        contextLostRef.current = true;
+
+        if (rafRef.current != null) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
+
+        try {
+          controlsRef.current?.dispose?.();
+        } catch {}
+        try {
+          rendererRef.current?.dispose?.();
+        } catch {}
+
+        setTimeout(() => {
+          setGlEpoch((v) => v + 1);
+        }, 150);
+      };
+
+      const onContextRestored = () => {
+        console.warn("[RingRenderer] WebGL context restored");
+      };
+
+      // Attach listeners to *this canvas* (Three will use it)
+      canvas.addEventListener("webglcontextlost", onContextLost as any, {
+        passive: false,
       });
+      canvas.addEventListener("webglcontextrestored", onContextRestored as any, {
+        passive: false,
+      });
+
+      let gl: WebGL2RenderingContext | null = null;
+
+      try {
+        // ✅ WebGL2 ONLY (Three r163+)
+        gl = canvas.getContext("webgl2", contextAttrs) as WebGL2RenderingContext | null;
+
+        if (!gl) {
+          console.error(
+            "[RingRenderer] WebGL2 unavailable. Three r163+ requires WebGL2.",
+          );
+          return;
+        }
+
+        // early guard
+        try {
+          (gl as any).getContextAttributes?.();
+        } catch (e) {
+          console.error(
+            "[RingRenderer] WebGL2 context invalid right after creation",
+            e,
+          );
+          return;
+        }
+      } catch (e) {
+        console.error("[RingRenderer] getContext threw", e);
+        return;
+      }
+
+      let renderer: THREE.WebGLRenderer | null = null;
+
+      try {
+        renderer = new THREE.WebGLRenderer({
+          canvas,
+          context: gl,
+          alpha: true,
+          antialias: false,
+          premultipliedAlpha: true,
+          preserveDrawingBuffer: false,
+          precision: "mediump",
+          powerPreference: "low-power",
+        });
+      } catch (e) {
+        console.error("[RingRenderer] WebGLRenderer init failed", e);
+        return;
+      }
 
       renderer.setSize(
         Math.max(1, mount.clientWidth),
         Math.max(1, mount.clientHeight),
+        false,
       );
       renderer.setClearColor(safeParams.bgColor, 1);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
@@ -690,9 +869,15 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       renderer.toneMappingExposure = 1.25;
 
       mount.appendChild(renderer.domElement);
+
+      // ✅ iOS/Safari: critical for finger-drag painting (prevents scroll/zoom stealing move events)
+      renderer.domElement.style.touchAction = "none";
+      (renderer.domElement.style as any).webkitUserSelect = "none";
+      (renderer.domElement.style as any).webkitTouchCallout = "none";
+
       rendererRef.current = renderer;
 
-      // Lights
+      // ---- Lights ----
       scene.add(new THREE.AmbientLight(0xffffff, 0.85));
 
       const dir = new THREE.DirectionalLight(0xffffff, 1.15);
@@ -703,7 +888,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       rim.position.set(-4, -6, -8);
       scene.add(rim);
 
-      // Controls
+      // ---- Controls ----
       const controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.08;
@@ -716,24 +901,17 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         const panAllowed = panEnabledRef.current;
         const painting = paintModeRef.current;
 
-        const sig = `${locked ? 1 : 0}|${panAllowed ? 1 : 0}|${
-          painting ? 1 : 0
-        }`;
+        const sig = `${locked ? 1 : 0}|${panAllowed ? 1 : 0}|${painting ? 1 : 0}`;
         if (sig === lastSig) {
-          // Still need damping updates
           controls.update();
           return;
         }
         lastSig = sig;
 
-        // Always allow zoom
         controls.enableZoom = true;
 
         if (locked) {
-          // 🔒 LOCKED VIEW (2D)
           controls.enableRotate = false;
-
-          // ✅ Pan allowed when paint is OFF and panEnabled is true
           controls.enablePan = panAllowed && !painting;
 
           controls.mouseButtons = {
@@ -747,7 +925,6 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
             TWO: THREE.TOUCH.DOLLY_PAN,
           };
         } else {
-          // 🔓 UNLOCKED (3D)
           controls.enableRotate = true;
           controls.enablePan = true;
 
@@ -772,11 +949,111 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       camera.lookAt(controls.target);
       camera.updateProjectionMatrix();
 
-      // Resize handling (container-aware)
+      // ============================================================
+      // ✅ Pointer + Touch painting handlers (finger painting fix)
+      // ============================================================
+      const el = renderer.domElement;
+
+      const onPointerDown = (e: PointerEvent) => {
+        if (!paintModeRef.current) return;
+
+        // capture so move continues even if pointer leaves element
+        try {
+          (e.target as any)?.setPointerCapture?.(e.pointerId);
+        } catch {}
+
+        isPaintingGestureRef.current = true;
+        lastKeyRef.current = null;
+
+        // prevent iOS gesture interference
+        try {
+          e.preventDefault();
+        } catch {}
+        try {
+          e.stopPropagation();
+        } catch {}
+
+        paintAtClient(e.clientX, e.clientY);
+      };
+
+      const onPointerMove = (e: PointerEvent) => {
+        if (!paintModeRef.current) return;
+        if (!isPaintingGestureRef.current) return;
+
+        try {
+          e.preventDefault();
+        } catch {}
+        try {
+          e.stopPropagation();
+        } catch {}
+
+        paintAtClient(e.clientX, e.clientY);
+      };
+
+      const endGesture = (e?: any) => {
+        if (!isPaintingGestureRef.current) return;
+        isPaintingGestureRef.current = false;
+        lastKeyRef.current = null;
+        flushPendingPaint();
+
+        try {
+          if (e?.pointerId != null) {
+            (e.target as any)?.releasePointerCapture?.(e.pointerId);
+          }
+        } catch {}
+      };
+
+      const onPointerUp = (e: PointerEvent) => endGesture(e);
+      const onPointerCancel = (e: PointerEvent) => endGesture(e);
+
+      // Touch fallback for iOS Safari cases where pointermove is flaky
+      const onTouchStart = (e: TouchEvent) => {
+        if (!paintModeRef.current) return;
+        if (!e.touches || e.touches.length === 0) return;
+
+        isPaintingGestureRef.current = true;
+        lastKeyRef.current = null;
+
+        const t = e.touches[0];
+        e.preventDefault();
+        e.stopPropagation();
+        paintAtClient(t.clientX, t.clientY);
+      };
+
+      const onTouchMove = (e: TouchEvent) => {
+        if (!paintModeRef.current) return;
+        if (!isPaintingGestureRef.current) return;
+        if (!e.touches || e.touches.length === 0) return;
+
+        const t = e.touches[0];
+        e.preventDefault();
+        e.stopPropagation();
+        paintAtClient(t.clientX, t.clientY);
+      };
+
+      const onTouchEnd = (e: TouchEvent) => {
+        if (!isPaintingGestureRef.current) return;
+        e.preventDefault();
+        e.stopPropagation();
+        endGesture();
+      };
+
+      // Important: passive:false so preventDefault works (iOS)
+      el.addEventListener("pointerdown", onPointerDown, { passive: false });
+      el.addEventListener("pointermove", onPointerMove, { passive: false });
+      el.addEventListener("pointerup", onPointerUp, { passive: false });
+      el.addEventListener("pointercancel", onPointerCancel, { passive: false });
+
+      el.addEventListener("touchstart", onTouchStart, { passive: false });
+      el.addEventListener("touchmove", onTouchMove, { passive: false });
+      el.addEventListener("touchend", onTouchEnd, { passive: false });
+      el.addEventListener("touchcancel", onTouchEnd, { passive: false });
+
+      // ---- Resize handling ----
       const onResize = () => {
         const w = mount.clientWidth || 1;
         const h = mount.clientHeight || 1;
-        renderer.setSize(w, h, false);
+        renderer?.setSize(w, h, false);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
       };
@@ -785,193 +1062,48 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       ro.observe(mount);
       onResize();
 
-      // ============================================================
-      // Pointer interaction
-      // ============================================================
-      const raycaster = new THREE.Raycaster();
-      const ndc = new THREE.Vector2();
-      let isPainting = false;
-
-      // For skipping redundant paint on drag
-      const lastPaintKeyRef = { current: "" };
-
-      const computeWorldPointOnZ0 = (clientX: number, clientY: number) => {
-        const cam = cameraRef.current;
-        const rend = rendererRef.current;
-        if (!cam || !rend) return null;
-
-        const rect = rend.domElement.getBoundingClientRect();
-        ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-        ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-
-        raycaster.setFromCamera(ndc, cam);
-
-        const planeZ = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-        const worldPoint = new THREE.Vector3();
-        const hit = raycaster.ray.intersectPlane(planeZ, worldPoint);
-        if (!hit) return null;
-
-        return worldPoint;
-      };
-
-      const emitWorldClick = (clientX: number, clientY: number) => {
-        const worldPoint = computeWorldPointOnZ0(clientX, clientY);
-        if (!worldPoint) return null;
-
-        // Note: we invert Y for your upstream coordinate convention
-        window.dispatchEvent(
-          new CustomEvent("ring-click", {
-            detail: {
-              x: worldPoint.x,
-              y: -worldPoint.y,
-            },
-          }),
-        );
-
-        return worldPoint;
-      };
-
-      const pickMeshAt = (clientX: number, clientY: number) => {
-        const cam = cameraRef.current;
-        const rend = rendererRef.current;
-        if (!cam || !rend) return null;
-
-        const rect = rend.domElement.getBoundingClientRect();
-        ndc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-        ndc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-        raycaster.setFromCamera(ndc, cam);
-
-        // First try a true geometry hit
-        const hits = raycaster.intersectObjects(meshesRef.current, false);
-        if (hits.length > 0) return hits[0].object as THREE.Mesh;
-
-        // If we missed (common when clicking the torus hole), pick nearest center on Z=0 plane
-        const wp = computeWorldPointOnZ0(clientX, clientY);
-        if (!wp) return null;
-
-        return findNearestMeshByWorldPoint(wp.x, wp.y);
-      };
-
-      const applyPaintToMesh = (mesh: THREE.Mesh) => {
-        const row = mesh.userData.row as number;
-        const col = mesh.userData.col as number;
-        if (row == null || col == null) return;
-
-        const key = `${row},${col}`;
-        if (lastPaintKeyRef.current === key) return;
-        lastPaintKeyRef.current = key;
-
-        const mat = mesh.material as THREE.MeshStandardMaterial;
-        if (!mat) return;
-
-        if (eraseModeRef.current) {
-          // "null" means revert to default in your paint system
-          const def = normalizeColor6(paramsRef.current.ringColor || "#CCCCCC");
-          mat.color.set(def);
-          queuePaintPatch(key, null);
-        } else {
-          const c = normalizeColor6(
-            activeColorRef.current || paramsRef.current.ringColor || "#CCCCCC",
-          );
-          mat.color.set(c);
-          queuePaintPatch(key, c);
-        }
-      };
-
-      const onPointerDown = (e: PointerEvent) => {
-        if (e.button !== 0) return;
-
-        // Always emit click coords (even if no ring hit)
-        emitWorldClick(e.clientX, e.clientY);
-
-        // Only paint when locked + paint mode enabled
-        if (!lockRef.current) return;
-        if (!paintModeRef.current) return;
-
-        // Prevent OrbitControls from interpreting the drag as a pan
-        e.preventDefault();
-
-        isPainting = true;
-        lastPaintKeyRef.current = "";
-
-        try {
-          (renderer.domElement as any).setPointerCapture?.(e.pointerId);
-        } catch {}
-
-        const mesh = pickMeshAt(e.clientX, e.clientY);
-        if (mesh) applyPaintToMesh(mesh);
-      };
-
-      const onPointerMove = (e: PointerEvent) => {
-        if (!isPainting) return;
-        if (!lockRef.current) return;
-        if (!paintModeRef.current) return;
-
-        e.preventDefault();
-
-        const mesh = pickMeshAt(e.clientX, e.clientY);
-        if (mesh) applyPaintToMesh(mesh);
-      };
-
-      const onPointerUp = (e: PointerEvent) => {
-        isPainting = false;
-        lastPaintKeyRef.current = "";
-        try {
-          (renderer.domElement as any).releasePointerCapture?.(e.pointerId);
-        } catch {}
-
-        // Flush batched paint immediately at end of stroke
-        flushPendingPaint();
-      };
-
-      // IMPORTANT: passive:false stops Chrome's "Unable to preventDefault inside passive..." spam
-      renderer.domElement.addEventListener("pointerdown", onPointerDown, {
-        passive: false,
-      });
-      renderer.domElement.addEventListener("pointermove", onPointerMove, {
-        passive: false,
-      });
-      renderer.domElement.addEventListener("pointerup", onPointerUp, {
-        passive: false,
-      });
-      renderer.domElement.addEventListener("pointerleave", onPointerUp, {
-        passive: false,
-      });
-
-      // Animate loop (continuous; very light when static)
+      // ---- Render loop ----
       let alive = true;
+
       const animate = () => {
         if (!alive) return;
-        requestAnimationFrame(animate);
+        if (contextLostRef.current) return;
+        if (!renderer || !scene || !camera) return;
 
-        // Keep OrbitControls mapping in sync with lock/paint/pan states
+        // ✅ don't render after teardown / remount
+        if (!rendererRef.current || rendererRef.current !== renderer) return;
+        if (renderer.domElement.isConnected === false) return;
+
+        rafRef.current = requestAnimationFrame(animate);
+
         syncControlsButtons();
-
         renderer.render(scene, camera);
       };
       animate();
 
-      // Cleanup
+      // ---- Cleanup ----
       return () => {
         alive = false;
 
-        // Flush pending paint to avoid losing last stroke on unmount
         try {
-          flushPendingPaint();
+          el.removeEventListener("pointerdown", onPointerDown as any);
+          el.removeEventListener("pointermove", onPointerMove as any);
+          el.removeEventListener("pointerup", onPointerUp as any);
+          el.removeEventListener("pointercancel", onPointerCancel as any);
+
+          el.removeEventListener("touchstart", onTouchStart as any);
+          el.removeEventListener("touchmove", onTouchMove as any);
+          el.removeEventListener("touchend", onTouchEnd as any);
+          el.removeEventListener("touchcancel", onTouchEnd as any);
         } catch {}
+
+        if (rafRef.current != null) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
 
         try {
           ro.disconnect();
-        } catch {}
-
-        try {
-          renderer.domElement.removeEventListener("pointerdown", onPointerDown);
-          renderer.domElement.removeEventListener("pointermove", onPointerMove);
-          renderer.domElement.removeEventListener("pointerup", onPointerUp);
-          renderer.domElement.removeEventListener(
-            "pointerleave",
-            onPointerUp,
-          );
         } catch {}
 
         try {
@@ -979,17 +1111,8 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         } catch {}
 
         try {
-          // Dispose meshes/materials
-          if (groupRef.current) {
-            groupRef.current.traverse((o: any) => {
-              o.geometry?.dispose?.();
-              if (Array.isArray(o.material)) {
-                o.material.forEach((m: any) => m?.dispose?.());
-              } else {
-                o.material?.dispose?.();
-              }
-            });
-          }
+          canvas.removeEventListener("webglcontextlost", onContextLost as any);
+          canvas.removeEventListener("webglcontextrestored", onContextRestored as any);
         } catch {}
 
         try {
@@ -997,14 +1120,19 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         } catch {}
 
         try {
-          renderer.dispose();
+          renderer?.dispose?.();
         } catch {}
 
         try {
           mount.replaceChildren();
         } catch {}
+
+        rendererRef.current = null;
+        controlsRef.current = null;
+        cameraRef.current = null;
+        sceneRef.current = null;
       };
-    }, [safeParams.bgColor]);
+    }, [safeParams.bgColor, glEpoch]);
 
     // ============================================================
     // External view-state sync (optional)
@@ -1176,273 +1304,264 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [paint, safeParams.ringColor]);
 
-// ============================================================
-// Overlay application: sample overlay image and paint rings
-// - Adds TRUE tiling (repeat) via wrap01()
-// - Adds optional crop/window selection support (normalized UV crop rect)
-//   Expected optional fields on OverlayState (robust):
-//     cropU0/cropV0/cropU1/cropV1  in [0..1]   (or crop: {u0,v0,u1,v1})
-//     tile / tiled / repeat / tilingEnabled OR tileMode:"repeat"
-//     tileX/tileY (optional)
-// ============================================================
+    // ============================================================
+    // Overlay application: sample overlay image and paint rings
+    // - Adds TRUE tiling (repeat) via wrap01()
+    // - Adds optional crop/window selection support (normalized UV crop rect)
+    //   Expected optional fields on OverlayState (robust):
+    //     cropU0/cropV0/cropU1/cropV1  in [0..1]   (or crop: {u0,v0,u1,v1})
+    //     tile / tiled / repeat / tilingEnabled OR tileMode:"repeat"
+    //     tileX/tileY (optional)
+    // ============================================================
 
-type OverlaySample = { hex: string; alpha: number };
+    type OverlaySample = { hex: string; alpha: number };
 
-type OverlaySampler = {
-  key: string;
-  sampleWorld: (wx: number, wy: number) => OverlaySample | null;
-  sampleLogical: (lx: number, ly: number) => OverlaySample | null;
-};
+    type OverlaySampler = {
+      key: string;
+      sampleWorld: (wx: number, wy: number) => OverlaySample | null;
+      sampleLogical: (lx: number, ly: number) => OverlaySample | null;
+    };
 
-// ✅ Must be INSIDE the component (hooks)
-const overlaySamplerRef = useRef<OverlaySampler | null>(null);
+    // ✅ Must be INSIDE the component (hooks)
+    const overlaySamplerRef = useRef<OverlaySampler | null>(null);
 
-const getOverlayCropUV = (ov: any) => {
-  // Accept either flat fields or nested crop object. Defaults to full image.
-  const u0 =
-    overlayGetNumeric(ov, ["cropU0", "u0"], NaN) ??
-    overlayGetNumeric(ov?.crop, ["u0"], NaN);
-  const v0 =
-    overlayGetNumeric(ov, ["cropV0", "v0"], NaN) ??
-    overlayGetNumeric(ov?.crop, ["v0"], NaN);
-  const u1 =
-    overlayGetNumeric(ov, ["cropU1", "u1"], NaN) ??
-    overlayGetNumeric(ov?.crop, ["u1"], NaN);
-  const v1 =
-    overlayGetNumeric(ov, ["cropV1", "v1"], NaN) ??
-    overlayGetNumeric(ov?.crop, ["v1"], NaN);
+    const getOverlayCropUV = (ov: any) => {
+      // Accept either flat fields or nested crop object. Defaults to full image.
+      const u0 =
+        overlayGetNumeric(ov, ["cropU0", "u0"], NaN) ??
+        overlayGetNumeric(ov?.crop, ["u0"], NaN);
+      const v0 =
+        overlayGetNumeric(ov, ["cropV0", "v0"], NaN) ??
+        overlayGetNumeric(ov?.crop, ["v0"], NaN);
+      const u1 =
+        overlayGetNumeric(ov, ["cropU1", "u1"], NaN) ??
+        overlayGetNumeric(ov?.crop, ["u1"], NaN);
+      const v1 =
+        overlayGetNumeric(ov, ["cropV1", "v1"], NaN) ??
+        overlayGetNumeric(ov?.crop, ["v1"], NaN);
 
-  const U0 = Number.isFinite(u0) ? clamp01(u0) : 0;
-  const V0 = Number.isFinite(v0) ? clamp01(v0) : 0;
-  const U1 = Number.isFinite(u1) ? clamp01(u1) : 1;
-  const V1 = Number.isFinite(v1) ? clamp01(v1) : 1;
+      const U0 = Number.isFinite(u0) ? clamp01(u0) : 0;
+      const V0 = Number.isFinite(v0) ? clamp01(v0) : 0;
+      const U1 = Number.isFinite(u1) ? clamp01(u1) : 1;
+      const V1 = Number.isFinite(v1) ? clamp01(v1) : 1;
 
-  // ensure ordering + non-zero size
-  const uu0 = Math.min(U0, U1);
-  const uu1 = Math.max(U0, U1);
-  const vv0 = Math.min(V0, V1);
-  const vv1 = Math.max(V0, V1);
+      // ensure ordering + non-zero size
+      const uu0 = Math.min(U0, U1);
+      const uu1 = Math.max(U0, U1);
+      const vv0 = Math.min(V0, V1);
+      const vv1 = Math.max(V0, V1);
 
-  const w = Math.max(1e-6, uu1 - uu0);
-  const h = Math.max(1e-6, vv1 - vv0);
+      const w = Math.max(1e-6, uu1 - uu0);
+      const h = Math.max(1e-6, vv1 - vv0);
 
-  return { u0: uu0, v0: vv0, uW: w, vH: h };
-};
+      return { u0: uu0, v0: vv0, uW: w, vH: h };
+    };
 
-const buildOverlaySampler = async (
-  ov: OverlayState,
-): Promise<OverlaySampler | null> => {
-  if (!ov) return null;
-  const meshes = meshesRef.current;
-  if (!meshes || meshes.length === 0) return null;
+    const buildOverlaySampler = async (
+      ov: OverlayState,
+    ): Promise<OverlaySampler | null> => {
+      if (!ov) return null;
+      const meshes = meshesRef.current;
+      if (!meshes || meshes.length === 0) return null;
 
-  const src =
-    overlayGetString(ov as any, ["dataUrl", "src", "url", "imageUrl"]) ?? null;
-  if (!src) return null;
+      const src =
+        overlayGetString(ov as any, ["dataUrl", "src", "url", "imageUrl"]) ?? null;
+      if (!src) return null;
 
-  const offsetX = overlayGetNumeric(ov as any, ["offsetX", "x", "panX"], 0);
-  const offsetY = overlayGetNumeric(ov as any, ["offsetY", "y", "panY"], 0);
-  const scale = overlayGetNumeric(ov as any, ["scale"], 1);
-  const opacity = clamp01(overlayGetNumeric(ov as any, ["opacity"], 1));
+      const offsetX = overlayGetNumeric(ov as any, ["offsetX", "x", "panX"], 0);
+      const offsetY = overlayGetNumeric(ov as any, ["offsetY", "y", "panY"], 0);
+      const scale = overlayGetNumeric(ov as any, ["scale"], 1);
+      const opacity = clamp01(overlayGetNumeric(ov as any, ["opacity"], 1));
 
-  // --- tiling flags (robust) ---
-  const tileAny =
-    overlayGetBool(
-      ov as any,
-      ["tile", "tiled", "repeat", "tilingEnabled"],
-      false,
-    ) ||
-    (overlayGetString(ov as any, ["tileMode", "tiling"], "") || "")
-      .toLowerCase()
-      .includes("repeat");
+      // --- tiling flags (robust) ---
+      const tileAny =
+        overlayGetBool(
+          ov as any,
+          ["tile", "tiled", "repeat", "tilingEnabled"],
+          false,
+        ) ||
+        (overlayGetString(ov as any, ["tileMode", "tiling"], "") || "")
+          .toLowerCase()
+          .includes("repeat");
 
-  const tileX = overlayGetBool(ov as any, ["tileX", "repeatX"], tileAny);
-  const tileY = overlayGetBool(ov as any, ["tileY", "repeatY"], tileAny);
+      const tileX = overlayGetBool(ov as any, ["tileX", "repeatX"], tileAny);
+      const tileY = overlayGetBool(ov as any, ["tileY", "repeatY"], tileAny);
 
-  // --- optional explicit world size ---
-  const explicitW = overlayGetNumeric(
-    ov as any,
-    ["worldWidth", "widthWorld"],
-    NaN,
-  );
-  const explicitH = overlayGetNumeric(
-    ov as any,
-    ["worldHeight", "heightWorld"],
-    NaN,
-  );
+      // --- optional explicit world size ---
+      const explicitW = overlayGetNumeric(ov as any, ["worldWidth", "widthWorld"], NaN);
+      const explicitH = overlayGetNumeric(
+        ov as any,
+        ["worldHeight", "heightWorld"],
+        NaN,
+      );
 
-  // --- crop rect in normalized UV ---
-  const crop = getOverlayCropUV(ov as any);
+      // --- crop rect in normalized UV ---
+      const crop = getOverlayCropUV(ov as any);
 
-  // Compute ring bounds in world space
-  let minX = Infinity,
-    maxX = -Infinity,
-    minY = Infinity,
-    maxY = -Infinity;
+      // Compute ring bounds in world space
+      let minX = Infinity,
+        maxX = -Infinity,
+        minY = Infinity,
+        maxY = -Infinity;
 
-  for (const m of meshes) {
-    minX = Math.min(minX, m.position.x);
-    maxX = Math.max(maxX, m.position.x);
-    minY = Math.min(minY, m.position.y);
-    maxY = Math.max(maxY, m.position.y);
-  }
+      for (const m of meshes) {
+        minX = Math.min(minX, m.position.x);
+        maxX = Math.max(maxX, m.position.x);
+        minY = Math.min(minY, m.position.y);
+        maxY = Math.max(maxY, m.position.y);
+      }
 
-  const worldW =
-    Number.isFinite(explicitW) && explicitW > 0
-      ? explicitW
-      : Math.max(1e-6, maxX - minX);
-  const worldH =
-    Number.isFinite(explicitH) && explicitH > 0
-      ? explicitH
-      : Math.max(1e-6, maxY - minY);
+      const worldW =
+        Number.isFinite(explicitW) && explicitW > 0
+          ? explicitW
+          : Math.max(1e-6, maxX - minX);
+      const worldH =
+        Number.isFinite(explicitH) && explicitH > 0
+          ? explicitH
+          : Math.max(1e-6, maxY - minY);
 
-  const cx = (minX + maxX) * 0.5 + offsetX;
-  const cy = (minY + maxY) * 0.5 + offsetY;
+      const cx = (minX + maxX) * 0.5 + offsetX;
+      const cy = (minY + maxY) * 0.5 + offsetY;
 
-  const invScale = 1 / Math.max(1e-6, scale);
+      const invScale = 1 / Math.max(1e-6, scale);
 
-  // Cache key includes everything that affects mapping
-  const baseHex = normalizeColor6(paramsRef.current.ringColor || "#FFFFFF");
-  const key = JSON.stringify({
-    src,
-    offsetX,
-    offsetY,
-    scale,
-    opacity,
-    explicitW: Number.isFinite(explicitW) ? explicitW : null,
-    explicitH: Number.isFinite(explicitH) ? explicitH : null,
-    tileX,
-    tileY,
-    crop,
-    bounds: [minX, maxX, minY, maxY],
-    baseHex,
-  });
+      // Cache key includes everything that affects mapping
+      const baseHex = normalizeColor6(paramsRef.current.ringColor || "#FFFFFF");
+      const key = JSON.stringify({
+        src,
+        offsetX,
+        offsetY,
+        scale,
+        opacity,
+        explicitW: Number.isFinite(explicitW) ? explicitW : null,
+        explicitH: Number.isFinite(explicitH) ? explicitH : null,
+        tileX,
+        tileY,
+        crop,
+        bounds: [minX, maxX, minY, maxY],
+        baseHex,
+      });
 
-  if (overlaySamplerRef.current?.key === key) return overlaySamplerRef.current;
+      if (overlaySamplerRef.current?.key === key) return overlaySamplerRef.current;
 
-  // Decode image once
-  const img = await loadImage(src);
+      // Decode image once
+      const img = await loadImage(src);
 
-  const canvas = document.createElement("canvas");
-  canvas.width = img.naturalWidth || img.width;
-  canvas.height = img.naturalHeight || img.height;
-  const ctx = canvas.getContext(
-  "2d",
-  { willReadFrequently: true } as CanvasRenderingContext2DSettings,
-) as CanvasRenderingContext2D | null;
-  if (!ctx) return null;
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext(
+        "2d",
+        { willReadFrequently: true } as CanvasRenderingContext2DSettings,
+      ) as CanvasRenderingContext2D | null;
+      if (!ctx) return null;
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(img, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0);
 
-  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const data = imageData.data;
-  const w = canvas.width;
-  const h = canvas.height;
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+      const w = canvas.width;
+      const h = canvas.height;
 
-  // Precompute base blend color
-  const base = new THREE.Color(baseHex);
-  const baseR = Math.round(base.r * 255);
-  const baseG = Math.round(base.g * 255);
-  const baseB = Math.round(base.b * 255);
+      // Precompute base blend color
+      const base = new THREE.Color(baseHex);
+      const baseR = Math.round(base.r * 255);
+      const baseG = Math.round(base.g * 255);
+      const baseB = Math.round(base.b * 255);
 
-  const sampleWorld = (wx: number, wy: number): OverlaySample | null => {
-    // world -> normalized in [0..1] (before crop)
-    let nx = ((wx - cx) / worldW) * invScale + 0.5;
-    let ny = ((wy - cy) / worldH) * invScale + 0.5;
+      const sampleWorld = (wx: number, wy: number): OverlaySample | null => {
+        // world -> normalized in [0..1] (before crop)
+        let nx = ((wx - cx) / worldW) * invScale + 0.5;
+        let ny = ((wy - cy) / worldH) * invScale + 0.5;
 
-    // ✅ tiling: wrap first (if enabled), otherwise reject
-    if (tileX) nx = wrap01(nx);
-    if (tileY) ny = wrap01(ny);
+        // ✅ tiling: wrap first (if enabled), otherwise reject
+        if (tileX) nx = wrap01(nx);
+        if (tileY) ny = wrap01(ny);
 
-    if (!tileX && (nx < 0 || nx > 1)) return null;
-    if (!tileY && (ny < 0 || ny > 1)) return null;
+        if (!tileX && (nx < 0 || nx > 1)) return null;
+        if (!tileY && (ny < 0 || ny > 1)) return null;
 
-    // map into crop window (repeat happens within the crop window)
-    // u = crop.u0 + nx * crop.uW
-    // v = crop.v0 + ny * crop.vH
-    let u = crop.u0 + nx * crop.uW;
-    let v = crop.v0 + ny * crop.vH;
+        // map into crop window (repeat happens within the crop window)
+        let u = crop.u0 + nx * crop.uW;
+        let v = crop.v0 + ny * crop.vH;
 
-    // If tiled, allow wrapping inside crop via wrap01 around crop span:
-    // (u - u0)/uW is periodic when tiled
-    if (tileX) u = crop.u0 + wrap01((u - crop.u0) / crop.uW) * crop.uW;
-    if (tileY) v = crop.v0 + wrap01((v - crop.v0) / crop.vH) * crop.vH;
+        // If tiled, allow wrapping inside crop via wrap01 around crop span:
+        if (tileX) u = crop.u0 + wrap01((u - crop.u0) / crop.uW) * crop.uW;
+        if (tileY) v = crop.v0 + wrap01((v - crop.v0) / crop.vH) * crop.vH;
 
-    // Non-tiled: clamp to crop window bounds
-    if (!tileX) u = crop.u0 + clamp01((u - crop.u0) / crop.uW) * crop.uW;
-    if (!tileY) v = crop.v0 + clamp01((v - crop.v0) / crop.vH) * crop.vH;
+        // Non-tiled: clamp to crop window bounds
+        if (!tileX) u = crop.u0 + clamp01((u - crop.u0) / crop.uW) * crop.uW;
+        if (!tileY) v = crop.v0 + clamp01((v - crop.v0) / crop.vH) * crop.vH;
 
-    // UV -> pixel
-    let px = Math.floor(u * w);
-    let py = Math.floor((1 - v) * h);
+        // UV -> pixel
+        let px = Math.floor(u * w);
+        let py = Math.floor((1 - v) * h);
 
-    // clamp edge case (u==1 or v==1)
-    if (px === w) px = w - 1;
-    if (py === h) py = h - 1;
-    if (px < 0 || px >= w || py < 0 || py >= h) return null;
+        // clamp edge case (u==1 or v==1)
+        if (px === w) px = w - 1;
+        if (py === h) py = h - 1;
+        if (px < 0 || px >= w || py < 0 || py >= h) return null;
 
-    const idx = (py * w + px) * 4;
-    const r = data[idx + 0];
-    const g = data[idx + 1];
-    const b = data[idx + 2];
-    const a255 = data[idx + 3];
+        const idx = (py * w + px) * 4;
+        const r = data[idx + 0];
+        const g = data[idx + 1];
+        const b = data[idx + 2];
+        const a255 = data[idx + 3];
 
-    if (a255 <= 2) return null; // transparent
+        if (a255 <= 2) return null; // transparent
 
-    const t = clamp01((a255 / 255) * opacity);
+        const t = clamp01((a255 / 255) * opacity);
 
-    const outR = Math.round(baseR * (1 - t) + r * t);
-    const outG = Math.round(baseG * (1 - t) + g * t);
-    const outB = Math.round(baseB * (1 - t) + b * t);
+        const outR = Math.round(baseR * (1 - t) + r * t);
+        const outG = Math.round(baseG * (1 - t) + g * t);
+        const outB = Math.round(baseB * (1 - t) + b * t);
 
-    return { hex: rgbToHex(outR, outG, outB), alpha: a255 };
-  };
+        return { hex: rgbToHex(outR, outG, outB), alpha: a255 };
+      };
 
-  // App logical coords use Y inverted vs mesh world Y
-  const sampleLogical = (lx: number, ly: number) => sampleWorld(lx, -ly);
+      // App logical coords use Y inverted vs mesh world Y
+      const sampleLogical = (lx: number, ly: number) => sampleWorld(lx, -ly);
 
-  const sampler: OverlaySampler = { key, sampleWorld, sampleLogical };
-  overlaySamplerRef.current = sampler;
-  return sampler;
-};
+      const sampler: OverlaySampler = { key, sampleWorld, sampleLogical };
+      overlaySamplerRef.current = sampler;
+      return sampler;
+    };
 
-const applyOverlayToRings = async (ov: OverlayState) => {
-  const meshes = meshesRef.current;
-  if (!meshes || meshes.length === 0) return;
+    const applyOverlayToRings = async (ov: OverlayState) => {
+      const meshes = meshesRef.current;
+      if (!meshes || meshes.length === 0) return;
 
-  const sampler = await buildOverlaySampler(ov);
-  if (!sampler) return;
+      const sampler = await buildOverlaySampler(ov);
+      if (!sampler) return;
 
-  setPaint((prev) => {
-    const next = new Map(prev);
+      setPaint((prev) => {
+        const next = new Map(prev);
 
-    for (const mesh of meshes) {
-      const row = mesh.userData.row as number;
-      const col = mesh.userData.col as number;
-      if (row == null || col == null) continue;
+        for (const mesh of meshes) {
+          const row = mesh.userData.row as number;
+          const col = mesh.userData.col as number;
+          if (row == null || col == null) continue;
 
-      const key = `${row},${col}`;
-      const wx = mesh.position.x;
-      const wy = mesh.position.y;
+          const key = `${row},${col}`;
+          const wx = mesh.position.x;
+          const wy = mesh.position.y;
 
-      const sampled = sampler.sampleWorld(wx, wy);
-      if (!sampled) continue;
+          const sampled = sampler.sampleWorld(wx, wy);
+          if (!sampled) continue;
 
-      const c = normalizeColor6(sampled.hex);
-      next.set(key, c);
+          const c = normalizeColor6(sampled.hex);
+          next.set(key, c);
 
-      const mat = mesh.material as THREE.MeshStandardMaterial;
-      mat?.color?.set(c);
-    }
+          const mat = mesh.material as THREE.MeshStandardMaterial;
+          mat?.color?.set(c);
+        }
 
-    return next;
-  });
-};
+        return next;
+      });
+    };
 
-// ============================================================
-
-     // ============================================================
+    // ============================================================
     // Imperative Handle
     // ============================================================
     useImperativeHandle(ref, () => ({
@@ -1579,6 +1698,8 @@ const applyOverlayToRings = async (ov: OverlayState) => {
           height: "100%",
           overflow: "hidden",
           backgroundColor: safeParams.bgColor,
+          // ✅ iOS: critical so finger-drag generates continuous events
+          touchAction: "none",
         }}
       />
     );
