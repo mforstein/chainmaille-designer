@@ -1488,7 +1488,7 @@ const FreeformChainmail2D: React.FC = () => {
     const exportRings: ExportRing[] = wantExport ? [] : [];
 
     rings.forEach((r: PlacedRing) => {
-      const key = `${r.row},${r.col}`;
+      //const key = `${r.row},${r.col}`;
 
       const { x: baseX, y: baseY } = rcToLogical(r.row, r.col);
 
@@ -1505,42 +1505,36 @@ const FreeformChainmail2D: React.FC = () => {
       // ✅ RENDER color (calibrated) for display only
       const renderColor = applyCalibrationHex(storedColor);
 
-      rings3D.push({
-        id: `${r.row},${r.col}`,
-        row: r.row,
-        col: r.col,
-        x: shiftedX,
-        y: shiftedY,
-        z: 0,
-        innerDiameter: innerIDmm,
-        wireDiameter: wireMm,
-        radius: outerRadiusMm,
-        centerSpacing: centerSpacing,
-        tilt: tiltDeg,
-        tiltRad: tiltRad,
-        color: renderColor,
-      });
+const key = `${r.row}-${r.col}`;
 
-      // RingRenderer uses paint map for coloring; keep it consistent with render color
-      paintMap.set(key, renderColor);
+rings3D.push({
+  id: key,                 // ✅ keep ids consistent too
+  row: r.row,
+  col: r.col,
+  x: shiftedX,
+  y: shiftedY,
+  z: 0,
+  innerDiameter: innerIDmm,
+  wireDiameter: wireMm,
+  radius: outerRadiusMm,
+  centerSpacing: centerSpacing,
+  tilt: tiltDeg,
+  tiltRad: tiltRad,
+  color: renderColor,
+});
 
-      // Stats should reflect true chosen colors
-      colorCountsStored.set(
-        storedColor,
-        (colorCountsStored.get(storedColor) ?? 0) + 1
-      );
+paintMap.set(key, renderColor);
 
-      if (wantExport) {
-        exportRings.push({
-          key,
-          x_mm: baseX,
-          y_mm: baseY,
-          innerDiameter_mm: innerIDmm,
-          wireDiameter_mm: wireMm,
-          // ✅ Export uses stored physical color
-          colorHex: storedColor,
-        });
-      }
+if (wantExport) {
+  exportRings.push({
+    key,                    // ✅ now matches every other key in the app
+    x_mm: baseX,
+    y_mm: baseY,
+    innerDiameter_mm: innerIDmm,
+    wireDiameter_mm: wireMm,
+    colorHex: storedColor,
+  });
+}
     });
 
     const byColor = Array.from(colorCountsStored.entries()).sort(
@@ -1841,11 +1835,7 @@ const FreeformChainmail2D: React.FC = () => {
     };
   }, []);
 
-  // ====================================================
-  // SELECTION OVERLAY DRAWING (on interaction canvas)
-  // - Draws only when selection tool is active and dragging.
-  // - Does NOT interfere with hit circles (separate canvas).
-  // ====================================================
+
   const drawSelectionOverlay = useCallback(() => {
     const canvas = canvasRef.current;
     const wrap = wrapRef.current;
@@ -1871,7 +1861,7 @@ const FreeformChainmail2D: React.FC = () => {
     const x1 = sel.sx1;
     const y1 = sel.sy1;
 
-    // general style (kept consistent with existing UI)
+
     ctx.lineWidth = 2;
     ctx.strokeStyle = "rgba(37,99,235,0.95)";
     ctx.fillStyle = "rgba(37,99,235,0.18)";
@@ -1913,7 +1903,7 @@ const FreeformChainmail2D: React.FC = () => {
       ctx.fill();
     }
 
-    // hint text
+
     ctx.font = "12px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
     ctx.fillStyle = "rgba(248,250,252,0.9)";
     const hint = eraseMode
@@ -1924,15 +1914,15 @@ const FreeformChainmail2D: React.FC = () => {
     ctx.fillText(`${hint} ${lastSelectionCount || ""}`, 10, rect.height - 12);
   }, [selectionMode, isSelecting, eraseMode, lastSelectionCount]);
 
-  // ✅ ESC to cancel selection / overlay-pick mode
-  useEffect(() => {
+ 
+   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
 
-      // If we were picking overlay selection, cancel that too
+
       overlayPickingRef.current = false;
 
-      // Cancel drag in-progress
+
       if (isSelecting) {
         setIsSelecting(false);
         selectionRef.current = null;
@@ -1956,7 +1946,7 @@ const FreeformChainmail2D: React.FC = () => {
   }, [isSelecting, selectionMode, clearInteractionCanvas]);
 
   useEffect(() => {
-    // keep selection overlay in sync with view
+
     if (selectionMode === "none" || !isSelecting) {
       clearInteractionCanvas();
       return;
@@ -1974,180 +1964,171 @@ const FreeformChainmail2D: React.FC = () => {
     clearInteractionCanvas,
   ]);
 
-  // ===============================
-  // PAN / ZOOM (mouse + touch)
-  // ===============================
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement>) => {
-      // Selection tool takes precedence (unless panning is explicitly active)
-      if (selectionMode !== "none" && !panMode) {
-        const { sx, sy } = getCanvasPoint(e);
-        const { lx, ly } = screenToWorld(sx, sy);
 
-        setCursorPx({ x: e.clientX, y: e.clientY });
 
-        setIsSelecting(true);
-        const sel: SelectionDrag = {
-          sx0: sx,
-          sy0: sy,
-          sx1: sx,
-          sy1: sy,
-          lx0: lx,
-          ly0: ly,
-          lx1: lx,
-          ly1: ly,
-        };
-        selectionRef.current = sel;
+const handleMouseDown = useCallback(
+  (e: React.MouseEvent<HTMLCanvasElement>) => {
 
-        setLiveDims(computeDimsFromSelection(sel, selectionMode));
-
-        setLastSelectionCount(0);
-        setSelectedKeys(new Set()); // clear old highlight until we finalize
-        drawSelectionOverlay();
-        return;
-      }
-
-      if (!panMode) return;
-
+    if (selectionMode !== "none" && !panMode) {
       const { sx, sy } = getCanvasPoint(e);
       const { lx, ly } = screenToWorld(sx, sy);
 
-      setIsPanning(true);
-      panStart.current = {
-        screenX: e.clientX,
-        screenY: e.clientY,
-        panX: panWorldX,
-        panY: panWorldY,
-        lx,
-        ly,
-      };
-    },
-    [
-      selectionMode,
-      panMode,
-      getCanvasPoint,
-      screenToWorld,
-      panWorldX,
-      panWorldY,
-      drawSelectionOverlay,
-      computeDimsFromSelection,
-    ]
-  );
-
-  const handleMouseMove = useCallback(
-    (e: React.MouseEvent<HTMLCanvasElement>) => {
-      // Always track cursor for floating bubble (and to keep the state "used")
       setCursorPx({ x: e.clientX, y: e.clientY });
 
-      // Touch/Pointer parity helper (keeps eventToScreen used and ready for diagnostics)
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const _maybeScreen = eventToScreen(
-        e.nativeEvent as unknown as MouseEvent
-      );
+      setIsSelecting(true);
+      const sel: SelectionDrag = {
+        sx0: sx,
+        sy0: sy,
+        sx1: sx,
+        sy1: sy,
+        lx0: lx,
+        ly0: ly,
+        lx1: lx,
+        ly1: ly,
+      };
+      selectionRef.current = sel;
 
-      // Selection drag
-      if (isSelecting && selectionMode !== "none" && selectionRef.current) {
-        e.preventDefault();
+      setLiveDims(computeDimsFromSelection(sel, selectionMode));
 
-        const { sx, sy } = getCanvasPoint(e);
-        const { lx, ly } = screenToWorld(sx, sy);
+      setLastSelectionCount(0);
+      setSelectedKeys(new Set()); // clear old highlight until we finalize
+      drawSelectionOverlay();
+      return;
+    }
 
-        // 1) Update selection ref FIRST
-        selectionRef.current.sx1 = sx;
-        selectionRef.current.sy1 = sy;
-        selectionRef.current.lx1 = lx;
-        selectionRef.current.ly1 = ly;
+    // ✅ Keep your existing pan gating
+    if (!panMode) return;
 
-        // 2) Then compute live dims from the updated selection
-        setLiveDims(
-          computeDimsFromSelection(selectionRef.current, selectionMode)
-        );
+    const { sx, sy } = getCanvasPoint(e);
+    const { lx, ly } = screenToWorld(sx, sy);
 
-        // update selection count estimate cheaply (bounds-based)
-        const sel = selectionRef.current;
-        const cells = new Set<string>();
+    setIsPanning(true);
+    panStart.current = {
+      screenX: e.clientX,
+      screenY: e.clientY,
+      panX: panWorldX,
+      panY: panWorldY,
+      lx,
+      ly,
+    };
+  },
+  [
+    selectionMode,
+    panMode,
+    getCanvasPoint,
+    screenToWorld,
+    panWorldX,
+    panWorldY,
+    drawSelectionOverlay,
+    computeDimsFromSelection,
+  ]
+);
 
-        const minLX = Math.min(sel.lx0, sel.lx1);
-        const maxLX = Math.max(sel.lx0, sel.lx1);
-        const minLY = Math.min(sel.ly0, sel.ly1);
-        const maxLY = Math.max(sel.ly0, sel.ly1);
+const handleMouseMove = useCallback(
+  (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Always track cursor for floating bubble (and to keep the state "used")
+    setCursorPx({ x: e.clientX, y: e.clientY });
 
-        // Convert bounding box to row/col range
-        const a = logicalToRowColApprox(minLX, minLY);
-        const b = logicalToRowColApprox(maxLX, maxLY);
-        const minRowC = Math.min(a.row, b.row) - 2;
-        const maxRowC = Math.max(a.row, b.row) + 2;
-        const minColC = Math.min(a.col, b.col) - 2;
-        const maxColC = Math.max(a.col, b.col) + 2;
+    // Touch/Pointer parity helper (keeps eventToScreen used and ready for diagnostics)
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const _maybeScreen = eventToScreen(e.nativeEvent as unknown as MouseEvent);
 
-        if (selectionMode === "rect") {
-          for (let r = minRowC; r <= maxRowC; r++) {
-            for (let c = minColC; c <= maxColC; c++) {
-              const p = rcToLogical(r, c);
-              if (
-                p.x >= minLX &&
-                p.x <= maxLX &&
-                p.y >= minLY &&
-                p.y <= maxLY
-              ) {
-                cells.add(`${r}-${c}`);
-              }
-            }
-          }
-        } else if (selectionMode === "circle") {
-          const cx = sel.lx0;
-          const cy = sel.ly0;
-          const dx2 = sel.lx1 - sel.lx0;
-          const dy2 = sel.ly1 - sel.ly0;
-          const rr = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-
-          for (let r = minRowC; r <= maxRowC; r++) {
-            for (let c = minColC; c <= maxColC; c++) {
-              const p = rcToLogical(r, c);
-              const ddx = p.x - cx;
-              const ddy = p.y - cy;
-              if (ddx * ddx + ddy * ddy <= rr * rr) {
-                cells.add(`${r}-${c}`);
-              }
-            }
-          }
-        }
-
-        setLastSelectionCount(cells.size);
-
-        drawSelectionOverlay();
-        return;
-      }
-
-      // Pan drag
-      if (!panMode || !isPanning || !panStart.current) return;
-
+    // Selection drag
+    // ✅ Works even if eraseMode is ON (no gating needed)
+    if (isSelecting && selectionMode !== "none" && selectionRef.current) {
       e.preventDefault();
 
       const { sx, sy } = getCanvasPoint(e);
       const { lx, ly } = screenToWorld(sx, sy);
 
-      const dxLogical = panStart.current.lx - lx;
-      const dyLogical = panStart.current.ly - ly;
+      // 1) Update selection ref FIRST
+      selectionRef.current.sx1 = sx;
+      selectionRef.current.sy1 = sy;
+      selectionRef.current.lx1 = lx;
+      selectionRef.current.ly1 = ly;
 
-      setPanWorldX(panStart.current.panX + dxLogical);
-      setPanWorldY(panStart.current.panY + dyLogical);
-    },
-    [
-      isSelecting,
-      selectionMode,
-      panMode,
-      isPanning,
-      getCanvasPoint,
-      screenToWorld,
-      logicalToRowColApprox,
-      rcToLogical,
-      drawSelectionOverlay,
-      computeDimsFromSelection,
-      eventToScreen,
-    ]
-  );
+      // 2) Then compute live dims from the updated selection
+      setLiveDims(computeDimsFromSelection(selectionRef.current, selectionMode));
 
+      // update selection count estimate cheaply (bounds-based)
+      const sel = selectionRef.current;
+      const cells = new Set<string>();
+
+      const minLX = Math.min(sel.lx0, sel.lx1);
+      const maxLX = Math.max(sel.lx0, sel.lx1);
+      const minLY = Math.min(sel.ly0, sel.ly1);
+      const maxLY = Math.max(sel.ly0, sel.ly1);
+
+      // Convert bounding box to row/col range
+      const a = logicalToRowColApprox(minLX, minLY);
+      const b = logicalToRowColApprox(maxLX, maxLY);
+      const minRowC = Math.min(a.row, b.row) - 2;
+      const maxRowC = Math.max(a.row, b.row) + 2;
+      const minColC = Math.min(a.col, b.col) - 2;
+      const maxColC = Math.max(a.col, b.col) + 2;
+
+      if (selectionMode === "rect") {
+        for (let r = minRowC; r <= maxRowC; r++) {
+          for (let c = minColC; c <= maxColC; c++) {
+            const p = rcToLogical(r, c);
+            if (p.x >= minLX && p.x <= maxLX && p.y >= minLY && p.y <= maxLY) {
+              cells.add(`${r}-${c}`);
+            }
+          }
+        }
+      } else if (selectionMode === "circle") {
+        const cx = sel.lx0;
+        const cy = sel.ly0;
+        const dx2 = sel.lx1 - sel.lx0;
+        const dy2 = sel.ly1 - sel.ly0;
+        const rr = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+
+        for (let r = minRowC; r <= maxRowC; r++) {
+          for (let c = minColC; c <= maxColC; c++) {
+            const p = rcToLogical(r, c);
+            const ddx = p.x - cx;
+            const ddy = p.y - cy;
+            if (ddx * ddx + ddy * ddy <= rr * rr) {
+              cells.add(`${r}-${c}`);
+            }
+          }
+        }
+      }
+
+      setLastSelectionCount(cells.size);
+
+      drawSelectionOverlay();
+      return;
+    }
+
+    // Pan drag
+    if (!panMode || !isPanning || !panStart.current) return;
+
+    e.preventDefault();
+
+    const { sx, sy } = getCanvasPoint(e);
+    const { lx, ly } = screenToWorld(sx, sy);
+
+    const dxLogical = panStart.current.lx - lx;
+    const dyLogical = panStart.current.ly - ly;
+
+    setPanWorldX(panStart.current.panX + dxLogical);
+    setPanWorldY(panStart.current.panY + dyLogical);
+  },
+  [
+    isSelecting,
+    selectionMode,
+    panMode,
+    isPanning,
+    getCanvasPoint,
+    screenToWorld,
+    logicalToRowColApprox,
+    rcToLogical,
+    drawSelectionOverlay,
+    computeDimsFromSelection,
+    eventToScreen,
+  ]
+);
   // ====================================================
   // Bulk apply selection
   // - Adds rings in selection (or erases if eraseMode)
@@ -2334,7 +2315,34 @@ const FreeformChainmail2D: React.FC = () => {
     },
     [zoom, screenToWorld]
   );
+// ============================================================
+// DROP-IN SECTION 1/3: Tool state + tiny helpers
+// Put near your other useState() declarations (top of component)
+// ============================================================
 
+// selectionMode remains your "shape tool" ("none" | "rect" | "circle") and stays mutually exclusive.
+// eraseMode becomes an independent toggle that can be ON while selectionMode is "rect" or "circle".
+
+// ✅ No emoji/UI changes required — this is behavior-only.
+
+const clearSelectionState = useCallback(() => {
+  setSelectedKeys(new Set());
+}, [setSelectedKeys]);
+
+const exitSelectionMode = useCallback(() => {
+  setSelectionMode("none");
+  setIsSelecting(false);
+  selectionRef.current = null;
+  clearInteractionCanvas();
+}, [setSelectionMode, setIsSelecting, clearInteractionCanvas]);
+
+const cancelOverlayPickingIfActive = useCallback(() => {
+  if (overlayPickingRef.current) {
+    overlayPickingRef.current = false;
+    // do NOT destroy already-picked keys unless you want that.
+    // setOverlayMaskKeys(new Set()); // <-- leave commented unless desired
+  }
+}, []);
   // ====================================================
   // ✅ FIX: remove React onWheel/onTouch* preventDefault passive warnings
   // We attach native listeners with { passive:false } to the interaction canvas.
@@ -3115,9 +3123,7 @@ const FreeformChainmail2D: React.FC = () => {
         position: "relative",
       }}
     >
-      {/* ============================= */}
-      {/* ✅ FLOATING TOOLBAR (Designer style) */}
-      {/* ============================= */}
+
       <DraggablePill id="freeform-toolbar" defaultPosition={{ x: 20, y: 20 }}>
         <div
           style={{
@@ -3140,7 +3146,7 @@ const FreeformChainmail2D: React.FC = () => {
           onTouchStart={(e) => e.stopPropagation()}
         >
 
-{/* Quick actions + Roll-up (keep reachable on iPhone) */}
+
 <ToolButton
   active={showCompass}
   onClick={() => setShowCompass((v) => !v)}
@@ -3175,72 +3181,100 @@ const FreeformChainmail2D: React.FC = () => {
 
 {!toolbarCollapsed && (
             <>
-          {/* Paint */}
-          <ToolButton
-            active={!eraseMode && selectionMode === "none"}
-            onClick={() => {
-              setEraseMode(false);
-              setSelectionMode("none");
-              setSelectedKeys(new Set());
-            }}
-            title="Paint rings"
-          >
-            🎨
-          </ToolButton>
 
-          {/* Erase */}
-          <ToolButton
-            active={eraseMode}
-            onClick={() => {
-              setEraseMode(true);
-              setSelectionMode("none");
-              setSelectedKeys(new Set());
-            }}
-            title="Erase rings"
-          >
-            🧽
-          </ToolButton>
+<ToolButton
+  active={!eraseMode && selectionMode === "none"}
+  onClick={() => {
+    setEraseMode(false);
+    setSelectionMode("none");
+    clearSelectionState();
+    cancelOverlayPickingIfActive();
+  }}
+  title="Paint rings"
+>
+  🎨
+</ToolButton>
 
-          {/* Rectangle Selection */}
-          <ToolButton
-            active={selectionMode === "rect"}
-            onClick={() => {
-              setSelectionMode((m) => (m === "rect" ? "none" : "rect"));
-              setEraseMode(false);
-              setPanMode(false);
-              setSelectedKeys(new Set());
-            }}
-            title="Rectangle selection"
-          >
-            <IconSquare />
-          </ToolButton>
 
-          {/* Circle Selection */}
-          <ToolButton
-            active={selectionMode === "circle"}
-            onClick={() => {
-              setSelectionMode((m) => (m === "circle" ? "none" : "circle"));
-              setEraseMode(false);
-              setPanMode(false);
-              setSelectedKeys(new Set());
-            }}
-            title="Circle selection"
-          >
-            <IconCircle />
-          </ToolButton>
+<ToolButton
+  active={eraseMode}
+  onClick={() => {
+ 
+     setEraseMode((v) => !v);
 
-          {/* Pan */}
-          <ToolButton
-            active={panMode}
-            onClick={() => {
-              setPanMode((v) => !v);
-              setSelectionMode("none");
-              setSelectedKeys(new Set());
-            }}
-            title="Pan / Drag view"
-          >
-            ✋
-          </ToolButton>
+
+    clearSelectionState();
+
+
+    if (isSelecting) {
+      setIsSelecting(false);
+      selectionRef.current = null;
+      clearInteractionCanvas();
+    }
+
+  }}
+  title="Erase rings"
+>
+  🧽
+</ToolButton>
+
+
+<ToolButton
+  active={selectionMode === "rect"}
+  onClick={() => {
+    setSelectionMode((m) => (m === "rect" ? "none" : "rect"));
+    setPanMode(false);
+    clearSelectionState();
+
+    // if selection toggled off, also stop in-progress drag
+    if (selectionMode === "rect") {
+      setIsSelecting(false);
+      selectionRef.current = null;
+      clearInteractionCanvas();
+    }
+  }}
+  title="Rectangle selection"
+>
+  <IconSquare />
+</ToolButton>
+
+
+<ToolButton
+  active={selectionMode === "circle"}
+  onClick={() => {
+    setSelectionMode((m) => (m === "circle" ? "none" : "circle"));
+    setPanMode(false);
+    clearSelectionState();
+
+    if (selectionMode === "circle") {
+      setIsSelecting(false);
+      selectionRef.current = null;
+      clearInteractionCanvas();
+    }
+  }}
+  title="Circle selection"
+>
+  <IconCircle />
+</ToolButton>
+
+<ToolButton
+  active={panMode}
+  onClick={() => {
+    setPanMode((v) => !v);
+    setSelectionMode("none");
+    clearSelectionState();
+
+
+    if (isSelecting) {
+      setIsSelecting(false);
+      selectionRef.current = null;
+      clearInteractionCanvas();
+    }
+  }}
+  title="Pan / Drag view"
+>
+  ✋
+</ToolButton>
 {/* Image Overlay */}
           <ToolButton
             active={showImageOverlay}
@@ -3990,12 +4024,11 @@ const FreeformChainmail2D: React.FC = () => {
                     🎯 Pick selection area (then drag on canvas)
                   </button>
 
-                  <div style={{ fontSize: 11, opacity: 0.85 }}>
-                    Picked cells: <b>{overlayMaskKeys.size}</b>{" "}
-                    {overlayMaskKeys.size === 0 ? "(none yet)" : ""}
-                    {overlayPickingRef.current ? " • Picking…" : ""}
-                  </div>
-
+<div style={{ fontSize: 11, opacity: 0.85 }}>
+  Picked cells: <b>{overlayMaskKeys.size}</b>{" "}
+  {overlayMaskKeys.size === 0 ? "(none yet)" : ""}
+  {overlayPickingRef.current ? " • Picking…" : ""}
+</div>
                   {overlayMaskKeys.size === 0 && (
                     <div style={{ fontSize: 11, color: "#fbbf24" }}>
                       Tip: click “Pick selection area”, then drag a selection. Press <b>Esc</b> to cancel.
