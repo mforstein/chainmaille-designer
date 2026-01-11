@@ -70,7 +70,6 @@ import ColorCalibrationTest from "./pages/ColorCalibrationTest";
 // Renderer
 // ==============================
 import RingRenderer, { RingRendererHandle } from "./components/RingRenderer";
-
 // ==============================
 // Geometry Generators
 // ==============================
@@ -1245,7 +1244,17 @@ onChange={(e) => {
     </div>
   </DraggablePill>
 )}
-
+<ToolsPanel
+  adapter={{
+    getRings: () => exportRings, // you already compute exportRings
+    addRings: (rings) => {
+      // Designer is grid-based, so adding rings means painting or expanding grid later.
+      // For now you can no-op, OR convert drops into paint on nearest cells.
+    },
+    screenToDesign: (x, y) => ({ x_mm: x, y_mm: y }), // upgrade later
+  }}
+  defaultPos={{ x: 110, y: 520 }}
+/>
 {/* ✅ Base Material Label */}
 <button
   type="button"
