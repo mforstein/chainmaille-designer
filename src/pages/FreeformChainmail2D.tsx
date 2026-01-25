@@ -11,7 +11,7 @@ import React, {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import * as THREE from "three";
-
+import SplineSandbox from "../splineSandbox/SplineSandbox";
 import RingRenderer from "../components/RingRenderer";
 import type { OverlayState } from "../components/ImageOverlayPanel";
 import FinalizeAndExportPanel from "../components/FinalizeAndExportPanel";
@@ -168,6 +168,21 @@ function saveColorPalette(palette: string[]) {
   } catch {
     // ignore
   }
+}
+type PolyPt = { x: number; y: number };
+function pointInPoly(x: number, y: number, poly: PolyPt[]) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x,
+      yi = poly[i].y;
+    const xj = poly[j].x,
+      yj = poly[j].y;
+    const intersect =
+      (yi > y) !== (yj > y) &&
+      x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
 }
 
 function loadSavedColorPalettes(): SavedColorPalettes {
@@ -741,7 +756,8 @@ const FreeformChainmail2D: React.FC = () => {
 
   // ✅ Secondary utility panel (toolbox/save-load/reset)
   const [showUtilityPanel, setShowUtilityPanel] = useState(false);
-
+const [showSplineTool, setShowSplineTool] = useState(false);
+const [splineResetKey, setSplineResetKey] = useState(0);
   // ==============================
   // 📏 Freeform Stats (dims + counts)
   // ==============================
@@ -1505,10 +1521,10 @@ const FreeformChainmail2D: React.FC = () => {
       // ✅ RENDER color (calibrated) for display only
       const renderColor = applyCalibrationHex(storedColor);
 
-const key = `${r.row}-${r.col}`;
-
+const key = `${r.row},${r.col}`;
+const ringKey = (row: number, col: number) => `${row},${col}`;
 rings3D.push({
-  id: key,                 // ✅ keep ids consistent too
+ id: `${r.row},${r.col}`,                 // ✅ keep ids consistent too
   row: r.row,
   col: r.col,
   x: shiftedX,
@@ -1525,6 +1541,11 @@ rings3D.push({
 
 paintMap.set(key, renderColor);
 
+// ✅ Stats should reflect true chosen colors
+colorCountsStored.set(
+  storedColor,
+  (colorCountsStored.get(storedColor) ?? 0) + 1
+);
 if (wantExport) {
   exportRings.push({
     key,                    // ✅ now matches every other key in the app
@@ -2129,6 +2150,94 @@ const handleMouseMove = useCallback(
     eventToScreen,
   ]
 );
+// ======================================================
+// SPLINE -> RINGS (CLOSED POLYGON FILL)
+// Uses the SAME logic as circle/rect fill (cells + resolvePlacement)
+// polygonScreen is in SCREEN px (from SplineSandbox)
+// ======================================================
+const applyClosedSplineAsRings = useCallback(
+  (polygonScreen: { x: number; y: number }[], colorHex: string) => {
+    if (!polygonScreen || polygonScreen.length < 3) return;
+    const paint = normalizeColor6(colorHex);
+
+    // Convert polygon from screen -> logical (same space used by rcToLogical)
+    const poly = polygonScreen.map((p) => {
+      const w = screenToWorld(p.x, p.y);
+      return { x: w.lx, y: w.ly };
+    });
+
+    // BBox in logical space
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of poly) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return;
+
+    // Tight row/col bounds (like circle/rect)
+    const a = logicalToRowColApprox(minX, minY);
+    const b = logicalToRowColApprox(maxX, maxY);
+
+    const minRow = Math.min(a.row, b.row) - 2;
+    const maxRow = Math.max(a.row, b.row) + 2;
+    const minCol = Math.min(a.col, b.col) - 2;
+    const maxCol = Math.max(a.col, b.col) + 2;
+
+    const cells: Array<{ row: number; col: number }> = [];
+
+    for (let r = minRow; r <= maxRow; r++) {
+      for (let c = minCol; c <= maxCol; c++) {
+        const p = rcToLogical(r, c); // returns {x,y} in logical space
+        if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) continue;
+        if (!pointInPoly(p.x, p.y, poly)) continue;
+        cells.push({ row: r, col: c });
+      }
+    }
+
+    if (!cells.length) return;
+
+    // Deterministic order
+    cells.sort((u, v) => u.row - v.row || u.col - v.col);
+
+    // Apply like circle/rect
+    const mapCopy: RingMap = new Map(rings);
+    let clusterId = nextClusterId;
+
+    for (const cell of cells) {
+      const { ring, newCluster } = resolvePlacement(
+        cell.col,
+        cell.row,
+        mapCopy,
+        clusterId,
+        paint,
+        settings
+      );
+
+      clusterId = newCluster;
+
+      // FORCE stored ring color (important for instanced renderer paths)
+      ring.color = paint;
+
+      mapCopy.set(`${ring.row}-${ring.col}`, ring);
+    }
+
+    setRings(mapCopy);
+    setnextClusterId(clusterId);
+  },
+  [
+    rings,
+    nextClusterId,
+    settings,
+    screenToWorld,
+    logicalToRowColApprox,
+    rcToLogical,
+    setRings,
+    setnextClusterId,
+  ]
+);
+
   // ====================================================
   // Bulk apply selection
   // - Adds rings in selection (or erases if eraseMode)
@@ -2315,6 +2424,8 @@ const handleMouseMove = useCallback(
     },
     [zoom, screenToWorld]
   );
+  
+  
 // ============================================================
 // DROP-IN SECTION 1/3: Tool state + tiny helpers
 // Put near your other useState() declarations (top of component)
@@ -3433,6 +3544,29 @@ const cancelOverlayPickingIfActive = useCallback(() => {
             >
               ↺
             </button>
+            {/* ✅ Spline toggle button (same row) */}
+            <button
+              type="button"
+              title="Spline"
+              onClick={() => setShowSplineTool((v) => !v)}
+              style={{
+                width: 30,
+                height: 26,
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.16)",
+                background: showSplineTool
+                  ? "rgba(37,99,235,0.95)"
+                  : "rgba(255,255,255,0.06)",
+                color: "#f8fafc",
+                cursor: "pointer",
+                fontSize: 13,
+                fontWeight: 900,
+                userSelect: "none",
+              }}
+            >
+              S
+            </button>
+ 
           </div>
 
           {paletteManagerOpen && (
@@ -4397,6 +4531,91 @@ const cancelOverlayPickingIfActive = useCallback(() => {
               </div>
             );
           })}
+      {/* ==================================================== */}
+      {/* SPLINE TOOL (MOVEABLE PANEL) */}
+      {/* IMPORTANT: Only one SplineSandbox instance is rendered. */}
+      {/* - This is draggable (panel is moveable). */}
+      {/* - It is NOT duplicated in the right control panel. */}
+      {/* ==================================================== */}
+      {showSplineTool && (
+        <DraggablePill
+          id="freeform-spline"
+          defaultPosition={{
+            x: 160,
+            y: 120,
+          }}
+        >
+          <div
+            style={{
+              background: "rgba(17,24,39,0.97)",
+              border: "1px solid rgba(0,0,0,0.6)",
+              borderRadius: 14,
+              boxShadow: "0 12px 40px rgba(0,0,0,.45)",
+              overflow: "hidden",
+            }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+<SplineSandbox
+  key={splineResetKey}
+  embedded
+  showPanel={true}
+  mode="freeform"
+  currentColorHex={normalizeColor6(activeColor)}
+  onRequestClose={() => setShowSplineTool(false)}
+  onApplyClosedSpline={({ polygon }) => {
+    applyClosedSplineAsRings(polygon, normalizeColor6(activeColor));
+    setSplineResetKey((k) => k + 1); // ✅ clears spline UI
+  }}
+/>
+          </div>
+        </DraggablePill>
+      )}
+
+      {/* HIT CIRCLES CANVAS */}
+      <canvas
+        ref={hitCanvasRef}
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          background: "transparent",
+          zIndex: 2,
+        }}
+      />
+
+      {/* DEBUG CLICK MARKERS (ONLY WHEN DIAGNOSTICS ON, and circles visible) */}
+      {showDiagnostics &&
+        !hideCircles &&
+        debugClicks.map((marker) => {
+          const { wx, wy } = logicalToWorld(marker.lx, marker.ly);
+          const { sx, sy } = worldToScreen(wx, wy);
+
+          return (
+            <div
+              key={marker.id}
+              style={{
+                position: "absolute",
+                left: sx - 10,
+                top: sy - 10,
+                width: 20,
+                height: 20,
+                backgroundColor: "rgba(0,255,0,0.85)",
+                color: "black",
+                fontSize: "14px",
+                fontWeight: "bold",
+                borderRadius: "2px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                pointerEvents: "none",
+                zIndex: 4,
+              }}
+            >
+              {marker.id}
+            </div>
+          );
+        })}
 
         {/* RIGHT CONTROL PANEL */}
         {showControls && (

@@ -66,6 +66,9 @@ import {
   SAFE_DEFAULT,
 } from "./utils/limits";
 import ColorCalibrationTest from "./pages/ColorCalibrationTest";
+
+import SplineSandbox from "./splineSandbox/SplineSandbox";
+
 // ==============================
 // Renderer
 // ==============================
@@ -178,6 +181,18 @@ function PasswordGateWrapper({ onUnlock }: { onUnlock: () => void }) {
 }
 const UI_MARGIN = 12;
 
+const splineToggleButtonStyle: React.CSSProperties = {
+  width: 44,
+  height: 44,
+  borderRadius: 14,
+  border: "1px solid rgba(255,255,255,0.12)",
+  background: "rgba(17,24,39,0.92)",
+  color: "#e5e7eb",
+  cursor: "pointer",
+  fontSize: 16,
+  display: "grid",
+  placeItems: "center",
+};
 
 function clampToViewport(
   pos: { x: number; y: number },
@@ -285,6 +300,7 @@ function DraggablePill({
       "button, input, select, textarea, label, a, [role='button'], [role='slider']",
     );
   };
+  
 
   const start = (clientX: number, clientY: number) => {
     draggingRef.current = true;
@@ -424,6 +440,12 @@ function ChainmailDesigner() {
   const [showCompass, setShowCompass] = useState(false);
   const [overlayState, setOverlayState] = useState<OverlayState | null>(null);
 
+  // ============================================================
+  // ✅ SPLINE TOOL (Designer overlay)
+  // ============================================================
+  const [showSplineTool, setShowSplineTool] = useState(false);
+  const DESIGNER_SPLINE_KEY = "cmd.spline.designer";
+
   // renderer handle
   const rendererRef = useRef<RingRendererHandle | null>(null);
 
@@ -518,6 +540,21 @@ function ChainmailDesigner() {
       );
     } catch {}
   }, [paint]);
+type ScreenPt = { x: number; y: number };
+
+function pointInPoly(x: number, y: number, poly: ScreenPt[]): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y;
+    const xj = poly[j].x, yj = poly[j].y;
+    const intersect =
+      yi > y !== yj > y &&
+      x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
 
   // ============================================================
   // ✅ RINGS — Uses tuned weave geometry when present
@@ -697,7 +734,148 @@ function ChainmailDesigner() {
     safeParams.innerDiameter,
     safeParams.wireDiameter,
   ]);
+ useEffect(() => {
+  if (!showSplineTool) return;
 
+  // keep the view stable while drawing/applying the spline
+  setLock(true);                      // forces 2D / locked rotation
+  rendererRef.current?.setPanEnabled?.(false);
+  rendererRef.current?.setPaintMode?.(false);
+  rendererRef.current?.setEraseMode?.(false);
+
+  return () => {
+    // restore normal behavior when spline tool closes
+    rendererRef.current?.setPanEnabled?.(!paintMode);
+    rendererRef.current?.setPaintMode?.(paintMode);
+    rendererRef.current?.setEraseMode?.(eraseMode);
+  };
+}, [showSplineTool]); // intentionally NOT depending on paintMode/eraseMode 
+
+const applyDesignerFillFromScreenPolygon = useCallback(
+  (polygonScreen: ScreenPt[], colorHex: string) => {
+    if (!polygonScreen || polygonScreen.length < 3) return;
+
+    // Find the best canvas (prefer RingRenderer handle if available)
+    const fromHandle =
+      (rendererRef.current as any)?.getCanvas?.() ??
+      (rendererRef.current as any)?.domElement ??
+      null;
+
+    const canvases = Array.from(document.querySelectorAll("canvas")) as HTMLCanvasElement[];
+    const fallback =
+      canvases
+        .filter((c) => c.width > 0 && c.height > 0)
+        .sort((a, b) => b.width * b.height - a.width * a.height)[0] ?? null;
+
+    const canvas = (fromHandle as HTMLCanvasElement | null) ?? fallback;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    if (!rect || rect.width <= 2 || rect.height <= 2) return;
+
+    // --- Assumption (matches your Designer 2D locked view):
+    // The ring grid is centered on screen and laid out uniformly.
+    // We project mm grid -> screen using a fitted scale.
+    const cs = safeParams.centerSpacing ?? 7.5; // mm spacing between centers
+
+    const cols = Math.max(1, safeParams.cols ?? params.cols ?? 1);
+    const rows = Math.max(1, safeParams.rows ?? params.rows ?? 1);
+
+    const gridW_mm = (cols - 1) * cs;
+    const gridH_mm = (rows - 1) * cs;
+
+    // Add padding so we don't assume the grid touches the edges
+    const pad_mm = cs * 2;
+    const scale =
+      0.92 *
+      Math.min(
+        rect.width / (gridW_mm + pad_mm),
+        rect.height / (gridH_mm + pad_mm),
+      );
+
+    const screenCx = rect.left + rect.width / 2;
+    const screenCy = rect.top + rect.height / 2;
+
+    const mmCx = gridW_mm / 2;
+    const mmCy = gridH_mm / 2;
+
+    setPaint((prev) => {
+      const next = new Map(prev);
+
+      for (const r of exportRings) {
+        // exportRings uses mm coords
+        const x_mm = (r as any).x_mm;
+        const y_mm = (r as any).y_mm;
+
+        if (!Number.isFinite(x_mm) || !Number.isFinite(y_mm)) continue;
+
+        // mm -> screen projection (y flips)
+        const sx = screenCx + (x_mm - mmCx) * scale;
+        const sy = screenCy + (y_mm - mmCy) * scale;
+
+        if (pointInPoly(sx, sy, polygonScreen)) {
+          next.set((r as any).key, colorHex); // key is "row,col"
+        }
+      }
+
+      return next;
+    });
+  },
+  [
+    exportRings,
+    safeParams.centerSpacing,
+    safeParams.rows,
+    safeParams.cols,
+    params.rows,
+    params.cols,
+    setPaint,
+  ],
+);
+// ============================================================
+// ✅ Fill (paint) rings inside a polygon (Designer)
+// polygon is in SCREEN coords; we convert ring mm->screen using RingRenderer helper if available,
+// otherwise fallback to a simple scale = 1 (only works if your SplineSandbox uses same coord space).
+// ============================================================
+const paintRingsInsidePolygon = useCallback(
+  (polygonScreen: { x: number; y: number }[], colorHex: string) => {
+    // We need screen coords for each ring center.
+    // If RingRenderer exposes a conversion, use it. Otherwise we approximate.
+    const rr: any = rendererRef.current;
+
+    // prefer real conversion if you have it
+    const mmToScreen =
+      rr?.designToScreen ??
+      ((x_mm: number, y_mm: number) => ({ x: x_mm, y: y_mm }));
+
+    setPaint((prev) => {
+      const next = new Map(prev);
+
+      for (const r of exportRings) {
+        // exportRings uses mm coords:
+        const pt = mmToScreen((r as any).x_mm, (r as any).y_mm);
+
+        // point in polygon test (use our tools helper if you want, or inline)
+        let inside = false;
+        for (let i = 0, j = polygonScreen.length - 1; i < polygonScreen.length; j = i++) {
+          const xi = polygonScreen[i].x, yi = polygonScreen[i].y;
+          const xj = polygonScreen[j].x, yj = polygonScreen[j].y;
+          const intersect =
+            yi > pt.y !== yj > pt.y &&
+            pt.x < ((xj - xi) * (pt.y - yi)) / ((yj - yi) || 1e-9) + xi;
+          if (intersect) inside = !inside;
+        }
+
+        if (inside) {
+          // r.key is "row,col" already
+          next.set((r as any).key, colorHex);
+        }
+      }
+
+      return next;
+    });
+  },
+  [exportRings, setPaint],
+);
   // ==============================
   // BOM Calculation (Read-Only)
   // ==============================
@@ -898,7 +1076,6 @@ const doClearPaint = () => {
 
     console.log("🧲 Material/Weave updated — paint and overlay preserved.");
   };
-
   // --- render ---
   return (
     <div style={{ width: "100vw", height: "100vh", background: "#0E0F12" }}>
@@ -979,7 +1156,14 @@ const doClearPaint = () => {
           >
             ▶
           </IconBtn>
-
+<button
+  type="button"
+  onClick={() => setShowSplineTool((v) => !v)}
+  title={showSplineTool ? "Close spline tool" : "Open spline tool"}
+  style={splineToggleButtonStyle}
+>
+  S
+</button>
         </div>
 
         {/* --- Controls (▶) Menu — rows/cols dialog --- */}
@@ -1244,17 +1428,19 @@ onChange={(e) => {
     </div>
   </DraggablePill>
 )}
-<ToolsPanel
-  adapter={{
-    getRings: () => exportRings, // you already compute exportRings
-    addRings: (rings) => {
-      // Designer is grid-based, so adding rings means painting or expanding grid later.
-      // For now you can no-op, OR convert drops into paint on nearest cells.
-    },
-    screenToDesign: (x, y) => ({ x_mm: x, y_mm: y }), // upgrade later
-  }}
-  defaultPos={{ x: 110, y: 520 }}
-/>
+
+{showSplineTool && (
+  <SplineSandbox
+    embedded
+    mode="designer"
+    currentColorHex={activeColor}
+    onRequestClose={() => setShowSplineTool(false)}
+    onApplyClosedSpline={({ polygon, colorHex }) => {
+      applyDesignerFillFromScreenPolygon(polygon, colorHex);
+      setShowSplineTool(false);
+    }}
+  />
+)}
 {/* ✅ Base Material Label */}
 <button
   type="button"
@@ -2086,7 +2272,7 @@ function App() {
           </RequireErin2DAuth>
         }
       />
-
+<Route path="/spline" element={<SplineSandbox />} />
       {/* ✅ PUBLIC TOOLS — NO AUTH */}
       <Route path="/chart" element={<RingSizeChart />} />
       <Route path="/tuner" element={<ChainmailWeaveTuner />} />

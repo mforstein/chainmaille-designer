@@ -1,5 +1,8 @@
 // ============================================================
 // File: src/components/RingRendererInstanced.tsx  (DROP-IN FULL FILE)
+// Purpose: Instanced renderer with correct per-instance colors
+//          (NO wash-out above 5000), painting, overlay apply,
+//          lock/pan/zoom, and calibration hooks preserved.
 // ============================================================
 
 import React, {
@@ -28,17 +31,16 @@ import {
   calibrationUpdatedEventName,
   loadProfiles,
   getActiveProfile,
-  getCorrectedHexForLargeCount,
+  // NOTE: We keep this import available, but we DO NOT apply correction by default,
+  // because you explicitly want colors to behave the same above/below 5000.
+  // getCorrectedHexForLargeCount,
 } from "../utils/colorCalibration";
 import type { ColorCalibrationProfile } from "../utils/colorCalibration";
+
 // ============================================================
 // Constants
 // ============================================================
 const LARGE_COUNT_THRESHOLD = 5000;
-
-// Fallback defaults (only used if no saved calibration profile exists)
-const FALLBACK_LARGE_GAIN = 0.66;
-const FALLBACK_LARGE_GAMMA = 1.18;
 
 // ============================================================
 // Color helpers
@@ -59,6 +61,15 @@ function normalizeColor6(hex: string): string {
   return "#ffffff";
 }
 
+function clamp01(n: number) {
+  return Math.max(0, Math.min(1, n));
+}
+
+function rgbToHex(r: number, g: number, b: number) {
+  const to = (x: number) => x.toString(16).padStart(2, "0");
+  return `#${to(r)}${to(g)}${to(b)}`;
+}
+
 // ============================================================
 // Overlay helpers (robust / defensive)
 // ============================================================
@@ -69,6 +80,7 @@ function overlayGetNumeric(o: any, keys: string[], fallback: number) {
   }
   return fallback;
 }
+
 function overlayGetString(
   o: any,
   keys: string[],
@@ -80,6 +92,21 @@ function overlayGetString(
   }
   return fallback;
 }
+
+const overlayGetBool = (o: any, keys: string[], fallback = false) => {
+  for (const k of keys) {
+    const v = o?.[k];
+    if (typeof v === "boolean") return v;
+    if (typeof v === "number" && Number.isFinite(v)) return v !== 0;
+    if (typeof v === "string") {
+      const s = v.trim().toLowerCase();
+      if (s === "true" || s === "1" || s === "yes" || s === "on") return true;
+      if (s === "false" || s === "0" || s === "no" || s === "off") return false;
+    }
+  }
+  return fallback;
+};
+
 async function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -89,13 +116,7 @@ async function loadImage(src: string): Promise<HTMLImageElement> {
     img.src = src;
   });
 }
-function clamp01(n: number) {
-  return Math.max(0, Math.min(1, n));
-}
-function rgbToHex(r: number, g: number, b: number) {
-  const to = (x: number) => x.toString(16).padStart(2, "0");
-  return `#${to(r)}${to(g)}${to(b)}`;
-}
+
 type OverlaySample = { hex: string; alpha: number };
 type OverlaySampler = {
   key: string;
@@ -103,6 +124,7 @@ type OverlaySampler = {
   sampleLogical: (lx: number, ly: number) => OverlaySample | null;
 };
 
+const wrap01 = (t: number) => ((t % 1) + 1) % 1;
 
 // ============================================================
 // Camera dolly utility
@@ -133,7 +155,6 @@ function fitCameraToBounds(
   padding = 1.15,
 ) {
   const { minX, maxX, minY, maxY } = bounds;
-
   if (!Number.isFinite(minX) || !Number.isFinite(maxX)) return;
 
   const sizeX = Math.max(1e-6, maxX - minX);
@@ -173,6 +194,10 @@ export type InstancedRing = RingBase & {
   tiltRad?: number;
   innerDiameter?: number;
   wireDiameter?: number;
+
+  // Many of your ring lists carry a per-ring color directly.
+  // We will honor it when paint map does not override.
+  color?: string;
 };
 
 type Props = {
@@ -189,9 +214,10 @@ type Props = {
 };
 
 // ============================================================
-// FIX: Instancing color in Three requires USE_COLOR + a valid `color` attribute.
-// If material.vertexColors=true but geometry has no `color`, the shader reads 0,0,0 => BLACK.
-// We attach a per-vertex `color` attribute filled with 1,1,1 so instanceColor works.
+// CRITICAL: Instancing color path needs a valid vertex `color` attribute.
+// If material.vertexColors=true but geometry has no per-vertex color attribute,
+// shaders can behave unexpectedly across drivers.
+// We attach per-vertex WHITE so instanceColor multiplies correctly.
 // ============================================================
 function ensureWhiteVertexColors(geom: THREE.BufferGeometry) {
   const existing = geom.getAttribute("color") as THREE.BufferAttribute | undefined;
@@ -204,28 +230,6 @@ function ensureWhiteVertexColors(geom: THREE.BufferGeometry) {
   const arr = new Float32Array(neededCount * 3);
   arr.fill(1);
   geom.setAttribute("color", new THREE.BufferAttribute(arr, 3));
-}
-
-// ============================================================
-// Large-count fallback match (ONLY affects rendering, not stored paint)
-// ============================================================
-function applyLargeCountColorMatch(inputHex: string, count: number) {
-  const h = normalizeColor6(inputHex);
-  if (count <= LARGE_COUNT_THRESHOLD) return h;
-
-  const r = parseInt(h.slice(1, 3), 16) / 255;
-  const g = parseInt(h.slice(3, 5), 16) / 255;
-  const b = parseInt(h.slice(5, 7), 16) / 255;
-
-  const corr = (v: number) => {
-    const x = Math.max(0, Math.min(1, v * FALLBACK_LARGE_GAIN));
-    return Math.max(0, Math.min(1, Math.pow(x, FALLBACK_LARGE_GAMMA)));
-  };
-
-  const rr = Math.round(corr(r) * 255).toString(16).padStart(2, "0");
-  const gg = Math.round(corr(g) * 255).toString(16).padStart(2, "0");
-  const bb = Math.round(corr(b) * 255).toString(16).padStart(2, "0");
-  return `#${rr}${gg}${bb}`;
 }
 
 // ============================================================
@@ -276,39 +280,53 @@ const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
       safeParamsRef.current = safeParams;
     }, [safeParams]);
 
-    // Total ring count (used for the >5000 color-match behavior)
+    // Total ring count
     const totalCountRef = useRef<number>(Array.isArray(rings) ? rings.length : 0);
     useEffect(() => {
       totalCountRef.current = Array.isArray(rings) ? rings.length : 0;
     }, [rings]);
+        const calibrationProfileRef = useRef<ColorCalibrationProfile | null>(null);
 
-// ----------------------------
-// Calibration profile: hot ref + tick to force reapply
-// ----------------------------
-const calibrationProfileRef = useRef<ColorCalibrationProfile | null>(null);
-const [calibrationTick, setCalibrationTick] = useState(0);
+// ✅ Ensure calibration is loaded before we compute baseHexRender / ringHexRender
+try {
+  calibrationProfileRef.current = getActiveProfile(loadProfiles());
+} catch {
+  calibrationProfileRef.current = null;
+}
+    // ----------------------------
+    // Calibration profile: keep loaded (feature preserved),
+    // but DO NOT apply any “large count correction” by default.
+    // ----------------------------
+    //const calibrationProfileRef = useRef<ColorCalibrationProfile | null>(null);
+    const [calibrationTick, setCalibrationTick] = useState(0);
+// ✅ Ensure we have a calibration profile BEFORE any instanced build paints colors.
+// (This runs during render; it's safe because it only reads localStorage and sets a ref.)
+if (calibrationProfileRef.current == null) {
+  try {
+    calibrationProfileRef.current = getActiveProfile(loadProfiles());
+  } catch {
+    calibrationProfileRef.current = null;
+  }
+}    useEffect(() => {
+      const refresh = () => {
+        try {
+          calibrationProfileRef.current = getActiveProfile(loadProfiles());
+        } catch {
+          calibrationProfileRef.current = null;
+        }
+        // still tick so UI changes that depend on calibration can re-render
+        setCalibrationTick((v) => v + 1);
+      };
 
-useEffect(() => {
-  const refresh = () => {
-    try {
-      calibrationProfileRef.current = getActiveProfile(loadProfiles());
-    } catch {
-      calibrationProfileRef.current = null;
-    }
-    // Force a reapply of render colors immediately
-    setCalibrationTick((v) => v + 1);
-  };
+      refresh();
+      window.addEventListener(calibrationUpdatedEventName(), refresh);
+      window.addEventListener("storage", refresh);
 
-  refresh();
-
-  window.addEventListener(calibrationUpdatedEventName(), refresh);
-  window.addEventListener("storage", refresh);
-
-  return () => {
-    window.removeEventListener(calibrationUpdatedEventName(), refresh);
-    window.removeEventListener("storage", refresh);
-  };
-}, []);
+      return () => {
+        window.removeEventListener(calibrationUpdatedEventName(), refresh);
+        window.removeEventListener("storage", refresh);
+      };
+    }, []);
 
     function ensureInstanceColor(
       inst: THREE.InstancedMesh,
@@ -329,17 +347,14 @@ useEffect(() => {
     // Refs
     // ----------------------------
     const mountRef = useRef<HTMLDivElement | null>(null);
-
     const sceneRef = useRef<THREE.Scene | null>(null);
     const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
     const controlsRef = useRef<OrbitControls | null>(null);
 
-    // ✅ env map refs (fixes build errors + ensures cleanup)
     const pmremRef = useRef<THREE.PMREMGenerator | null>(null);
     const envTexRef = useRef<THREE.Texture | null>(null);
 
-    // Instanced groups
     type GroupMesh = {
       key: string;
       mesh: THREE.InstancedMesh;
@@ -442,11 +457,10 @@ useEffect(() => {
     );
 
     // ------------------------------------------------------------
-    // Color cache + incremental paint application (FAST + correct)
+    // Color cache + incremental paint application
     // ------------------------------------------------------------
     const colorCacheRef = useRef<Map<string, THREE.Color>>(new Map());
 
-    // Cache expects a normalized 6-hex string.
     const getColor = (hex: string) => {
       const norm = normalizeColor6(hex).toLowerCase();
       const hit = colorCacheRef.current.get(norm);
@@ -457,11 +471,11 @@ useEffect(() => {
     };
 
     const prevPaintRef = useRef<PaintMap>(new Map());
-
+    const forceFullApplyRef = useRef<boolean>(false);
     /**
-     * IMPORTANT:
-     * - We apply the >5000 correction ONLY to the RENDERED color.
-     * - We DO NOT change what gets stored in paint map.
+     * IMPORTANT: NO large-count correction here.
+     * You said: "below 5000 the color works above it goes to white"
+     * So we keep the exact hex, above and below, for rendering.
      */
     const setInstanceColorByKey = useCallback(
       (ringKey: string, hexOrNull: string | null) => {
@@ -480,18 +494,7 @@ useEffect(() => {
         const baseHexRaw = safeParamsRef.current.ringColor || "#CCCCCC";
         const rawHex = hexOrNull ?? baseHexRaw;
 
-        // Prefer profile correction; fallback to simple gain/gamma
-        const profile = calibrationProfileRef.current;
-        const renderHex = profile
-          ? getCorrectedHexForLargeCount(
-              rawHex,
-              totalCountRef.current,
-              LARGE_COUNT_THRESHOLD,
-              profile,
-            )
-          : applyLargeCountColorMatch(rawHex, totalCountRef.current);
-
-        const c = getColor(renderHex);
+        const c = getColor(rawHex);
 
         attr.setXYZ(idx, c.r, c.g, c.b);
         attr.needsUpdate = true;
@@ -523,21 +526,45 @@ useEffect(() => {
       prevPaintRef.current = new Map(nextPaint);
     }, [setInstanceColorByKey]);
 
-    // ------------------------------------------------------------
-    // Re-apply all colors when calibration changes
-    // ------------------------------------------------------------
+    // Re-apply all colors on calibration tick (feature preserved)
     useEffect(() => {
       if (!groupsRef.current.length) return;
-
-      // Reapply paint (and base color for unpainted)
       for (const g of groupsRef.current) {
         for (const key of g.ringKeys) {
           const v = paintRef.current.get(key) ?? null;
           setInstanceColorByKey(key, v);
         }
       }
-    }, [calibrationTick, setInstanceColorByKey]);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [calibrationTick]);
+    
+    
+const applyPaintAll = useCallback(() => {
+  if (!groupsRef.current.length) return;
 
+  const baseHexRaw = safeParamsRef.current.ringColor || "#CCCCCC";
+
+  for (const g of groupsRef.current) {
+    const inst = g.mesh;
+    ensureInstanceColor(inst, g.count);
+    const attr = inst.instanceColor;
+
+    for (let i = 0; i < g.ringKeys.length; i++) {
+      const key = g.ringKeys[i];
+
+      // Priority: paint map -> (optional) ring.color already set during build -> base
+      const painted = paintRef.current.get(key) ?? null;
+      const rawHex = painted ?? baseHexRaw;
+
+      const c = getColor(rawHex);
+      attr.setXYZ(i, c.r, c.g, c.b);
+    }
+
+    attr.needsUpdate = true;
+  }
+
+  prevPaintRef.current = new Map(paintRef.current);
+}, []);
     // ------------------------------------------------------------
     // Build spatial index
     // ------------------------------------------------------------
@@ -639,7 +666,7 @@ useEffect(() => {
       renderer.setClearColor(safeParamsRef.current.bgColor, 1);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
 
-      // ✅ correct color pipeline
+      // Correct color pipeline
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.25;
@@ -652,7 +679,7 @@ useEffect(() => {
 
       rendererRef.current = renderer;
 
-      // ✅ Environment lighting (RoomEnvironment) + PMREM
+      // Environment
       try {
         const pmrem = new THREE.PMREMGenerator(renderer);
         pmrem.compileEquirectangularShader();
@@ -660,7 +687,6 @@ useEffect(() => {
 
         const envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
         envTexRef.current = envTex;
-
         scene.environment = envTex;
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -736,7 +762,7 @@ useEffect(() => {
       ro.observe(mount);
       onResize();
 
-      // Picking
+      // Picking / painting
       const raycaster = new THREE.Raycaster();
       const ndc = new THREE.Vector2();
       let isPainting = false;
@@ -923,7 +949,6 @@ useEffect(() => {
           scene.clear();
         } catch {}
 
-        // ✅ dispose environment + pmrem
         try {
           envTexRef.current?.dispose();
         } catch {}
@@ -993,7 +1018,8 @@ useEffect(() => {
     useEffect(() => {
       const scene = sceneRef.current;
       if (!scene) return;
-
+		paintRef.current = paint;
+      // Clear old groups
       if (groupsRef.current.length) {
         for (const g of groupsRef.current) {
           try {
@@ -1019,7 +1045,6 @@ useEffect(() => {
 
       if (!Array.isArray(rings) || rings.length === 0) return;
 
-      // keep ref synced immediately for build-time base color matching
       totalCountRef.current = rings.length;
 
       type Bucket = { gKey: string; items: InstancedRing[] };
@@ -1063,19 +1088,8 @@ useEffect(() => {
       const groups: GroupMesh[] = [];
       const lookup = new Map<string, { g: number; i: number }>();
 
-      // Base color (render-time corrected if >5000)
-      const baseHexRaw = safeParamsRef.current.ringColor || "#CCCCCC";
-      const profile = calibrationProfileRef.current;
-      const baseHexRender = profile
-        ? getCorrectedHexForLargeCount(
-            baseHexRaw,
-            rings.length,
-            LARGE_COUNT_THRESHOLD,
-            profile,
-          )
-        : applyLargeCountColorMatch(baseHexRaw, rings.length);
-
-      const baseColor = getColor(baseHexRender);
+      const baseHexRaw = normalizeColor6(safeParamsRef.current.ringColor || "#CCCCCC");
+      const baseColor = getColor(baseHexRaw);
 
       const tmp = new THREE.Object3D();
       const bucketList = Array.from(buckets.values());
@@ -1089,8 +1103,6 @@ useEffect(() => {
         const rr = Number(rstr);
 
         const geom = new THREE.TorusGeometry(R, rr, 16, 32);
-
-        // ✅ CRITICAL FIX
         ensureWhiteVertexColors(geom);
 
         const mat = new THREE.MeshStandardMaterial({
@@ -1102,17 +1114,18 @@ useEffect(() => {
         const inst = new THREE.InstancedMesh(geom, mat, items.length);
         inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 
-        // ✅ Ensure instancing color path is active + sized correctly
+        // Ensure instanceColor exists and is correctly sized
         ensureInstanceColor(inst, items.length);
-
-        // Guarantee shader recompiles with instancing color defines on first draw
-        mat.needsUpdate = true;
-
         const ic = inst.instanceColor;
         ic.setUsage(THREE.DynamicDrawUsage);
 
         const ringKeys: string[] = [];
 
+        // CRITICAL: Fully initialize colors for EVERY instance.
+        // Priority:
+        //   1) paint map (if already has value for that key)
+        //   2) ring.color (if present)
+        //   3) params.ringColor (base)
         for (let i = 0; i < items.length; i++) {
           const r = items[i];
 
@@ -1130,13 +1143,19 @@ useEffect(() => {
           tmp.updateMatrix();
           inst.setMatrixAt(i, tmp.matrix);
 
-          ic.setXYZ(i, baseColor.r, baseColor.g, baseColor.b);
-
           const key = `${r.row},${r.col}`;
           ringKeys.push(key);
           lookup.set(key, { g: gi, i });
 
           ringCenterRef.current.set(key, { x: px, y: py });
+
+          const painted = paint.get(key);
+          const ringOwn = (r.color ? normalizeColor6(r.color) : null);
+
+          const rawHex = normalizeColor6(painted ?? ringOwn ?? baseHexRaw);
+          const c = getColor(rawHex);
+
+          ic.setXYZ(i, c.r, c.g, c.b);
         }
 
         inst.instanceMatrix.needsUpdate = true;
@@ -1159,12 +1178,13 @@ useEffect(() => {
       instanceLookupRef.current = lookup;
 
       rebuildSpatialIndex();
-
-      // Apply existing paint to new instances (render corrected internally)
-      for (const [k, v] of paintRef.current.entries()) {
-        setInstanceColorByKey(k, v ?? null);
-      }
-      prevPaintRef.current = new Map(paintRef.current);
+// We rebuilt groups; force a full paint apply on next paint effect tick.
+forceFullApplyRef.current = true;
+      // Apply existing paint map again (ensures overrides win)
+for (const [k, v] of paint.entries()) {
+  setInstanceColorByKey(k, v ?? null);
+}
+prevPaintRef.current = new Map(paint);
 
       const cam = cameraRef.current;
       const ctr = controlsRef.current;
@@ -1173,312 +1193,271 @@ useEffect(() => {
         initialTargetRef.current.copy(ctr.target);
         initialZRef.current = cam.position.z;
       }
+
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rings, externalViewState, rebuildSpatialIndex, setInstanceColorByKey]);
 
     // ------------------------------------------------------------
     // Paint changes: apply diff only
     // ------------------------------------------------------------
-    useEffect(() => {
-      paintRef.current = paint;
-      applyPaintDiff();
-    }, [paint, applyPaintDiff]);
+useEffect(() => {
+  paintRef.current = paint;
 
- // ------------------------------------------------------------
-// Overlay application (imperative)
-// ------------------------------------------------------------
-const overlaySamplerRef = useRef<OverlaySampler | null>(null);
-
-const overlayGetBool = (o: any, keys: string[], fallback = false) => {
-  for (const k of keys) {
-    const v = o?.[k];
-    if (typeof v === "boolean") return v;
-    if (typeof v === "number" && Number.isFinite(v)) return v !== 0;
-    if (typeof v === "string") {
-      const s = v.trim().toLowerCase();
-      if (s === "true" || s === "1" || s === "yes" || s === "on") return true;
-      if (s === "false" || s === "0" || s === "no" || s === "off") return false;
-    }
+  // If we just rebuilt instanced groups, do a full apply once to avoid the
+  // “first frame after 5000 turns white/gray” glitch.
+  if (forceFullApplyRef.current) {
+    forceFullApplyRef.current = false;
+    applyPaintAll();
+    return;
   }
-  return fallback;
-};
 
-const wrap01 = (t: number) => ((t % 1) + 1) % 1;
+  applyPaintDiff();
+}, [paint, applyPaintDiff, applyPaintAll]);
+    // ------------------------------------------------------------
+    // Overlay sampler + apply overlay to rings (feature preserved)
+    // ------------------------------------------------------------
+    const overlaySamplerRef = useRef<OverlaySampler | null>(null);
 
-const getOverlayCropUV = (ov: any) => {
-  // Accept either flat fields or nested crop object. Defaults to full image.
-  const u0 =
-    overlayGetNumeric(ov, ["cropU0", "u0"], NaN) ??
-    overlayGetNumeric(ov?.crop, ["u0"], NaN);
-  const v0 =
-    overlayGetNumeric(ov, ["cropV0", "v0"], NaN) ??
-    overlayGetNumeric(ov?.crop, ["v0"], NaN);
-  const u1 =
-    overlayGetNumeric(ov, ["cropU1", "u1"], NaN) ??
-    overlayGetNumeric(ov?.crop, ["u1"], NaN);
-  const v1 =
-    overlayGetNumeric(ov, ["cropV1", "v1"], NaN) ??
-    overlayGetNumeric(ov?.crop, ["v1"], NaN);
+    const getOverlayCropUV = (ov: any) => {
+      const u0 =
+        overlayGetNumeric(ov, ["cropU0", "u0"], NaN) ??
+        overlayGetNumeric(ov?.crop, ["u0"], NaN);
+      const v0 =
+        overlayGetNumeric(ov, ["cropV0", "v0"], NaN) ??
+        overlayGetNumeric(ov?.crop, ["v0"], NaN);
+      const u1 =
+        overlayGetNumeric(ov, ["cropU1", "u1"], NaN) ??
+        overlayGetNumeric(ov?.crop, ["u1"], NaN);
+      const v1 =
+        overlayGetNumeric(ov, ["cropV1", "v1"], NaN) ??
+        overlayGetNumeric(ov?.crop, ["v1"], NaN);
 
-  const U0 = Number.isFinite(u0) ? clamp01(u0) : 0;
-  const V0 = Number.isFinite(v0) ? clamp01(v0) : 0;
-  const U1 = Number.isFinite(u1) ? clamp01(u1) : 1;
-  const V1 = Number.isFinite(v1) ? clamp01(v1) : 1;
+      const U0 = Number.isFinite(u0) ? clamp01(u0) : 0;
+      const V0 = Number.isFinite(v0) ? clamp01(v0) : 0;
+      const U1 = Number.isFinite(u1) ? clamp01(u1) : 1;
+      const V1 = Number.isFinite(v1) ? clamp01(v1) : 1;
 
-  const uu0 = Math.min(U0, U1);
-  const uu1 = Math.max(U0, U1);
-  const vv0 = Math.min(V0, V1);
-  const vv1 = Math.max(V0, V1);
+      const uu0 = Math.min(U0, U1);
+      const uu1 = Math.max(U0, U1);
+      const vv0 = Math.min(V0, V1);
+      const vv1 = Math.max(V0, V1);
 
-  const w = Math.max(1e-6, uu1 - uu0);
-  const h = Math.max(1e-6, vv1 - vv0);
+      const w = Math.max(1e-6, uu1 - uu0);
+      const h = Math.max(1e-6, vv1 - vv0);
 
-  return { u0: uu0, v0: vv0, uW: w, vH: h };
-};
-
-const buildOverlaySampler = useCallback(
-  async (ov: OverlayState): Promise<OverlaySampler | null> => {
-    if (!ov) return null;
-    if (ringCenterRef.current.size === 0) return null;
-
-    const src =
-      overlayGetString(ov as any, ["dataUrl", "src", "url", "imageUrl"]) ?? null;
-    if (!src) return null;
-
-// ✅ Position
-const offsetX = overlayGetNumeric(ov as any, ["offsetX", "x", "panX"], 0);
-const offsetY = overlayGetNumeric(ov as any, ["offsetY", "y", "panY"], 0);
-
-// ✅ Opacity (0..1)
-const opacity = clamp01(overlayGetNumeric(ov as any, ["opacity"], 1));
-
-// ✅ Scale
-// Your UI uses "Pattern Scale (%)" → often stored as patternScale/patternScalePct (50 means 50%)
-// Old code only read "scale" (1 means 100%) so the UI did nothing.
-const scalePct = overlayGetNumeric(
-  ov as any,
-  ["patternScale", "patternScalePct", "patternScalePercent", "patternScalePercent"],
-  NaN,
-);
-const rotationDeg = overlayGetNumeric(ov as any, ["rotation", "rotationDeg"], 0);
-const rot = THREE.MathUtils.degToRad(rotationDeg);
-const cosR = Math.cos(rot);
-const sinR = Math.sin(rot);
-
-let scale = overlayGetNumeric(ov as any, ["scale"], 1);
-if (Number.isFinite(scalePct)) {
-  scale = Math.max(1e-6, scalePct / 100);
-}
-
-// ✅ Repeat / Tile mode
-// Your UI often sends repeatMode: "Tile" (string), not tileMode:"repeat"
-const repeatModeStr =
-  (overlayGetString(ov as any, ["repeatMode", "tileMode", "tiling", "repeat"], "") ?? "")
-    .toLowerCase()
-    .trim();
-
-const tileAny =
-  overlayGetBool(ov as any, ["tile", "tiled", "tilingEnabled", "repeat"], false) ||
-  repeatModeStr === "tile" ||
-  repeatModeStr === "repeat";
-
-const tileX = overlayGetBool(ov as any, ["tileX", "repeatX"], tileAny);
-const tileY = overlayGetBool(ov as any, ["tileY", "repeatY"], tileAny);
-    const explicitW = overlayGetNumeric(
-      ov as any,
-      ["worldWidth", "widthWorld"],
-      NaN,
-    );
-    const explicitH = overlayGetNumeric(
-      ov as any,
-      ["worldHeight", "heightWorld"],
-      NaN,
-    );
-
-    // --- crop rect (normalized UV) ---
-    const crop = getOverlayCropUV(ov as any);
-
-    // Compute bounds from ring centers
-    let minX = Infinity,
-      maxX = -Infinity,
-      minY = Infinity,
-      maxY = -Infinity;
-
-    for (const p of ringCenterRef.current.values()) {
-      minX = Math.min(minX, p.x);
-      maxX = Math.max(maxX, p.x);
-      minY = Math.min(minY, p.y);
-      maxY = Math.max(maxY, p.y);
-    }
-
-    const worldW =
-      Number.isFinite(explicitW) && explicitW > 0
-        ? explicitW
-        : Math.max(1e-6, maxX - minX);
-    const worldH =
-      Number.isFinite(explicitH) && explicitH > 0
-        ? explicitH
-        : Math.max(1e-6, maxY - minY);
-
-    const cx = (minX + maxX) * 0.5 + offsetX;
-    const cy = (minY + maxY) * 0.5 + offsetY;
-
-    const invScale = 1 / Math.max(1e-6, scale);
-
-    const baseHex = normalizeColor6(
-      safeParamsRef.current.ringColor || "#FFFFFF",
-    );
-
-    const cacheKey = JSON.stringify({
-      src,
-      offsetX,
-      offsetY,
-      scale,
-      opacity,
-      explicitW: Number.isFinite(explicitW) ? explicitW : null,
-      explicitH: Number.isFinite(explicitH) ? explicitH : null,
-      tileX,
-      tileY,
-      crop,
-      bounds: [minX, maxX, minY, maxY],
-      baseHex,
-    });
-
-    if (overlaySamplerRef.current?.key === cacheKey) {
-      return overlaySamplerRef.current;
-    }
-
-    const img = await loadImage(src);
-
-    const canvas = document.createElement("canvas");
-    canvas.width = img.naturalWidth || img.width;
-    canvas.height = img.naturalHeight || img.height;
-
-    const ctx = canvas.getContext(
-  "2d",
-  { willReadFrequently: true } as CanvasRenderingContext2DSettings,
-) as CanvasRenderingContext2D | null;
-
-if (!ctx) return null; // or handle null
-    if (!ctx) return null;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0);
-
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imageData.data;
-
-    const w = canvas.width;
-    const h = canvas.height;
-
-    const base = new THREE.Color(baseHex);
-    const baseR = Math.round(base.r * 255);
-    const baseG = Math.round(base.g * 255);
-    const baseB = Math.round(base.b * 255);
-
-    const sampleWorld = (wx: number, wy: number): OverlaySample | null => {
-      // world -> normalized [0..1] before crop
-      let nx = ((wx - cx) / worldW) * invScale + 0.5;
-      let ny = ((wy - cy) / worldH) * invScale + 0.5;
-
-      // ✅ tiling: wrap first
-      if (tileX) nx = wrap01(nx);
-      if (tileY) ny = wrap01(ny);
-// ✅ Apply rotation about the image center (0.5, 0.5)
-{
-  const u = nx - 0.5;
-  const v = ny - 0.5;
-  const ur = u * cosR - v * sinR;
-  const vr = u * sinR + v * cosR;
-  nx = ur + 0.5;
-  ny = vr + 0.5;
-}
-      if (!tileX && (nx < 0 || nx > 1)) return null;
-      if (!tileY && (ny < 0 || ny > 1)) return null;
-
-      // Map into crop window
-      let u = crop.u0 + nx * crop.uW;
-      let v = crop.v0 + ny * crop.vH;
-
-      // If tiled, repeat inside crop
-      if (tileX) u = crop.u0 + wrap01((u - crop.u0) / crop.uW) * crop.uW;
-      if (tileY) v = crop.v0 + wrap01((v - crop.v0) / crop.vH) * crop.vH;
-
-      // Non-tiled: clamp to crop
-      if (!tileX) u = crop.u0 + clamp01((u - crop.u0) / crop.uW) * crop.uW;
-      if (!tileY) v = crop.v0 + clamp01((v - crop.v0) / crop.vH) * crop.vH;
-
-      // UV -> pixel (v is up, image y is down)
-      let px = Math.floor(u * w);
-      let py = Math.floor((1 - v) * h);
-
-      if (px === w) px = w - 1;
-      if (py === h) py = h - 1;
-      if (px < 0 || px >= w || py < 0 || py >= h) return null;
-
-      const idx = (py * w + px) * 4;
-      const r = data[idx + 0];
-      const g = data[idx + 1];
-      const b = data[idx + 2];
-      const a255 = data[idx + 3];
-
-      if (a255 <= 2) return null;
-
-      const t = clamp01((a255 / 255) * opacity);
-
-      const outR = Math.round(baseR * (1 - t) + r * t);
-      const outG = Math.round(baseG * (1 - t) + g * t);
-      const outB = Math.round(baseB * (1 - t) + b * t);
-
-      return { hex: rgbToHex(outR, outG, outB), alpha: a255 };
+      return { u0: uu0, v0: vv0, uW: w, vH: h };
     };
 
-    // Logical coords are +Y up; ring centers are already in world (+Y up) here
-    const sampleLogical = (lx: number, ly: number) => sampleWorld(lx, ly);
+    const buildOverlaySampler = useCallback(
+      async (ov: OverlayState): Promise<OverlaySampler | null> => {
+        if (!ov) return null;
+        if (ringCenterRef.current.size === 0) return null;
 
-    const sampler: OverlaySampler = {
-      key: cacheKey,
-      sampleWorld,
-      sampleLogical,
-    };
+        const src =
+          overlayGetString(ov as any, ["dataUrl", "src", "url", "imageUrl"]) ??
+          null;
+        if (!src) return null;
 
-    overlaySamplerRef.current = sampler;
-    return sampler;
-  },
-  [],
-);
+        const offsetX = overlayGetNumeric(ov as any, ["offsetX", "x", "panX"], 0);
+        const offsetY = overlayGetNumeric(ov as any, ["offsetY", "y", "panY"], 0);
+        const opacity = clamp01(overlayGetNumeric(ov as any, ["opacity"], 1));
 
-const applyOverlayToRings = useCallback(
-  async (ov: OverlayState) => {
-    if (!ov) return;
-    if (!rings || rings.length === 0) return;
-    if (ringCenterRef.current.size === 0) return;
+        // Pattern Scale (%) support (UI uses percent)
+        const scalePct = overlayGetNumeric(
+          ov as any,
+          ["patternScale", "patternScalePct", "patternScalePercent"],
+          NaN,
+        );
+        let scale = overlayGetNumeric(ov as any, ["scale"], 1);
+        if (Number.isFinite(scalePct)) {
+          scale = Math.max(1e-6, scalePct / 100);
+        }
 
-    const sampler = await buildOverlaySampler(ov);
-    if (!sampler) return;
+        const rotationDeg = overlayGetNumeric(ov as any, ["rotation", "rotationDeg"], 0);
+        const rot = THREE.MathUtils.degToRad(rotationDeg);
+        const cosR = Math.cos(rot);
+        const sinR = Math.sin(rot);
 
-    setPaint((prev) => {
-      const next = new Map(prev);
+        const repeatModeStr =
+          (overlayGetString(ov as any, ["repeatMode", "tileMode", "tiling", "repeat"], "") ??
+            "")
+            .toLowerCase()
+            .trim();
 
-      for (const [key, p] of ringCenterRef.current.entries()) {
-        const sampled = sampler.sampleWorld(p.x, p.y);
-        if (!sampled) continue;
+        const tileAny =
+          overlayGetBool(ov as any, ["tile", "tiled", "tilingEnabled", "repeat"], false) ||
+          repeatModeStr === "tile" ||
+          repeatModeStr === "repeat";
 
-        const c = normalizeColor6(sampled.hex);
-        next.set(key, c);
-        setInstanceColorByKey(key, c);
-      }
+        const tileX = overlayGetBool(ov as any, ["tileX", "repeatX"], tileAny);
+        const tileY = overlayGetBool(ov as any, ["tileY", "repeatY"], tileAny);
 
-      prevPaintRef.current = new Map(next);
-      return next;
-    });
-  },
-  [rings, setPaint, setInstanceColorByKey, buildOverlaySampler],
-);
+        const explicitW = overlayGetNumeric(ov as any, ["worldWidth", "widthWorld"], NaN);
+        const explicitH = overlayGetNumeric(ov as any, ["worldHeight", "heightWorld"], NaN);
 
-// ------------------------------------------------------------
-// Imperative API
-// ------------------------------------------------------------
+        const crop = getOverlayCropUV(ov as any);
+
+        // Compute bounds from ring centers
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const p of ringCenterRef.current.values()) {
+          minX = Math.min(minX, p.x);
+          maxX = Math.max(maxX, p.x);
+          minY = Math.min(minY, p.y);
+          maxY = Math.max(maxY, p.y);
+        }
+
+        const worldW =
+          Number.isFinite(explicitW) && explicitW > 0 ? explicitW : Math.max(1e-6, maxX - minX);
+        const worldH =
+          Number.isFinite(explicitH) && explicitH > 0 ? explicitH : Math.max(1e-6, maxY - minY);
+
+        const cx = (minX + maxX) * 0.5 + offsetX;
+        const cy = (minY + maxY) * 0.5 + offsetY;
+
+        const invScale = 1 / Math.max(1e-6, scale);
+
+        const baseHex = normalizeColor6(safeParamsRef.current.ringColor || "#FFFFFF");
+
+        const cacheKey = JSON.stringify({
+          src,
+          offsetX, offsetY,
+          scale, opacity,
+          explicitW: Number.isFinite(explicitW) ? explicitW : null,
+          explicitH: Number.isFinite(explicitH) ? explicitH : null,
+          tileX, tileY,
+          crop,
+          bounds: [minX, maxX, minY, maxY],
+          baseHex,
+          rotationDeg,
+        });
+
+        if (overlaySamplerRef.current?.key === cacheKey) {
+          return overlaySamplerRef.current;
+        }
+
+        const img = await loadImage(src);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+
+        const ctx = canvas.getContext(
+          "2d",
+          { willReadFrequently: true } as CanvasRenderingContext2DSettings,
+        ) as CanvasRenderingContext2D | null;
+
+        if (!ctx) return null;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+
+        const w = canvas.width;
+        const h = canvas.height;
+
+        const base = new THREE.Color(baseHex);
+        const baseR = Math.round(base.r * 255);
+        const baseG = Math.round(base.g * 255);
+        const baseB = Math.round(base.b * 255);
+
+        const sampleWorld = (wx: number, wy: number): OverlaySample | null => {
+          let nx = ((wx - cx) / worldW) * invScale + 0.5;
+          let ny = ((wy - cy) / worldH) * invScale + 0.5;
+
+          if (tileX) nx = wrap01(nx);
+          if (tileY) ny = wrap01(ny);
+
+          // rotation about center
+          {
+            const u = nx - 0.5;
+            const v = ny - 0.5;
+            const ur = u * cosR - v * sinR;
+            const vr = u * sinR + v * cosR;
+            nx = ur + 0.5;
+            ny = vr + 0.5;
+          }
+
+          if (!tileX && (nx < 0 || nx > 1)) return null;
+          if (!tileY && (ny < 0 || ny > 1)) return null;
+
+          // map into crop
+          let u = crop.u0 + nx * crop.uW;
+          let v = crop.v0 + ny * crop.vH;
+
+          if (tileX) u = crop.u0 + wrap01((u - crop.u0) / crop.uW) * crop.uW;
+          if (tileY) v = crop.v0 + wrap01((v - crop.v0) / crop.vH) * crop.vH;
+
+          if (!tileX) u = crop.u0 + clamp01((u - crop.u0) / crop.uW) * crop.uW;
+          if (!tileY) v = crop.v0 + clamp01((v - crop.v0) / crop.vH) * crop.vH;
+
+          let px = Math.floor(u * w);
+          let py = Math.floor((1 - v) * h);
+
+          if (px === w) px = w - 1;
+          if (py === h) py = h - 1;
+          if (px < 0 || px >= w || py < 0 || py >= h) return null;
+
+          const idx = (py * w + px) * 4;
+          const r = data[idx + 0];
+          const g = data[idx + 1];
+          const b = data[idx + 2];
+          const a255 = data[idx + 3];
+
+          if (a255 <= 2) return null;
+
+          const t = clamp01((a255 / 255) * opacity);
+
+          const outR = Math.round(baseR * (1 - t) + r * t);
+          const outG = Math.round(baseG * (1 - t) + g * t);
+          const outB = Math.round(baseB * (1 - t) + b * t);
+
+          return { hex: rgbToHex(outR, outG, outB), alpha: a255 };
+        };
+
+        const sampleLogical = (lx: number, ly: number) => sampleWorld(lx, ly);
+
+        const sampler: OverlaySampler = {
+          key: cacheKey,
+          sampleWorld,
+          sampleLogical,
+        };
+
+        overlaySamplerRef.current = sampler;
+        return sampler;
+      },
+      [],
+    );
+
+    const applyOverlayToRings = useCallback(
+      async (ov: OverlayState) => {
+        if (!ov) return;
+        if (!rings || rings.length === 0) return;
+        if (ringCenterRef.current.size === 0) return;
+
+        const sampler = await buildOverlaySampler(ov);
+        if (!sampler) return;
+
+        setPaint((prev) => {
+          const next = new Map(prev);
+
+          for (const [key, p] of ringCenterRef.current.entries()) {
+            const sampled = sampler.sampleWorld(p.x, p.y);
+            if (!sampled) continue;
+
+            const c = normalizeColor6(sampled.hex);
+            next.set(key, c);
+            setInstanceColorByKey(key, c);
+          }
+
+          prevPaintRef.current = new Map(next);
+          return next;
+        });
+      },
+      [rings, setPaint, setInstanceColorByKey, buildOverlaySampler],
+    );
+
     // ------------------------------------------------------------
     // Imperative API
     // ------------------------------------------------------------
@@ -1551,21 +1530,9 @@ const applyOverlayToRings = useCallback(
           }
         } catch {}
 
-        const baseHexRaw = safeParamsRef.current.ringColor || "#CCCCCC";
+        const baseHex = normalizeColor6(safeParamsRef.current.ringColor || "#CCCCCC");
+        const base = getColor(baseHex);
 
-        const profile = calibrationProfileRef.current;
-        const baseHexRender = profile
-          ? getCorrectedHexForLargeCount(
-              baseHexRaw,
-              totalCountRef.current,
-              LARGE_COUNT_THRESHOLD,
-              profile,
-            )
-          : applyLargeCountColorMatch(baseHexRaw, totalCountRef.current);
-
-        const base = getColor(baseHexRender);
-
-        // Fast fill of all instanceColor buffers
         for (const g of groupsRef.current) {
           const inst = g.mesh;
           ensureInstanceColor(inst, g.count);
