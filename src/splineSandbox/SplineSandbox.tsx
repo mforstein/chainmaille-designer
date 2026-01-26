@@ -1,9 +1,10 @@
 // ============================================================
 // src/splineSandbox/SplineSandbox.tsx
 // FULL FILE — Visible spline overlay + optional control panel
+//
 // Emoji-only panel UI (no words in the subpanel)
 // - Multi-spline
-// - Click/tap canvas to add points
+// - Click/tap anywhere (except ignored UI) to add points
 // - Tap point to select pivot
 // - Smooth Catmull-Rom preview
 // - Close/Open + Auto-close hint
@@ -16,14 +17,24 @@
 // - Embedded overlay safe z-index + transparent background
 // - Optional panel (showPanel) that is DRAGGABLE + persisted
 //
-// FIXES (NO FEATURE REMOVALS):
-// - Add explicit coordinate-space metadata for apply payload.
-// - Provide BOTH client-space (viewport) and page-space polygons so the caller
-//   can map into canvas/world space correctly (fixes “spline doesn’t transfer”).
-// - Ensure pointer coords are stable even if the page scrolls.
+// APPLY PAYLOAD FIX:
+// - polygon (client coords)
+// - polygonPage (client + scroll)
+// - coordSpace + viewport metadata
+//
+// UI TWEAK:
+// - Panel is truly compact (no 360px fixed width).
+//   Uses a 2-column icon grid with fixed square buttons.
+//
+// IMPORTANT:
+// - Overlay root uses pointerEvents: "none" so it won't block UI.
+// - We add a window capture pointerdown listener to allow point placement
+//   while ignoring UI via:
+//     [data-spline-ui='panel'] and [data-spline-ignore='1']
 // ============================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as THREE from "three";
 
 type Axis = "vertical" | "horizontal";
 
@@ -35,7 +46,7 @@ export type SplinePath = {
   points: ControlPoint[];
   closed: boolean;
   resolution?: number; // samples per segment
-  tension?: number; // reserved (not used yet)
+  tension?: number; // reserved
 };
 
 export type SandboxState = {
@@ -62,16 +73,16 @@ export default function SplineSandbox(props: {
   currentColorHex?: string;
 
   onApplyClosedSpline?: (args: {
-    // ORIGINAL (kept): viewport/client-space points (same as e.clientX/Y)
+    // viewport/client-space points (same as e.clientX/Y)
     polygon: ControlPoint[];
 
-    // NEW: page-space points (client + scroll), useful if caller uses page coords
+    // page-space points (client + scroll)
     polygonPage: ControlPoint[];
 
-    // NEW: which space "polygon" uses
+    // which space "polygon" uses
     coordSpace: "client" | "page";
 
-    // NEW: useful for conversions on the caller side
+    // useful for conversions on the caller side
     viewport: {
       innerWidth: number;
       innerHeight: number;
@@ -107,9 +118,53 @@ export default function SplineSandbox(props: {
 
   const dist = (a: ControlPoint, b: ControlPoint) => Math.hypot(a.x - b.x, a.y - b.y);
 
-  const clampPos = (n: number, a: number, b: number) => Math.max(a, Math.min(b, n));
+  function polyLenPts(pts: ControlPoint[]) {
+    let L = 0;
+    for (let i = 1; i < pts.length; i++) L += dist(pts[i - 1], pts[i]);
+    return L;
+  }
 
-  function sampleCatmullRom(pts: ControlPoint[], closed: boolean, samplesPerSeg = 18): ControlPoint[] {
+  // Resample control points into a smooth spline polyline/polygon in *client coords*.
+  // Uses spaced points for uniformity (reduces visible straight segments).
+  function resampleSplinePoints(
+    control: ControlPoint[],
+    closed: boolean,
+    pxStep = 2, // ~1 point every pxStep pixels
+    minN = 256,
+    maxN = 8192,
+  ): ControlPoint[] {
+    if (!control || control.length < 2) return control ?? [];
+
+    // CatmullRom needs >= 2 points; closed shapes should have >= 3 to be meaningful,
+    // but we still render a preview for 2 points.
+    const curve = new THREE.CatmullRomCurve3(
+      control.map((p) => new THREE.Vector3(p.x, p.y, 0)),
+      closed && control.length >= 3,
+      "catmullrom",
+      0.5, // tension
+    );
+
+    const approx = polyLenPts(closed ? [...control, control[0]] : control);
+    const n = Math.max(minN, Math.min(maxN, Math.ceil(approx / Math.max(1, pxStep))));
+
+    const pts = curve.getSpacedPoints(n).map((v) => ({ x: v.x, y: v.y }));
+
+    // Ensure closed polygon ends where it started
+    if (closed && pts.length) {
+      const first = pts[0];
+      const last = pts[pts.length - 1];
+      if (dist(first, last) > 0.5) pts.push({ ...first });
+    }
+
+    return pts;
+  }
+
+  // (Kept for compatibility / existing behavior) — not used for the smoothest rendering anymore.
+  function sampleCatmullRom(
+    pts: ControlPoint[],
+    closed: boolean,
+    samplesPerSeg = 18,
+  ): ControlPoint[] {
     if (!pts || pts.length < 2) return pts ?? [];
     const out: ControlPoint[] = [];
 
@@ -163,7 +218,9 @@ export default function SplineSandbox(props: {
 
   function mirrorAboutPivot(pts: ControlPoint[], axis: Axis, pivot: ControlPoint) {
     return pts.map((p) =>
-      axis === "vertical" ? { x: 2 * pivot.x - p.x, y: p.y } : { x: p.x, y: 2 * pivot.y - p.y },
+      axis === "vertical"
+        ? { x: 2 * pivot.x - p.x, y: p.y }
+        : { x: p.x, y: 2 * pivot.y - p.y },
     );
   }
 
@@ -199,36 +256,50 @@ export default function SplineSandbox(props: {
   }>({ active: false, startX: 0, startY: 0, baseX: 0, baseY: 0, pointerId: null });
 
   // ============================================================
-  // UI styles
+  // UI styles (COMPACT)
   // ============================================================
 
-  const btn: React.CSSProperties = {
-    padding: "8px 10px",
-    borderRadius: 10,
+  const BTN = 36;
+  const GAP = 6;
+  const GRID_W = BTN * 2 + GAP; // fixed width for 2-col controls
+
+  const btnBase: React.CSSProperties = {
+    width: BTN,
+    height: BTN,
+    borderRadius: 12,
     border: "1px solid rgba(255,255,255,0.12)",
     background: "rgba(15,23,42,0.85)",
     color: "#e5e7eb",
     cursor: "pointer",
-    fontSize: 13,
+    fontSize: 16,
     userSelect: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+    lineHeight: `${BTN}px`,
   };
 
+  const btn = btnBase;
+
   const btnPrimary: React.CSSProperties = {
-    ...btn,
+    ...btnBase,
     background: "#2563eb",
     border: "none",
     color: "white",
-    fontWeight: 800,
+    fontWeight: 900,
   };
 
   const selectStyle: React.CSSProperties = {
-    width: "100%",
+    width: GRID_W,
     marginTop: 8,
     background: "#111827",
     color: "#e5e7eb",
     border: "1px solid #1f2937",
-    borderRadius: 10,
+    borderRadius: 12,
     padding: "8px 10px",
+    boxSizing: "border-box",
+    fontSize: 12,
   };
 
   const panel: React.CSSProperties = {
@@ -236,13 +307,18 @@ export default function SplineSandbox(props: {
     left: panelPos.x,
     top: panelPos.y,
     zIndex: embedded ? 1000002 : 9999,
-    width: 360,
+
+    display: "inline-block",
+    width: "max-content",
+    minWidth: 0,
+    pointerEvents: "auto",
     borderRadius: 16,
     border: "1px solid rgba(0,0,0,.6)",
     background: "rgba(17,24,39,0.92)",
     boxShadow: "0 16px 48px rgba(0,0,0,.45)",
-    padding: 12,
+    padding: 10,
     color: "#e5e7eb",
+    boxSizing: "border-box",
     fontFamily:
       'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial',
   };
@@ -283,6 +359,7 @@ export default function SplineSandbox(props: {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const undoRef = useRef<Record<string, ControlPoint[][]>>({});
 
+  // Persist state (splines)
   useEffect(() => {
     if (storageKey) {
       try {
@@ -298,6 +375,7 @@ export default function SplineSandbox(props: {
 
   const activePoints = activeSpline?.points ?? [];
 
+  // Maintain selected pivot index sanity
   useEffect(() => {
     if (!activeSpline) return;
     if (activePoints.length === 0) {
@@ -317,12 +395,22 @@ export default function SplineSandbox(props: {
     if (undoRef.current[splineId].length > 100) undoRef.current[splineId].shift();
   }, []);
 
+  // ✅ Use spaced spline sampling for the visible overlay (reduces straight segments)
   const sampledBySpline = useMemo(() => {
     const map: Record<string, ControlPoint[]> = {};
     for (const s of state.splines) {
       const pts = s.points ?? [];
-      const n = s.resolution ?? 18;
-      map[s.id] = pts.length >= 3 ? sampleCatmullRom(pts, s.closed, n) : pts;
+      // Keep a tiny fallback for very small point counts
+      if (pts.length >= 2) {
+        const closed = !!s.closed && pts.length >= 3;
+        // If user set a "resolution", treat it as a hint:
+        // smaller resolution => coarser; but we still keep it smooth at scale.
+        const hint = typeof s.resolution === "number" ? s.resolution : 18;
+        const pxStep = hint <= 10 ? 3 : hint <= 18 ? 2 : 1; // conservative mapping
+        map[s.id] = resampleSplinePoints(pts, closed, pxStep, 256, 8192);
+      } else {
+        map[s.id] = pts;
+      }
     }
     return map;
   }, [state.splines]);
@@ -362,54 +450,6 @@ export default function SplineSandbox(props: {
     });
   }, []);
 
-  // ============================================================
-  // INPUT
-  // ============================================================
-
-  const addPointFromEvent = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      const t = e.target as HTMLElement;
-      if (t.closest("[data-ui='panel']")) return;
-
-      // NOTE:
-      // - clientX/Y are viewport-relative (what most canvases use)
-      // - pageX/Y include scroll (useful for callers that store page coords)
-      const pClient = { x: e.clientX, y: e.clientY };
-
-      // point selection (tap near a point)
-      const hitRadius = 18;
-      if (activePoints.length > 0) {
-        let bestIdx: number | null = null;
-        let bestD = Infinity;
-        for (let i = 0; i < activePoints.length; i++) {
-          const d = dist(pClient, activePoints[i]);
-          if (d < hitRadius && d < bestD) {
-            bestD = d;
-            bestIdx = i;
-          }
-        }
-        if (bestIdx != null) {
-          setSelectedIndex(bestIdx);
-          return;
-        }
-      }
-
-      setState((s) => {
-        const idx = s.splines.findIndex((sp) => sp.id === s.activeSplineId);
-        if (idx < 0) return s;
-
-        const sp = s.splines[idx];
-        pushUndo(sp.id, sp.points);
-
-        const updated: SplinePath = { ...sp, points: [...sp.points, pClient] };
-        const next = [...s.splines];
-        next[idx] = updated;
-        return { ...s, splines: next };
-      });
-    },
-    [pushUndo, activePoints],
-  );
-
   const undo = useCallback(() => {
     const sid = state.activeSplineId;
     const stack = undoRef.current[sid];
@@ -420,11 +460,13 @@ export default function SplineSandbox(props: {
     setState((s) => {
       const idx = s.splines.findIndex((sp) => sp.id === sid);
       if (idx < 0) return s;
+
       const next = [...s.splines];
+      const cur = next[idx];
       next[idx] = {
-        ...next[idx],
+        ...cur,
         points: prev,
-        closed: next[idx].closed && prev.length >= 3,
+        closed: cur.closed && prev.length >= 3,
       };
       return { ...s, splines: next };
     });
@@ -434,6 +476,7 @@ export default function SplineSandbox(props: {
     setState((s) => {
       const idx = s.splines.findIndex((sp) => sp.id === s.activeSplineId);
       if (idx < 0) return s;
+
       const sp = s.splines[idx];
       pushUndo(sp.id, sp.points);
 
@@ -477,16 +520,19 @@ export default function SplineSandbox(props: {
         if (!src || src.points.length === 0) return s;
 
         const pivotIdx =
-          selectedIndex != null ? clamp(selectedIndex, 0, src.points.length - 1) : src.points.length - 1;
+          selectedIndex != null
+            ? clamp(selectedIndex, 0, src.points.length - 1)
+            : src.points.length - 1;
 
         const pivot = src.points[pivotIdx];
         const nextClosed = forceClose ? true : src.closed;
 
-        // OPEN spline: merge mirrored segment into SAME spline
+        // OPEN spline: mirror COPY and MERGE into SAME spline
         if (!src.closed) {
           pushUndo(src.id, src.points);
 
           const mirroredAll = mirrorAboutPivot(src.points, axis, pivot);
+          // Take the segment from 0..pivotIdx and reverse it (excluding pivot duplicate)
           const mirroredSegment = mirroredAll.slice(0, pivotIdx + 1).reverse().slice(1);
           const merged = [...src.points, ...mirroredSegment];
 
@@ -500,7 +546,7 @@ export default function SplineSandbox(props: {
           return { ...s, splines: next };
         }
 
-        // CLOSED spline: create NEW mirrored spline
+        // CLOSED spline: create NEW mirrored spline, original preserved
         const mirroredPoints = mirrorAboutPivot(src.points, axis, pivot);
         const mirrored: SplinePath = {
           id: uid("spline"),
@@ -528,7 +574,12 @@ export default function SplineSandbox(props: {
     if (!raw) return;
     try {
       const parsed = JSON.parse(raw) as SandboxState;
-      if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.splines) || parsed.splines.length === 0) {
+      if (
+        !parsed ||
+        parsed.version !== 1 ||
+        !Array.isArray(parsed.splines) ||
+        parsed.splines.length === 0
+      ) {
         alert("⚠️");
         return;
       }
@@ -556,73 +607,158 @@ export default function SplineSandbox(props: {
     }
   }, []);
 
-  const setResolution = useCallback((n: number) => {
-    setState((s) => {
-      const idx = s.splines.findIndex((sp) => sp.id === s.activeSplineId);
-      if (idx < 0) return s;
-      const next = [...s.splines];
-      next[idx] = { ...next[idx], resolution: n };
-      return { ...s, splines: next };
-    });
-  }, []);
+  // ============================================================
+  // Window capture pointerdown: add points without blocking UI
+  // (FIXED: stateRef declared ONCE, AFTER state exists)
+  // ============================================================
+
+  const stateRef = useRef<SandboxState | null>(null);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    const onWinPointerDown = (ev: PointerEvent) => {
+      const target = ev.target as HTMLElement | null;
+      if (!target) return;
+
+      // Ignore clicks on Spline panel itself
+      if (target.closest("[data-spline-ui='panel']")) return;
+
+      // Ignore clicks on ANY UI you mark as spline-ignore
+      // (add this attribute to palette/toolbars/draggables you NEVER want affected)
+      if (target.closest("[data-spline-ignore='1']")) return;
+
+      // Ignore common interactive elements (prevents accidental point add while using UI)
+      if (
+        target.closest("button, input, select, textarea, a, label") ||
+        target.closest("[role='button'], [role='slider'], [contenteditable='true']")
+      ) {
+        return;
+      }
+
+      // ✅ CRITICAL FIX:
+      // Only treat clicks as spline-placement when they happen on the "work surface"
+      // (typically the Three.js canvas) or the document background.
+      // This prevents UI panels made of divs (like your Base Material swatches) from being hijacked.
+      const isOnCanvas = !!target.closest("canvas");
+      const isOnDocBg =
+        target === document.body ||
+        target === document.documentElement ||
+        (target instanceof HTMLElement && target.id === "root");
+
+      if (!isOnCanvas && !isOnDocBg) return;
+
+      // If something already prevented it, don't fight it.
+      if (ev.defaultPrevented) return;
+
+      const s = stateRef.current;
+      if (!s) return;
+
+      const idxSpline = s.splines.findIndex((sp) => sp.id === s.activeSplineId);
+      if (idxSpline < 0) return;
+
+      const sp = s.splines[idxSpline];
+      const pts = sp.points ?? [];
+
+      // Store points in CLIENT space (viewport px)
+      const pClient = { x: ev.clientX, y: ev.clientY };
+
+      // tap near a point => select pivot
+      const hitRadius = 18;
+      if (pts.length > 0) {
+        let bestIdx: number | null = null;
+        let bestD = Infinity;
+        for (let i = 0; i < pts.length; i++) {
+          const d = Math.hypot(pClient.x - pts[i].x, pClient.y - pts[i].y);
+          if (d < hitRadius && d < bestD) {
+            bestD = d;
+            bestIdx = i;
+          }
+        }
+        if (bestIdx != null) {
+          setSelectedIndex(bestIdx);
+          ev.preventDefault();
+          return;
+        }
+      }
+
+      // Add point
+      setState((prev) => {
+        const i = prev.splines.findIndex((x) => x.id === prev.activeSplineId);
+        if (i < 0) return prev;
+
+        const cur = prev.splines[i];
+        pushUndo(cur.id, cur.points);
+
+        const next = [...prev.splines];
+        next[i] = { ...cur, points: [...cur.points, pClient] };
+        return { ...prev, splines: next };
+      });
+
+      ev.preventDefault();
+    };
+
+    // CAPTURE phase so we can decide early, but we return for UI
+    window.addEventListener("pointerdown", onWinPointerDown, { capture: true });
+
+    return () => {
+      window.removeEventListener("pointerdown", onWinPointerDown, { capture: true } as any);
+    };
+  }, [pushUndo]);
 
   // ============================================================
   // APPLY
   // ============================================================
 
-// ============================================================
-// APPLY
-// - Allow apply if the spline is officially closed (🔒)
-//   OR if it is "auto-close ready" (end is near start)
-// - If auto-close-ready but not closed, we still apply by
-//   passing a closed polygon (append first point)
-// ============================================================
+  const canApply =
+    !!activeSpline && activePoints.length >= 3 && (activeSpline.closed || autoCloseReady);
 
-const canApply =
-  !!activeSpline &&
-  activePoints.length >= 3 &&
-  (activeSpline.closed || autoCloseReady);
+  const doApply = useCallback(() => {
+    if (!activeSpline) return;
+    if (activeSpline.points.length < 3) return;
 
-const doApply = useCallback(() => {
-  if (!activeSpline) return;
-  if (activeSpline.points.length < 3) return;
+    const base =
+      activeSpline.closed
+        ? activeSpline.points
+        : autoCloseReady
+          ? [...activeSpline.points, activeSpline.points[0]]
+          : null;
 
-  // If user didn't press 🔒 but the end is close to start,
-  // still allow apply by treating it as closed.
-  const polygon =
-    activeSpline.closed
-      ? activeSpline.points
-      : autoCloseReady
-        ? [...activeSpline.points, activeSpline.points[0]]
-        : null;
+    if (!base || base.length < 3) return;
 
-  if (!polygon || polygon.length < 3) return;
+    // ✅ spline boundary used for fill/apply — dense spaced sampling (reduces straight chords)
+    const polygonClient = resampleSplinePoints(base, true, 2, 256, 8192);
 
-  // Helpful debug signal (safe; remove later if you want)
-  // eslint-disable-next-line no-console
-  console.log("[SplineSandbox] APPLY", {
-    closed: activeSpline.closed,
-    autoCloseReady,
-    n: polygon.length,
-    color: currentColorHex,
-  });
+    const scrollX = window.scrollX ?? 0;
+    const scrollY = window.scrollY ?? 0;
 
-onApplyClosedSpline?.({
-  polygon,
-  polygonPage: polygon, // fallback
-  coordSpace: "client",
-  viewport: {
-    innerWidth: window.innerWidth,
-    innerHeight: window.innerHeight,
-    scrollX: window.scrollX,
-    scrollY: window.scrollY,
-    devicePixelRatio: window.devicePixelRatio ?? 1,
-  },
-  colorHex: currentColorHex,
-  spline: activeSpline,
-  state,
-});
-}, [activeSpline, autoCloseReady, currentColorHex, onApplyClosedSpline, state]);
+    const polygonPage = polygonClient.map((p) => ({ x: p.x + scrollX, y: p.y + scrollY }));
+
+    // eslint-disable-next-line no-console
+    console.log("[SplineSandbox] APPLY", {
+      closed: activeSpline.closed,
+      autoCloseReady,
+      n: polygonClient.length,
+      color: currentColorHex,
+    });
+
+    onApplyClosedSpline?.({
+      polygon: polygonClient,
+      polygonPage,
+      coordSpace: "client",
+      viewport: {
+        innerWidth: window.innerWidth,
+        innerHeight: window.innerHeight,
+        scrollX,
+        scrollY,
+        devicePixelRatio: window.devicePixelRatio ?? 1,
+      },
+      colorHex: currentColorHex,
+      spline: activeSpline,
+      state,
+    });
+  }, [activeSpline, autoCloseReady, currentColorHex, onApplyClosedSpline, state]);
 
   // ============================================================
   // UX: ESC closes
@@ -639,7 +775,9 @@ onApplyClosedSpline?.({
   const activeUndoCount = undoRef.current[state.activeSplineId]?.length ?? 0;
 
   const pivotEmoji =
-    activeSpline && activePoints.length ? `⭐${(selectedIndex ?? activePoints.length - 1) + 1}` : "⭐—";
+    activeSpline && activePoints.length
+      ? `⭐${(selectedIndex ?? activePoints.length - 1) + 1}`
+      : "⭐—";
 
   // ============================================================
   // RENDER
@@ -654,35 +792,45 @@ onApplyClosedSpline?.({
         position: "fixed",
         inset: 0,
         zIndex: ROOT_Z,
+        pointerEvents: "none", // ✅ overlay no longer blocks UI
+        touchAction: "none",
         background: embedded
           ? "transparent"
           : "radial-gradient(1200px 700px at 30% 20%, rgba(59,130,246,.12), transparent 60%), #0b1220",
       }}
-      onPointerDown={addPointFromEvent}
     >
-      {/* UI Panel (optional) */}
       {showPanel && (
         <div
-          data-ui="panel"
-          style={panel}
-          onPointerDown={(e) => e.stopPropagation()}
-          onPointerMove={(e) => e.stopPropagation()}
-          onPointerUp={(e) => e.stopPropagation()}
-          onClick={(e) => e.stopPropagation()}
+          data-spline-ui="panel"
+          data-spline-ignore="1"
+          style={{ ...panel, pointerEvents: "auto" }}
+          onPointerDownCapture={(e) => e.stopPropagation()}
+          onPointerMoveCapture={(e) => e.stopPropagation()}
+          onPointerUpCapture={(e) => e.stopPropagation()}
+          onPointerCancelCapture={(e) => e.stopPropagation()}
         >
           {/* Header row */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-            {/* Drag handle (left) */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: GAP,
+            }}
+          >
+            {/* Drag handle */}
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 10,
+                gap: GAP,
                 cursor: dragRef.current.active ? "grabbing" : "grab",
                 userSelect: "none",
+                minWidth: 0,
               }}
               onPointerDown={(e) => {
                 e.stopPropagation();
+                e.preventDefault(); // ✅ prevents other gesture systems from hijacking
                 (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
                 dragRef.current = {
                   active: true,
@@ -707,8 +855,8 @@ onApplyClosedSpline?.({
                 const maxY = (typeof window !== "undefined" ? window.innerHeight : 900) - 60;
 
                 setPanelPos({
-                  x: clampPos(nextX, 0, maxX),
-                  y: clampPos(nextY, 0, maxY),
+                  x: clamp(nextX, 0, maxX),
+                  y: clamp(nextY, 0, maxY),
                 });
               }}
               onPointerUp={(e) => {
@@ -716,7 +864,9 @@ onApplyClosedSpline?.({
                 dragRef.current.active = false;
                 try {
                   if (dragRef.current.pointerId != null) {
-                    (e.currentTarget as HTMLDivElement).releasePointerCapture(dragRef.current.pointerId);
+                    (e.currentTarget as HTMLDivElement).releasePointerCapture(
+                      dragRef.current.pointerId,
+                    );
                   }
                 } catch {}
                 dragRef.current.pointerId = null;
@@ -727,12 +877,14 @@ onApplyClosedSpline?.({
                 dragRef.current.pointerId = null;
               }}
             >
-              <div style={{ fontWeight: 900, fontSize: 16 }}>🧵 {modeIcon(mode)}</div>
+              <div style={{ fontWeight: 900, fontSize: 16, whiteSpace: "nowrap" }}>
+                🧵 {modeIcon(mode)}
+              </div>
             </div>
 
             {/* Right side stats + close */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <div style={{ fontSize: 12, color: "#9ca3af", textAlign: "right" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: GAP }}>
+              <div style={{ fontSize: 12, color: "#9ca3af", textAlign: "right", minWidth: 0 }}>
                 🔢 {activePoints.length}
                 {activeSpline?.closed ? " 🔒" : ""}
                 <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)" }}>{pivotEmoji}</div>
@@ -746,7 +898,7 @@ onApplyClosedSpline?.({
                   onRequestClose?.();
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
-                style={{ width: 32, height: 32, borderRadius: 10, ...btn, padding: 0, lineHeight: "32px" }}
+                style={{ ...btn, width: BTN, height: BTN, borderRadius: 12 }}
               >
                 ✕
               </button>
@@ -769,18 +921,30 @@ onApplyClosedSpline?.({
             ))}
           </select>
 
-          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          <div style={{ display: "flex", gap: GAP, marginTop: 8, width: GRID_W }}>
             <button style={btnPrimary} onClick={addSpline} title="➕">
               ➕
             </button>
-            <button style={btn} onClick={deleteActiveSpline} disabled={state.splines.length <= 1} title="🗑️">
+            <button
+              style={btn}
+              onClick={deleteActiveSpline}
+              disabled={state.splines.length <= 1}
+              title="🗑️"
+            >
               🗑️
             </button>
           </div>
 
           <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "10px 0" }} />
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `${BTN}px ${BTN}px`,
+              gap: GAP,
+              width: GRID_W,
+            }}
+          >
             <button
               style={btnPrimary}
               onClick={closeActive}
@@ -803,7 +967,14 @@ onApplyClosedSpline?.({
 
           <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "10px 0" }} />
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: `${BTN}px ${BTN}px`,
+              gap: GAP,
+              width: GRID_W,
+            }}
+          >
             <button style={btn} onClick={() => mirrorCopyAndMaybeClose("vertical")} title="🪞↔️">
               🪞↔️
             </button>
@@ -828,7 +999,15 @@ onApplyClosedSpline?.({
             </button>
           </div>
 
-          <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          <div
+            style={{
+              marginTop: 10,
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: GAP,
+              width: GRID_W,
+            }}
+          >
             <button style={btn} onClick={closeActive} disabled={!autoCloseReady} title="🤝🔒">
               🤝🔒
             </button>
@@ -838,12 +1017,20 @@ onApplyClosedSpline?.({
             <button style={btn} onClick={importJson} title="📥">
               📥
             </button>
+            <button
+              style={canApply ? btnPrimary : { ...btnPrimary, opacity: 0.45, cursor: "not-allowed" }}
+              disabled={!canApply}
+              onClick={doApply}
+              title={canApply ? "🪣➡️" : "🔒➕➕➕"}
+            >
+              🪣
+            </button>
           </div>
 
-
-
-          {/* Current color swatch + apply */}
-          <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
+          {/* Color swatch */}
+          <div
+            style={{ marginTop: 10, display: "flex", gap: GAP, alignItems: "center", width: GRID_W }}
+          >
             <div
               style={{
                 width: 18,
@@ -855,14 +1042,6 @@ onApplyClosedSpline?.({
               title="🎨"
             />
             <div style={{ flex: 1 }} />
-            <button
-              style={canApply ? btnPrimary : { ...btnPrimary, opacity: 0.45, cursor: "not-allowed" }}
-              disabled={!canApply}
-              onClick={doApply}
-              title={canApply ? "🪣➡️" : "🔒➕➕➕"}
-            >
-              🪣
-            </button>
           </div>
         </div>
       )}
@@ -940,17 +1119,20 @@ onApplyClosedSpline?.({
                 );
               })}
 
-              {isActive && !sp.closed && pts.length >= 3 && dist(pts[0], pts[pts.length - 1]) < 16 && (
-                <line
-                  x1={pts[0].x}
-                  y1={pts[0].y}
-                  x2={pts[pts.length - 1].x}
-                  y2={pts[pts.length - 1].y}
-                  stroke="rgba(34,197,94,0.95)"
-                  strokeWidth={3}
-                  strokeDasharray="8 8"
-                />
-              )}
+              {isActive &&
+                !sp.closed &&
+                pts.length >= 3 &&
+                dist(pts[0], pts[pts.length - 1]) < 16 && (
+                  <line
+                    x1={pts[0].x}
+                    y1={pts[0].y}
+                    x2={pts[pts.length - 1].x}
+                    y2={pts[pts.length - 1].y}
+                    stroke="rgba(34,197,94,0.95)"
+                    strokeWidth={3}
+                    strokeDasharray="8 8"
+                  />
+                )}
             </g>
           );
         })}

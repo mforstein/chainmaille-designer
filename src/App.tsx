@@ -784,15 +784,13 @@ const applyDesignerFillFromScreenPolygon = useCallback(
     const gridW_mm = (cols - 1) * cs;
     const gridH_mm = (rows - 1) * cs;
 
-    // Add padding so we don't assume the grid touches the edges
-    const pad_mm = cs * 2;
-    const scale =
-      0.92 *
-      Math.min(
-        rect.width / (gridW_mm + pad_mm),
-        rect.height / (gridH_mm + pad_mm),
-      );
-
+// Use a small, symmetric margin (half a cell) instead of a big pad + 0.92 fudge.
+// This reduces the consistent “inward shift”.
+const pad_mm = cs * 0.9;
+const scale = Math.min(
+  rect.width / (gridW_mm + pad_mm),
+  rect.height / (gridH_mm + pad_mm),
+);
     const screenCx = rect.left + rect.width / 2;
     const screenCy = rect.top + rect.height / 2;
 
