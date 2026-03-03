@@ -30,6 +30,8 @@ import {
 import { DraggablePill, DraggableCompassNav } from "../App";
 import type { ExportRing, PaletteAssignment } from "../types/project";
 import { IconCircle, IconSquare } from "../components/icons/ToolIcons";
+import ShapePanel, { ShapeTool as ShapeToolId } from "../components/ShapePanel";
+import { computeShapeCells } from "../utils/shapeFill";
 // ⬇️ SAFETY STUB (keeps App.tsx safe if it calls this early; BOM UI removed)
 declare global {
   interface Window {
@@ -407,7 +409,7 @@ function PaletteColorPickerModal(props: {
 // ======================================================
 // SELECTION TYPES
 // ======================================================
-type SelectionMode = "none" | "rect" | "circle";
+type SelectionMode = "none" | ShapeToolId;
 
 type SelectionDrag = {
   sx0: number;
@@ -781,6 +783,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
   // SELECTION TOOL (rect + circle)
   // ====================================================
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("none");
+  const [shapePanelOpen, setShapePanelOpen] = useState(false);
   const [isSelecting, setIsSelecting] = useState(false);
   const selectionRef = useRef<SelectionDrag | null>(null);
 
@@ -1272,49 +1275,14 @@ const [splineResetKey, setSplineResetKey] = useState(0);
       const next = new Set<string>();
       if (mode === "none") return next;
 
-      const minLX = Math.min(sel.lx0, sel.lx1);
-      const maxLX = Math.max(sel.lx0, sel.lx1);
-      const minLY = Math.min(sel.ly0, sel.ly1);
-      const maxLY = Math.max(sel.ly0, sel.ly1);
+      const cells = computeShapeCells({
+        tool: mode,
+        sel,
+        logicalToRowColApprox,
+        rcToLogical,
+      });
 
-      const a = logicalToRowColApprox(minLX, minLY);
-      const b = logicalToRowColApprox(maxLX, maxLY);
-
-      const minRowS = Math.min(a.row, b.row) - 2;
-      const maxRowS = Math.max(a.row, b.row) + 2;
-      const minColS = Math.min(a.col, b.col) - 2;
-      const maxColS = Math.max(a.col, b.col) + 2;
-
-      if (mode === "rect") {
-        for (let r = minRowS; r <= maxRowS; r++) {
-          for (let c = minColS; c <= maxColS; c++) {
-            const p = rcToLogical(r, c);
-            if (
-              p.x >= minLX &&
-              p.x <= maxLX &&
-              p.y >= minLY &&
-              p.y <= maxLY
-            )
-              next.add(`${r}-${c}`);
-          }
-        }
-      } else if (mode === "circle") {
-        const cx = sel.lx0;
-        const cy = sel.ly0;
-        const dx = sel.lx1 - sel.lx0;
-        const dy = sel.ly1 - sel.ly0;
-        const rr = Math.sqrt(dx * dx + dy * dy);
-
-        for (let r = minRowS; r <= maxRowS; r++) {
-          for (let c = minColS; c <= maxColS; c++) {
-            const p = rcToLogical(r, c);
-            const ddx = p.x - cx;
-            const ddy = p.y - cy;
-            if (ddx * ddx + ddy * ddy <= rr * rr) next.add(`${r}-${c}`);
-          }
-        }
-      }
-
+      for (const cell of cells) next.add(`${cell.row}-${cell.col}`);
       return next;
     },
     [logicalToRowColApprox, rcToLogical]
@@ -1887,7 +1855,7 @@ if (wantExport) {
     ctx.strokeStyle = "rgba(37,99,235,0.95)";
     ctx.fillStyle = "rgba(37,99,235,0.18)";
 
-    if (selectionMode === "rect") {
+    if (selectionMode === "square") {
       const rx = Math.min(x0, x1);
       const ry = Math.min(y0, y1);
       const rw = Math.abs(x1 - x0);
@@ -1923,7 +1891,79 @@ if (wantExport) {
       ctx.arc(cx, cy, 3, 0, Math.PI * 2);
       ctx.fill();
     }
+else {
+      const cx = x0;
+      const cy = y0;
+      const dx = x1 - x0;
+      const dy = y1 - y0;
+      const r = Math.sqrt(dx * dx + dy * dy);
 
+      const drawRegularPolygon = (
+        sides: number,
+        rotationRad: number = -Math.PI / 2,
+      ) => {
+        if (sides < 3) return;
+        ctx.beginPath();
+        for (let i = 0; i < sides; i++) {
+          const a = rotationRad + (i * 2 * Math.PI) / sides;
+          const px = cx + r * Math.cos(a);
+          const py = cy + r * Math.sin(a);
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      };
+
+      const drawHeart = () => {
+        // Simple bezier heart; r controls overall size.
+        const s = r;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy + s * 0.35);
+        ctx.bezierCurveTo(
+          cx - s * 0.9,
+          cy - s * 0.25,
+          cx - s * 0.55,
+          cy - s * 1.05,
+          cx,
+          cy - s * 0.65,
+        );
+        ctx.bezierCurveTo(
+          cx + s * 0.55,
+          cy - s * 1.05,
+          cx + s * 0.9,
+          cy - s * 0.25,
+          cx,
+          cy + s * 0.35,
+        );
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      };
+
+      switch (selectionMode) {
+        case "tri":
+          drawRegularPolygon(3, -Math.PI / 2);
+          break;
+        case "hex":
+          // Flat-ish top.
+          drawRegularPolygon(6, Math.PI / 6);
+          break;
+        case "oct":
+          drawRegularPolygon(8, Math.PI / 8);
+          break;
+        case "heart":
+          drawHeart();
+          break;
+        default:
+          // Safety fallback.
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.stroke();
+          break;
+      }
+    }
 
     ctx.font = "12px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
     ctx.fillStyle = "rgba(248,250,252,0.9)";
@@ -2088,7 +2128,7 @@ const handleMouseMove = useCallback(
       const minColC = Math.min(a.col, b.col) - 2;
       const maxColC = Math.max(a.col, b.col) + 2;
 
-      if (selectionMode === "rect") {
+      if (selectionMode === "square") {
         for (let r = minRowC; r <= maxRowC; r++) {
           for (let c = minColC; c <= maxColC; c++) {
             const p = rcToLogical(r, c);
@@ -2248,66 +2288,12 @@ const applyClosedSplineAsRings = useCallback(
       if (mode === "none") return;
 
       // Compute candidate cells
-      const cells: Array<{ row: number; col: number }> = [];
-
-      if (mode === "rect") {
-        const minLX = Math.min(sel.lx0, sel.lx1);
-        const maxLX = Math.max(sel.lx0, sel.lx1);
-        const minLY = Math.min(sel.ly0, sel.ly1);
-        const maxLY = Math.max(sel.ly0, sel.ly1);
-
-        const a = logicalToRowColApprox(minLX, minLY);
-        const b = logicalToRowColApprox(maxLX, maxLY);
-        const minRowC = Math.min(a.row, b.row) - 2;
-        const maxRowC = Math.max(a.row, b.row) + 2;
-        const minColC = Math.min(a.col, b.col) - 2;
-        const maxColC = Math.max(a.col, b.col) + 2;
-
-        for (let r = minRowC; r <= maxRowC; r++) {
-          for (let c = minColC; c <= maxColC; c++) {
-            const p = rcToLogical(r, c);
-            if (
-              p.x >= minLX &&
-              p.x <= maxLX &&
-              p.y >= minLY &&
-              p.y <= maxLY
-            ) {
-              cells.push({ row: r, col: c });
-            }
-          }
-        }
-      } else if (mode === "circle") {
-        const cx = sel.lx0;
-        const cy = sel.ly0;
-        const dx = sel.lx1 - sel.lx0;
-        const dy = sel.ly1 - sel.ly0;
-        const rr = Math.sqrt(dx * dx + dy * dy);
-
-        const minLX = cx - rr;
-        const maxLX = cx + rr;
-        const minLY = cy - rr;
-        const maxLY = cy + rr;
-
-        const a = logicalToRowColApprox(minLX, minLY);
-        const b = logicalToRowColApprox(maxLX, maxLY);
-        const minRowC = Math.min(a.row, b.row) - 2;
-        const maxRowC = Math.max(a.row, b.row) + 2;
-        const minColC = Math.min(a.col, b.col) - 2;
-        const maxColC = Math.max(a.col, b.col) + 2;
-
-        const rr2 = rr * rr;
-
-        for (let r = minRowC; r <= maxRowC; r++) {
-          for (let c = minColC; c <= maxColC; c++) {
-            const p = rcToLogical(r, c);
-            const ddx = p.x - cx;
-            const ddy = p.y - cy;
-            if (ddx * ddx + ddy * ddy <= rr2) {
-              cells.push({ row: r, col: c });
-            }
-          }
-        }
-      }
+      const cells = computeShapeCells({
+        tool: mode,
+        sel,
+        logicalToRowColApprox,
+        rcToLogical,
+      });
 
       if (!cells.length) {
         setLastSelectionCount(0);
@@ -2431,8 +2417,8 @@ const applyClosedSplineAsRings = useCallback(
 // Put near your other useState() declarations (top of component)
 // ============================================================
 
-// selectionMode remains your "shape tool" ("none" | "rect" | "circle") and stays mutually exclusive.
-// eraseMode becomes an independent toggle that can be ON while selectionMode is "rect" or "circle".
+// selectionMode remains your "shape tool" ("none" | "square" | "circle") and stays mutually exclusive.
+// eraseMode becomes an independent toggle that can be ON while selectionMode is "square" or "circle".
 
 // ✅ No emoji/UI changes required — this is behavior-only.
 
@@ -3331,42 +3317,35 @@ const cancelOverlayPickingIfActive = useCallback(() => {
 
 
 <ToolButton
-  active={selectionMode === "rect"}
+  active={selectionMode !== "none"}
   onClick={() => {
-    setSelectionMode((m) => (m === "rect" ? "none" : "rect"));
+    setShapePanelOpen((v) => !v);
     setPanMode(false);
     clearSelectionState();
-
-    // if selection toggled off, also stop in-progress drag
-    if (selectionMode === "rect") {
-      setIsSelecting(false);
-      selectionRef.current = null;
-      clearInteractionCanvas();
-    }
   }}
-  title="Rectangle selection"
+  title="Shapes"
 >
   <IconSquare />
 </ToolButton>
 
-
-<ToolButton
-  active={selectionMode === "circle"}
-  onClick={() => {
-    setSelectionMode((m) => (m === "circle" ? "none" : "circle"));
+<ShapePanel
+  open={shapePanelOpen}
+  onClose={() => setShapePanelOpen(false)}
+  active={selectionMode === "none" ? "square" : selectionMode}
+  onPick={(t) => {
+    setSelectionMode((m) => (m === t ? "none" : t));
     setPanMode(false);
     clearSelectionState();
 
-    if (selectionMode === "circle") {
+    if (isSelecting) {
       setIsSelecting(false);
       selectionRef.current = null;
       clearInteractionCanvas();
     }
+
+    setShapePanelOpen(false);
   }}
-  title="Circle selection"
->
-  <IconCircle />
-</ToolButton>
+/>
 
 <ToolButton
   active={panMode}
@@ -4140,7 +4119,7 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                       setEraseMode(false);
                       setPanMode(false);
                       // ensure a selection tool is active so user can drag right away
-                      setSelectionMode((m) => (m === "none" ? "rect" : m));
+                      setSelectionMode((m) => (m === "none" ? "square" : m));
                     }}
                     style={{
                       width: "100%",
