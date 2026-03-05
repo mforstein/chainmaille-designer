@@ -180,8 +180,7 @@ function pointInPoly(x: number, y: number, poly: PolyPt[]) {
     const xj = poly[j].x,
       yj = poly[j].y;
     const intersect =
-      (yi > y) !== (yj > y) &&
-      x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi;
+      yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi || 1e-9) + xi;
     if (intersect) inside = !inside;
   }
   return inside;
@@ -696,18 +695,32 @@ const FreeformChainmail2D: React.FC = () => {
   const [activeColor, setActiveColor] = useState("#ffffff");
   const activeColorRef = useRef(activeColor);
 
+  type ActiveLayer = "rings" | "scales";
+  const [activeLayer, setActiveLayer] = useState<ActiveLayer>("rings");
+  const activeLayerRef = useRef<ActiveLayer>("rings");
+  useEffect(() => {
+    activeLayerRef.current = activeLayer;
+  }, [activeLayer]);
+
+  const [scaleColors, setScaleColors] = useState<Map<string, string>>(
+    () => new Map(),
+  );
+  const scaleColorsRef = useRef(scaleColors);
+  useEffect(() => {
+    scaleColorsRef.current = scaleColors;
+  }, [scaleColors]);
+
   // ====================================================
   // COLOR PALETTE (editable + persisted)
   // ====================================================
   const [colorPalette, setColorPalette] = useState<string[]>(() =>
-    loadColorPalette()
+    loadColorPalette(),
   );
   const [savedColorPalettes, setSavedColorPalettes] =
     useState<SavedColorPalettes>(() => loadSavedColorPalettes());
   const [paletteManagerOpen, setPaletteManagerOpen] = useState(false);
   const [paletteName, setPaletteName] = useState<string>("");
-  const [selectedSavedPalette, setSelectedSavedPalette] =
-    useState<string>("");
+  const [selectedSavedPalette, setSelectedSavedPalette] = useState<string>("");
   const [pickerState, setPickerState] =
     useState<PaletteColorPickerState | null>(null);
 
@@ -722,11 +735,13 @@ const FreeformChainmail2D: React.FC = () => {
   const openPickerForIndex = useCallback(
     (index: number) => {
       const current = colorPalette[index] ?? "#ffffffff";
-      const parsed =
-        parseHexColor(current) ?? { rgb: "#ffffff", alpha255: 255 };
+      const parsed = parseHexColor(current) ?? {
+        rgb: "#ffffff",
+        alpha255: 255,
+      };
       setPickerState({ index, rgb: parsed.rgb, alpha255: parsed.alpha255 });
     },
-    [colorPalette]
+    [colorPalette],
   );
 
   const applyPicker = useCallback(() => {
@@ -736,7 +751,7 @@ const FreeformChainmail2D: React.FC = () => {
 
     // ✅ store as #RRGGBB so RingRenderer/Three always understands it
     const normalized = normalizeColor6(
-      toHex8(pickerState.rgb, pickerState.alpha255)
+      toHex8(pickerState.rgb, pickerState.alpha255),
     );
     next[pickerState.index] = normalized;
 
@@ -750,6 +765,10 @@ const FreeformChainmail2D: React.FC = () => {
   }, [activeColor]);
 
   const [eraseMode, setEraseMode] = useState(false);
+  const eraseModeRef = useRef(false);
+  useEffect(() => {
+    eraseModeRef.current = eraseMode;
+  }, [eraseMode]);
   const [showControls, setShowControls] = useState(false);
   const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
 
@@ -758,14 +777,14 @@ const FreeformChainmail2D: React.FC = () => {
 
   // ✅ Secondary utility panel (toolbox/save-load/reset)
   const [showUtilityPanel, setShowUtilityPanel] = useState(false);
-const [showSplineTool, setShowSplineTool] = useState(false);
-const [splineResetKey, setSplineResetKey] = useState(0);
+  const [showSplineTool, setShowSplineTool] = useState(false);
+  const [splineResetKey, setSplineResetKey] = useState(0);
   // ==============================
   // 📏 Freeform Stats (dims + counts)
   // ==============================
   const [showFreeformStats, setShowFreeformStats] = useState(true);
   const [cursorPx, setCursorPx] = useState<{ x: number; y: number } | null>(
-    null
+    null,
   );
   const [liveDims, setLiveDims] = useState<FreeformDims | null>(null);
   const [lastDims, setLastDims] = useState<FreeformDims | null>(null);
@@ -789,7 +808,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
 
   // authoritative selected ring keys: `${row}-${col}`
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
-    () => new Set()
+    () => new Set(),
   );
 
   // Optional: show a lightweight selection stats line (kept inside diag log)
@@ -807,7 +826,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
 
   // Keys used when user chooses "selection" scope for overlay transfer
   const [overlayMaskKeys, setOverlayMaskKeys] = useState<Set<string>>(
-    () => new Set()
+    () => new Set(),
   );
 
   // When true: next selection drag defines overlayMaskKeys instead of painting/erasing
@@ -824,7 +843,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
 
   const aspectRatio = useMemo(
     () => (wireMm > 0 ? innerIDmm / wireMm : 0),
-    [innerIDmm, wireMm]
+    [innerIDmm, wireMm],
   );
 
   // ====================================================
@@ -844,7 +863,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
       spacingY: centerSpacing * 0.866,
       wireD: wireMm,
     }),
-    [centerSpacing, wireMm]
+    [centerSpacing, wireMm],
   );
 
   // ====================================================
@@ -896,7 +915,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
       const y = row * spacingY;
       return { x, y };
     },
-    [centerSpacing, spacingY]
+    [centerSpacing, spacingY],
   );
 
   // ✅ Debug markers stored in LOGICAL coords
@@ -912,8 +931,8 @@ const [splineResetKey, setSplineResetKey] = useState(0);
   // DYNAMIC GRID EXTENTS (unbounded freeform)
   // IMPORTANT: must be INSIDE component (needs rings)
   // ====================================================
-  const { maxRowSpan, maxColSpan, minRow, minCol, maxRow, maxCol } = useMemo(
-    () => {
+  const { maxRowSpan, maxColSpan, minRow, minCol, maxRow, maxCol } =
+    useMemo(() => {
       if (!rings.size) {
         return {
           maxRowSpan: 128,
@@ -948,9 +967,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
         maxRow: _maxRow,
         maxCol: _maxCol,
       };
-    },
-    [rings]
-  );
+    }, [rings]);
 
   // ====================================================
   // FLOATING ORIGIN (prevents huge world coords => seam/clipping/precision loss)
@@ -973,29 +990,58 @@ const [splineResetKey, setSplineResetKey] = useState(0);
   // 🖼️ APPLY IMAGE OVERLAY → Freeform rings (ALL or SELECTION)
   // ✅ Renamed to avoid: "Identifier 'applyOverlayToFreeform' has already been declared"
   // ====================================================
+
+  // ====================================================
+  // 🖼️ Image transfer (Rings + Scales)
+  //
+  // Transfers the currently loaded overlay image onto:
+  // - Rings (when activeLayer === "rings")
+  // - Scales (when activeLayer === "scales")
+  //
+  // Current behavior preserved:
+  // - Only recolors existing rings/scales (does not create new cells)
+  // - Respects overlayScope:
+  //    - "all": recolor all existing cells
+  //    - "selection": recolor only overlayMaskKeys (keys are "row-col")
+  // - Respects overlay transform (offset / scale / opacity / crop / tiling)
+  // - Sampling is performed in WORLD space using logicalToWorld(), so it stays
+  //   aligned under floating-origin recentering.
+  // ====================================================
   const transferOverlayToRings = useCallback(async () => {
-    const targetKeys = overlayScope === "selection" ? overlayMaskKeys : null;
-
     if (!overlay) return;
-    if (!rings.size) return;
 
-    // If user chose "selection" but didn't pick anything yet
+    const targetKeys = overlayScope === "selection" ? overlayMaskKeys : null;
     if (targetKeys && targetKeys.size === 0) return;
 
     const src =
-      (overlay as any)?.dataUrl ??
-      (overlay as any)?.src ??
-      (overlay as any)?.url ??
-      (overlay as any)?.imageUrl ??
+      (overlay as any)?.dataUrl ||
+      (overlay as any)?.src ||
+      (overlay as any)?.url ||
+      (overlay as any)?.imageUrl ||
       null;
+
     if (!src) return;
+
+    // Inline renderer world transform (floating origin + Y flip).
+    // We avoid referencing logicalToWorld here because it may be declared later in this file.
+    const logicalToWorldLocal = (lx: number, ly: number) => {
+      const ox = logicalOrigin.ox;
+      const oy = logicalOrigin.oy;
+      return { wx: lx - ox, wy: -(ly - oy) };
+    };
+
+    const isScales = activeLayer === "scales";
+
+    // Current behavior: recolor only existing cells.
+    if (!isScales && rings.size === 0) return;
+    if (isScales && scaleColorsRef.current.size === 0) return;
 
     const offsetX = Number((overlay as any)?.offsetX ?? 0);
     const offsetY = Number((overlay as any)?.offsetY ?? 0);
     const scale = Math.max(1e-6, Number((overlay as any)?.scale ?? 1));
     const opacity = Math.max(
       0,
-      Math.min(1, Number((overlay as any)?.opacity ?? 1))
+      Math.min(1, Number((overlay as any)?.opacity ?? 1)),
     );
 
     const tileAny =
@@ -1007,10 +1053,14 @@ const [splineResetKey, setSplineResetKey] = useState(0);
         .toLowerCase()
         .includes("repeat");
 
-    const tileX = (overlay as any)?.tileX ?? (overlay as any)?.repeatX ?? tileAny;
-    const tileY = (overlay as any)?.tileY ?? (overlay as any)?.repeatY ?? tileAny;
+    const tileX = Boolean(
+      (overlay as any)?.tileX ?? (overlay as any)?.repeatX ?? tileAny,
+    );
+    const tileY = Boolean(
+      (overlay as any)?.tileY ?? (overlay as any)?.repeatY ?? tileAny,
+    );
 
-    // Crop (optional) in normalized UV
+    // Crop support (u/v are normalized [0..1])
     const u0 = Number.isFinite((overlay as any)?.cropU0)
       ? (overlay as any).cropU0
       : (overlay as any)?.crop?.u0;
@@ -1038,7 +1088,6 @@ const [splineResetKey, setSplineResetKey] = useState(0);
 
     const wrap01 = (t: number) => ((t % 1) + 1) % 1;
 
-    // Load image
     const img: HTMLImageElement = await new Promise((resolve, reject) => {
       const im = new Image();
       im.crossOrigin = "anonymous";
@@ -1051,60 +1100,79 @@ const [splineResetKey, setSplineResetKey] = useState(0);
     cvs.width = img.naturalWidth || img.width;
     cvs.height = img.naturalHeight || img.height;
 
-    const ctx = cvs.getContext(
-      "2d",
-      { willReadFrequently: true } as CanvasRenderingContext2DSettings
-    );
-    if (!ctx) return;
+    const ictx = cvs.getContext("2d", {
+      willReadFrequently: true,
+    } as CanvasRenderingContext2DSettings);
+    if (!ictx) return;
 
-    ctx.clearRect(0, 0, cvs.width, cvs.height);
-    ctx.drawImage(img, 0, 0);
+    ictx.clearRect(0, 0, cvs.width, cvs.height);
+    ictx.drawImage(img, 0, 0);
 
-    const imgData = ctx.getImageData(0, 0, cvs.width, cvs.height);
+    const imgData = ictx.getImageData(0, 0, cvs.width, cvs.height);
     const data = imgData.data;
 
     const W = cvs.width;
     const H = cvs.height;
 
-    // Compute world bounds, but ONLY for target keys if in selection mode
+    // ---------------------------
+    // Compute WORLD bounds of the target cells (rings or scales)
+    // ---------------------------
     let minX = Infinity,
       maxX = -Infinity,
       minY = Infinity,
       maxY = -Infinity;
 
-    rings.forEach((r, key) => {
-      if (targetKeys && !targetKeys.has(key)) return;
+    if (!isScales) {
+      rings.forEach((r, key) => {
+        if (targetKeys && !targetKeys.has(key)) return;
 
-      const { x: lx, y: ly } = rcToLogical(r.row, r.col);
-      const shiftedX = lx - logicalOrigin.ox;
-      const shiftedY = ly - logicalOrigin.oy;
+        const { x: lx, y: ly } = rcToLogical(r.row, r.col);
+        const { wx, wy } = logicalToWorldLocal(lx, ly);
 
-      const wx = shiftedX;
-      const wy = -shiftedY;
+        minX = Math.min(minX, wx);
+        maxX = Math.max(maxX, wx);
+        minY = Math.min(minY, wy);
+        maxY = Math.max(maxY, wy);
+      });
+    } else {
+      for (const [k] of scaleColorsRef.current.entries()) {
+        const [rowStr, colStr] = k.split(",");
+        const row = Number(rowStr);
+        const col = Number(colStr);
+        if (!Number.isFinite(row) || !Number.isFinite(col)) continue;
 
-      minX = Math.min(minX, wx);
-      maxX = Math.max(maxX, wx);
-      minY = Math.min(minY, wy);
-      maxY = Math.max(maxY, wy);
-    });
+        const dashKey = `${row}-${col}`; // selection masking keys are dash-form
+        if (targetKeys && !targetKeys.has(dashKey)) continue;
+
+        const { x: lx, y: ly } = rcToLogical(row, col);
+        const { wx, wy } = logicalToWorldLocal(lx, ly);
+
+        minX = Math.min(minX, wx);
+        maxX = Math.max(maxX, wx);
+        minY = Math.min(minY, wy);
+        maxY = Math.max(maxY, wy);
+      }
+    }
 
     if (!Number.isFinite(minX)) return;
 
     const worldW = Math.max(1e-6, maxX - minX);
     const worldH = Math.max(1e-6, maxY - minY);
 
+    // Center of bounds, then apply overlay offset
     const cx = (minX + maxX) * 0.5 + offsetX;
     const cy = (minY + maxY) * 0.5 + offsetY;
 
     const invScale = 1 / scale;
 
-    // Base blend color = white
+    // Base blend against white (matches previous behavior)
     const baseHex = "#ffffff";
     const baseR = parseInt(baseHex.slice(1, 3), 16);
     const baseG = parseInt(baseHex.slice(3, 5), 16);
     const baseB = parseInt(baseHex.slice(5, 7), 16);
 
     const sampleAtWorld = (wx: number, wy: number): string | null => {
+      // Map world point into normalized [0..1] in overlay frame
       let nx = ((wx - cx) / worldW) * invScale + 0.5;
       let ny = ((wy - cy) / worldH) * invScale + 0.5;
 
@@ -1114,6 +1182,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
       if (!tileX && (nx < 0 || nx > 1)) return null;
       if (!tileY && (ny < 0 || ny > 1)) return null;
 
+      // Apply crop window
       let u = cu0 + nx * cropW;
       let v = cv0 + ny * cropH;
 
@@ -1143,32 +1212,66 @@ const [splineResetKey, setSplineResetKey] = useState(0);
       return `#${hex2(outR)}${hex2(outG)}${hex2(outB)}`;
     };
 
-    const next: RingMap = new Map(rings);
+    if (!isScales) {
+      // ---------------------------
+      // Apply to rings
+      // ---------------------------
+      const next: RingMap = new Map(rings);
 
-    // ✅ avoid in-place mutation for React state sanity
-    next.forEach((r, key) => {
-      if (targetKeys && !targetKeys.has(key)) return;
+      next.forEach((r, key) => {
+        if (targetKeys && !targetKeys.has(key)) return;
 
-      const { x: lx, y: ly } = rcToLogical(r.row, r.col);
-      const shiftedX = lx - logicalOrigin.ox;
-      const shiftedY = ly - logicalOrigin.oy;
+        const { x: lx, y: ly } = rcToLogical(r.row, r.col);
+        const { wx, wy } = logicalToWorldLocal(lx, ly);
 
-      const wx = shiftedX;
-      const wy = -shiftedY;
+        const sampled = sampleAtWorld(wx, wy);
+        if (!sampled) return;
 
-      const sampled = sampleAtWorld(wx, wy);
-      if (!sampled) return;
+        next.set(key, {
+          ...(r as any),
+          color: normalizeColor6(sampled),
+        } as PlacedRing);
+      });
 
-      const updated = {
-        ...(r as any),
-        color: normalizeColor6(sampled),
-      } as PlacedRing;
+      setRings(next);
+      return;
+    }
 
-      next.set(key, updated);
+    // ---------------------------
+    // Apply to scales (recolor existing only)
+    // ---------------------------
+    setScaleColors((prev) => {
+      const next = new Map(prev);
+
+      for (const [k] of prev.entries()) {
+        const [rowStr, colStr] = k.split(",");
+        const row = Number(rowStr);
+        const col = Number(colStr);
+        if (!Number.isFinite(row) || !Number.isFinite(col)) continue;
+
+        const dashKey = `${row}-${col}`;
+        if (targetKeys && !targetKeys.has(dashKey)) continue;
+
+        const { x: lx, y: ly } = rcToLogical(row, col);
+        const { wx, wy } = logicalToWorldLocal(lx, ly);
+
+        const sampled = sampleAtWorld(wx, wy);
+        if (!sampled) continue;
+
+        next.set(k, normalizeColor6(sampled));
+      }
+
+      return next;
     });
-
-    setRings(next);
-  }, [overlay, rings, rcToLogical, logicalOrigin, overlayScope, overlayMaskKeys]);
+  }, [
+    overlay,
+    overlayScope,
+    overlayMaskKeys,
+    activeLayer,
+    rings,
+    rcToLogical,
+    logicalOrigin,
+  ]);
 
   useEffect(() => {
     overlayImgRef.current = null;
@@ -1221,7 +1324,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
 
       return { row, col };
     },
-    [centerSpacing, spacingY]
+    [centerSpacing, spacingY],
   );
 
   const computeDimsFromSelection = useCallback(
@@ -1267,7 +1370,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
         heightRings: hRings,
       };
     },
-    [centerSpacing, logicalToRowColApprox]
+    [centerSpacing, logicalToRowColApprox],
   );
 
   const computeSelectionKeys = useCallback(
@@ -1285,7 +1388,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
       for (const cell of cells) next.add(`${cell.row}-${cell.col}`);
       return next;
     },
-    [logicalToRowColApprox, rcToLogical]
+    [logicalToRowColApprox, rcToLogical],
   );
 
   // ====================================================
@@ -1352,7 +1455,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
         rect,
       };
     },
-    [getViewRect]
+    [getViewRect],
   );
 
   // ====================================================
@@ -1366,7 +1469,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
       const oy = logicalOrigin.oy;
       return { wx: lx - ox, wy: -(ly - oy) };
     },
-    [logicalOrigin]
+    [logicalOrigin],
   );
 
   const worldToLogical = useCallback(
@@ -1375,7 +1478,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
       const oy = logicalOrigin.oy;
       return { lx: wx + ox, ly: -wy + oy };
     },
-    [logicalOrigin]
+    [logicalOrigin],
   );
 
   const worldToScreen = useCallback(
@@ -1395,7 +1498,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
         sy: (-v.y + 1) * 0.5 * H,
       };
     },
-    [getRendererCamera, getViewRect]
+    [getRendererCamera, getViewRect],
   );
 
   const screenToWorld = useCallback(
@@ -1426,7 +1529,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
 
       return { wx, wy, lx, ly };
     },
-    [getRendererCamera, getViewRect, worldToLogical]
+    [getRendererCamera, getViewRect, worldToLogical],
   );
 
   const projectRingRadiusPx = useCallback(
@@ -1439,7 +1542,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
 
       return Math.abs(sx2 - sx1);
     },
-    [logicalToWorld, worldToScreen]
+    [logicalToWorld, worldToScreen],
   );
 
   const eventToScreen = useCallback(
@@ -1452,7 +1555,7 @@ const [splineResetKey, setSplineResetKey] = useState(0);
         sy: evt.clientY - rect.top,
       };
     },
-    [getViewRect]
+    [getViewRect],
   );
 
   // ====================================================
@@ -1489,45 +1592,45 @@ const [splineResetKey, setSplineResetKey] = useState(0);
       // ✅ RENDER color (calibrated) for display only
       const renderColor = applyCalibrationHex(storedColor);
 
-const key = `${r.row},${r.col}`;
-const ringKey = (row: number, col: number) => `${row},${col}`;
-rings3D.push({
- id: `${r.row},${r.col}`,                 // ✅ keep ids consistent too
-  row: r.row,
-  col: r.col,
-  x: shiftedX,
-  y: shiftedY,
-  z: 0,
-  innerDiameter: innerIDmm,
-  wireDiameter: wireMm,
-  radius: outerRadiusMm,
-  centerSpacing: centerSpacing,
-  tilt: tiltDeg,
-  tiltRad: tiltRad,
-  color: renderColor,
-});
+      const key = `${r.row},${r.col}`;
+      const ringKey = (row: number, col: number) => `${row},${col}`;
+      rings3D.push({
+        id: `${r.row},${r.col}`, // ✅ keep ids consistent too
+        row: r.row,
+        col: r.col,
+        x: shiftedX,
+        y: shiftedY,
+        z: 0,
+        innerDiameter: innerIDmm,
+        wireDiameter: wireMm,
+        radius: outerRadiusMm,
+        centerSpacing: centerSpacing,
+        tilt: tiltDeg,
+        tiltRad: tiltRad,
+        color: renderColor,
+      });
 
-paintMap.set(key, renderColor);
+      paintMap.set(key, renderColor);
 
-// ✅ Stats should reflect true chosen colors
-colorCountsStored.set(
-  storedColor,
-  (colorCountsStored.get(storedColor) ?? 0) + 1
-);
-if (wantExport) {
-  exportRings.push({
-    key,                    // ✅ now matches every other key in the app
-    x_mm: baseX,
-    y_mm: baseY,
-    innerDiameter_mm: innerIDmm,
-    wireDiameter_mm: wireMm,
-    colorHex: storedColor,
-  });
-}
+      // ✅ Stats should reflect true chosen colors
+      colorCountsStored.set(
+        storedColor,
+        (colorCountsStored.get(storedColor) ?? 0) + 1,
+      );
+      if (wantExport) {
+        exportRings.push({
+          key, // ✅ now matches every other key in the app
+          x_mm: baseX,
+          y_mm: baseY,
+          innerDiameter_mm: innerIDmm,
+          wireDiameter_mm: wireMm,
+          colorHex: storedColor,
+        });
+      }
     });
 
     const byColor = Array.from(colorCountsStored.entries()).sort(
-      (a, b) => b[1] - a[1]
+      (a, b) => b[1] - a[1],
     );
     const ringStats = {
       total: rings.size,
@@ -1582,7 +1685,7 @@ if (wantExport) {
       (fromRef as HTMLCanvasElement) ??
       (() => {
         const list = Array.from(
-          document.querySelectorAll("canvas")
+          document.querySelectorAll("canvas"),
         ) as HTMLCanvasElement[];
 
         // Prefer a WebGL canvas (Three.js)
@@ -1644,10 +1747,9 @@ if (wantExport) {
     const wrap = wrapRef.current;
     if (!canvas || !wrap) return;
 
-    const ctx = canvas.getContext(
-      "2d",
-      { willReadFrequently: true } as CanvasRenderingContext2DSettings
-    );
+    const ctx = canvas.getContext("2d", {
+      willReadFrequently: true,
+    } as CanvasRenderingContext2DSettings);
     if (!ctx) return;
 
     const rect = wrap.getBoundingClientRect();
@@ -1676,10 +1778,9 @@ if (wantExport) {
     canvas.style.width = `${rect.width}px`;
     canvas.style.height = `${rect.height}px`;
 
-    const ctx = canvas.getContext(
-      "2d",
-      { willReadFrequently: true } as CanvasRenderingContext2DSettings
-    );
+    const ctx = canvas.getContext("2d", {
+      willReadFrequently: true,
+    } as CanvasRenderingContext2DSettings);
     if (!ctx) return;
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1691,10 +1792,9 @@ if (wantExport) {
     hitCanvas.style.width = `${rect.width}px`;
     hitCanvas.style.height = `${rect.height}px`;
 
-    const hctx = hitCanvas.getContext(
-      "2d",
-      { willReadFrequently: true } as CanvasRenderingContext2DSettings
-    );
+    const hctx = hitCanvas.getContext("2d", {
+      willReadFrequently: true,
+    } as CanvasRenderingContext2DSettings);
     if (!hctx) return;
 
     hctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -1726,9 +1826,152 @@ if (wantExport) {
     (_row: number) => {
       return Math.max(0.1, innerIDmm / 2); // inner diameter → radius
     },
-    [innerIDmm]
+    [innerIDmm],
   );
+  // ====================================================
+  // SCALES DRAWING: hole + position-based stacking
+  // ====================================================
 
+  type ScaleCell = { row: number; col: number; color: string };
+
+  function parseScaleKey(key: string): { row: number; col: number } | null {
+    const m = /^(-?\d+),(-?\d+)$/.exec(key);
+    if (!m) return null;
+    return { row: Number(m[1]), col: Number(m[2]) };
+  }
+
+  /**
+   * Draws a ScaleDesigner-like scale: teardrop + top hole.
+   * Uses evenodd fill so the hole is a real cutout.
+   */
+  function drawScale(
+    ctx: CanvasRenderingContext2D,
+    sx: number,
+    sy: number,
+    w: number,
+    h: number,
+    color: string,
+  ) {
+    // NOTE:
+    // sx,sy are treated as the *HOLE / RING CENTER* for this scale cell.
+    // This makes the scale hole line up exactly with the hit-circle and ring center.
+    // The body of the scale "hangs" below the hole like ScaleDesigner.
+
+    const holeCx = sx;
+    const holeCy = sy;
+
+    // Hole radius (tuned to look like ScaleDesigner and still leave enough material)
+    const holeR = Math.max(2, Math.min(w, h) * 0.16);
+
+    // Outer teardrop body bounds (relative to the hole center)
+    const topY = holeCy - h * 0.22; // slight cap above hole
+    const midY = holeCy + h * 0.22; // belly
+    const bottomY = holeCy + h * 0.98; // point / tip
+    const leftX = holeCx - w * 0.5;
+    const rightX = holeCx + w * 0.5;
+
+    // Outer body (teardrop-ish)
+    const outer = new Path2D();
+    outer.moveTo(holeCx, topY);
+    outer.bezierCurveTo(rightX, topY + h * 0.18, rightX, midY, holeCx, bottomY);
+    outer.bezierCurveTo(leftX, midY, leftX, topY + h * 0.18, holeCx, topY);
+    outer.closePath();
+
+    // Hole (cutout) centered exactly on sx,sy
+    const hole = new Path2D();
+    hole.arc(holeCx, holeCy, holeR, 0, Math.PI * 2);
+
+    // Combine using evenodd fill rule (outer minus hole)
+    const shape = new Path2D();
+    shape.addPath(outer);
+    shape.addPath(hole);
+
+    ctx.save();
+
+    // Fill
+    ctx.globalAlpha = 0.95;
+    ctx.fillStyle = color;
+    ctx.fill(shape, "evenodd");
+
+    // Subtle shading to mimic ScaleDesigner depth
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = "#000";
+    const shade = new Path2D();
+    shade.moveTo(holeCx, holeCy + h * 0.08);
+    shade.bezierCurveTo(
+      holeCx + w * 0.3,
+      midY,
+      holeCx + w * 0.16,
+      bottomY,
+      holeCx,
+      bottomY - h * 0.12,
+    );
+    shade.bezierCurveTo(
+      holeCx - w * 0.1,
+      bottomY - h * 0.14,
+      holeCx - w * 0.06,
+      midY,
+      holeCx,
+      holeCy + h * 0.08,
+    );
+    shade.closePath();
+    ctx.fill(shade);
+
+    // Outline of the body
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = "#0b1220";
+    ctx.lineWidth = Math.max(1, w * 0.03);
+    ctx.stroke(outer);
+
+    // Hole rim (so it reads as a cutout)
+    ctx.globalAlpha = 0.8;
+    ctx.beginPath();
+    ctx.arc(holeCx, holeCy, holeR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  /**
+   * Position stack: render bottom rows first, top rows last.
+   * This avoids "time sequence" stacking (Map insertion order).
+   */
+  function sortScalesForDraw(a: ScaleCell, b: ScaleCell) {
+    if (a.row !== b.row) return b.row - a.row; // bottom -> top
+    return a.col - b.col; // left -> right
+  }
+
+  /**
+   * Replace your existing "draw all scales" block with this.
+   *
+   * You must provide:
+   * - scaleColors: Map<string,string>
+   * - scaleCellToScreen(row,col) -> { x, y } in screen coords (or logical->screen)
+   * - scaleW, scaleH in screen coords
+   */
+  function drawAllScales(args: {
+    ctx: CanvasRenderingContext2D;
+    scaleColors: Map<string, string>;
+    scaleCellToScreen: (row: number, col: number) => { x: number; y: number };
+    scaleW: number;
+    scaleH: number;
+  }) {
+    const { ctx, scaleColors, scaleCellToScreen, scaleW, scaleH } = args;
+
+    const cells: ScaleCell[] = [];
+    for (const [key, color] of scaleColors.entries()) {
+      const rc = parseScaleKey(key);
+      if (!rc) continue;
+      cells.push({ row: rc.row, col: rc.col, color });
+    }
+
+    cells.sort(sortScalesForDraw);
+
+    for (const c of cells) {
+      const p = scaleCellToScreen(c.row, c.col);
+      drawScale(ctx, p.x, p.y, scaleW, scaleH, c.color);
+    }
+  }
   // ====================================================
   // HIT CIRCLE DRAWING (WORLD SPACE → SCREEN SPACE)
   // ✅ FIX: RAF-throttle + viewport cull (keeps huge counts responsive)
@@ -1738,15 +1981,43 @@ if (wantExport) {
     const wrap = wrapRef.current;
     if (!canvas || !wrap) return;
 
-    const ctx = canvas.getContext(
-      "2d",
-      { willReadFrequently: true } as CanvasRenderingContext2DSettings
-    );
+    const ctx = canvas.getContext("2d", {
+      willReadFrequently: true,
+    } as CanvasRenderingContext2DSettings);
     if (!ctx) return;
 
     // Clear in CSS pixel space (since you setTransform(dpr,...) in resize)
     const rect = wrap.getBoundingClientRect();
     ctx.clearRect(0, 0, rect.width, rect.height);
+
+    // Scales overlay (drawn on hit canvas so it sits above WebGL rings)
+    if (scaleColorsRef.current.size) {
+      // Derive scale size from the ring diameter in pixels (stable across pan/zoom).
+      const base = rcToLogical(0, 0);
+      const baseInner = getEffectiveInnerRadiusMm(0);
+      const baseRPx =
+        projectRingRadiusPx(
+          base.x + circleOffsetX,
+          base.y + circleOffsetY,
+          baseInner,
+        ) * circleScale;
+      const circleDiameterPx = baseRPx * 2;
+
+      drawAllScales({
+        ctx,
+        scaleColors: scaleColorsRef.current,
+        scaleCellToScreen: (row, col) => {
+          const p = rcToLogical(row, col);
+          const lx = p.x + circleOffsetX;
+          const ly = p.y + circleOffsetY;
+          const { wx, wy } = logicalToWorld(lx, ly);
+          const { sx, sy } = worldToScreen(wx, wy);
+          return { x: sx, y: sy };
+        },
+        scaleW: circleDiameterPx * 1.75,
+        scaleH: circleDiameterPx * 2.15,
+      });
+    }
 
     if (hideCircles) return;
 
@@ -1815,6 +2086,7 @@ if (wantExport) {
     circleScale,
     circleOffsetX,
     circleOffsetY,
+    scaleColors,
   ]);
 
   useEffect(() => {
@@ -1824,16 +2096,14 @@ if (wantExport) {
     };
   }, []);
 
-
   const drawSelectionOverlay = useCallback(() => {
     const canvas = canvasRef.current;
     const wrap = wrapRef.current;
     if (!canvas || !wrap) return;
 
-    const ctx = canvas.getContext(
-      "2d",
-      { willReadFrequently: true } as CanvasRenderingContext2DSettings
-    );
+    const ctx = canvas.getContext("2d", {
+      willReadFrequently: true,
+    } as CanvasRenderingContext2DSettings);
     if (!ctx) return;
 
     const rect = wrap.getBoundingClientRect();
@@ -1849,7 +2119,6 @@ if (wantExport) {
     const y0 = sel.sy0;
     const x1 = sel.sx1;
     const y1 = sel.sy1;
-
 
     ctx.lineWidth = 2;
     ctx.strokeStyle = "rgba(37,99,235,0.95)";
@@ -1890,8 +2159,7 @@ if (wantExport) {
       ctx.beginPath();
       ctx.arc(cx, cy, 3, 0, Math.PI * 2);
       ctx.fill();
-    }
-else {
+    } else {
       const cx = x0;
       const cy = y0;
       const dx = x1 - x0;
@@ -1967,22 +2235,15 @@ else {
 
     ctx.font = "12px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
     ctx.fillStyle = "rgba(248,250,252,0.9)";
-    const hint = eraseMode
-      ? "🧽"
-      : overlayPickingRef.current
-        ? "🖼️"
-        : "🎨";
+    const hint = eraseMode ? "🧽" : overlayPickingRef.current ? "🖼️" : "🎨";
     ctx.fillText(`${hint} ${lastSelectionCount || ""}`, 10, rect.height - 12);
   }, [selectionMode, isSelecting, eraseMode, lastSelectionCount]);
 
- 
-   useEffect(() => {
+  useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
 
-
       overlayPickingRef.current = false;
-
 
       if (isSelecting) {
         setIsSelecting(false);
@@ -2007,7 +2268,6 @@ else {
   }, [isSelecting, selectionMode, clearInteractionCanvas]);
 
   useEffect(() => {
-
     if (selectionMode === "none" || !isSelecting) {
       clearInteractionCanvas();
       return;
@@ -2025,265 +2285,280 @@ else {
     clearInteractionCanvas,
   ]);
 
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (selectionMode !== "none" && !panMode) {
+        const { sx, sy } = getCanvasPoint(e);
+        const { lx, ly } = screenToWorld(sx, sy);
 
+        setCursorPx({ x: e.clientX, y: e.clientY });
 
-const handleMouseDown = useCallback(
-  (e: React.MouseEvent<HTMLCanvasElement>) => {
+        setIsSelecting(true);
+        const sel: SelectionDrag = {
+          sx0: sx,
+          sy0: sy,
+          sx1: sx,
+          sy1: sy,
+          lx0: lx,
+          ly0: ly,
+          lx1: lx,
+          ly1: ly,
+        };
+        selectionRef.current = sel;
 
-    if (selectionMode !== "none" && !panMode) {
+        setLiveDims(computeDimsFromSelection(sel, selectionMode));
+
+        setLastSelectionCount(0);
+        setSelectedKeys(new Set()); // clear old highlight until we finalize
+        drawSelectionOverlay();
+        return;
+      }
+
+      // ✅ Keep your existing pan gating
+      if (!panMode) return;
+
       const { sx, sy } = getCanvasPoint(e);
       const { lx, ly } = screenToWorld(sx, sy);
 
+      setIsPanning(true);
+      panStart.current = {
+        screenX: e.clientX,
+        screenY: e.clientY,
+        panX: panWorldX,
+        panY: panWorldY,
+        lx,
+        ly,
+      };
+    },
+    [
+      selectionMode,
+      panMode,
+      getCanvasPoint,
+      screenToWorld,
+      panWorldX,
+      panWorldY,
+      drawSelectionOverlay,
+      computeDimsFromSelection,
+    ],
+  );
+
+  const handleMouseMove = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      // Always track cursor for floating bubble (and to keep the state "used")
       setCursorPx({ x: e.clientX, y: e.clientY });
 
-      setIsSelecting(true);
-      const sel: SelectionDrag = {
-        sx0: sx,
-        sy0: sy,
-        sx1: sx,
-        sy1: sy,
-        lx0: lx,
-        ly0: ly,
-        lx1: lx,
-        ly1: ly,
-      };
-      selectionRef.current = sel;
+      // Touch/Pointer parity helper (keeps eventToScreen used and ready for diagnostics)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const _maybeScreen = eventToScreen(
+        e.nativeEvent as unknown as MouseEvent,
+      );
 
-      setLiveDims(computeDimsFromSelection(sel, selectionMode));
+      // Selection drag
+      // ✅ Works even if eraseMode is ON (no gating needed)
+      if (isSelecting && selectionMode !== "none" && selectionRef.current) {
+        e.preventDefault();
 
-      setLastSelectionCount(0);
-      setSelectedKeys(new Set()); // clear old highlight until we finalize
-      drawSelectionOverlay();
-      return;
-    }
+        const { sx, sy } = getCanvasPoint(e);
+        const { lx, ly } = screenToWorld(sx, sy);
 
-    // ✅ Keep your existing pan gating
-    if (!panMode) return;
+        // 1) Update selection ref FIRST
+        selectionRef.current.sx1 = sx;
+        selectionRef.current.sy1 = sy;
+        selectionRef.current.lx1 = lx;
+        selectionRef.current.ly1 = ly;
 
-    const { sx, sy } = getCanvasPoint(e);
-    const { lx, ly } = screenToWorld(sx, sy);
+        // 2) Then compute live dims from the updated selection
+        setLiveDims(
+          computeDimsFromSelection(selectionRef.current, selectionMode),
+        );
 
-    setIsPanning(true);
-    panStart.current = {
-      screenX: e.clientX,
-      screenY: e.clientY,
-      panX: panWorldX,
-      panY: panWorldY,
-      lx,
-      ly,
-    };
-  },
-  [
-    selectionMode,
-    panMode,
-    getCanvasPoint,
-    screenToWorld,
-    panWorldX,
-    panWorldY,
-    drawSelectionOverlay,
-    computeDimsFromSelection,
-  ]
-);
+        // update selection count estimate cheaply (bounds-based)
+        const sel = selectionRef.current;
+        const cells = new Set<string>();
 
-const handleMouseMove = useCallback(
-  (e: React.MouseEvent<HTMLCanvasElement>) => {
-    // Always track cursor for floating bubble (and to keep the state "used")
-    setCursorPx({ x: e.clientX, y: e.clientY });
+        const minLX = Math.min(sel.lx0, sel.lx1);
+        const maxLX = Math.max(sel.lx0, sel.lx1);
+        const minLY = Math.min(sel.ly0, sel.ly1);
+        const maxLY = Math.max(sel.ly0, sel.ly1);
 
-    // Touch/Pointer parity helper (keeps eventToScreen used and ready for diagnostics)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const _maybeScreen = eventToScreen(e.nativeEvent as unknown as MouseEvent);
+        // Convert bounding box to row/col range
+        const a = logicalToRowColApprox(minLX, minLY);
+        const b = logicalToRowColApprox(maxLX, maxLY);
+        const minRowC = Math.min(a.row, b.row) - 2;
+        const maxRowC = Math.max(a.row, b.row) + 2;
+        const minColC = Math.min(a.col, b.col) - 2;
+        const maxColC = Math.max(a.col, b.col) + 2;
 
-    // Selection drag
-    // ✅ Works even if eraseMode is ON (no gating needed)
-    if (isSelecting && selectionMode !== "none" && selectionRef.current) {
+        if (selectionMode === "square") {
+          for (let r = minRowC; r <= maxRowC; r++) {
+            for (let c = minColC; c <= maxColC; c++) {
+              const p = rcToLogical(r, c);
+              if (
+                p.x >= minLX &&
+                p.x <= maxLX &&
+                p.y >= minLY &&
+                p.y <= maxLY
+              ) {
+                cells.add(`${r}-${c}`);
+              }
+            }
+          }
+        } else if (selectionMode === "circle") {
+          const cx = sel.lx0;
+          const cy = sel.ly0;
+          const dx2 = sel.lx1 - sel.lx0;
+          const dy2 = sel.ly1 - sel.ly0;
+          const rr = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+
+          for (let r = minRowC; r <= maxRowC; r++) {
+            for (let c = minColC; c <= maxColC; c++) {
+              const p = rcToLogical(r, c);
+              const ddx = p.x - cx;
+              const ddy = p.y - cy;
+              if (ddx * ddx + ddy * ddy <= rr * rr) {
+                cells.add(`${r}-${c}`);
+              }
+            }
+          }
+        }
+
+        setLastSelectionCount(cells.size);
+
+        drawSelectionOverlay();
+        return;
+      }
+
+      // Pan drag
+      if (!panMode || !isPanning || !panStart.current) return;
+
       e.preventDefault();
 
       const { sx, sy } = getCanvasPoint(e);
       const { lx, ly } = screenToWorld(sx, sy);
 
-      // 1) Update selection ref FIRST
-      selectionRef.current.sx1 = sx;
-      selectionRef.current.sy1 = sy;
-      selectionRef.current.lx1 = lx;
-      selectionRef.current.ly1 = ly;
+      const dxLogical = panStart.current.lx - lx;
+      const dyLogical = panStart.current.ly - ly;
 
-      // 2) Then compute live dims from the updated selection
-      setLiveDims(computeDimsFromSelection(selectionRef.current, selectionMode));
+      setPanWorldX(panStart.current.panX + dxLogical);
+      setPanWorldY(panStart.current.panY + dyLogical);
+    },
+    [
+      isSelecting,
+      selectionMode,
+      panMode,
+      isPanning,
+      getCanvasPoint,
+      screenToWorld,
+      logicalToRowColApprox,
+      rcToLogical,
+      drawSelectionOverlay,
+      computeDimsFromSelection,
+      eventToScreen,
+    ],
+  );
+  // ======================================================
+  // SPLINE -> RINGS (CLOSED POLYGON FILL)
+  // Uses the SAME logic as circle/rect fill (cells + resolvePlacement)
+  // polygonScreen is in SCREEN px (from SplineSandbox)
+  // ======================================================
+  const applyClosedSplineAsRings = useCallback(
+    (polygonScreen: { x: number; y: number }[], colorHex: string) => {
+      if (!polygonScreen || polygonScreen.length < 3) return;
+      const paint = normalizeColor6(colorHex);
 
-      // update selection count estimate cheaply (bounds-based)
-      const sel = selectionRef.current;
-      const cells = new Set<string>();
+      // Convert polygon from screen -> logical (same space used by rcToLogical)
+      const poly = polygonScreen.map((p) => {
+        const w = screenToWorld(p.x, p.y);
+        return { x: w.lx, y: w.ly };
+      });
 
-      const minLX = Math.min(sel.lx0, sel.lx1);
-      const maxLX = Math.max(sel.lx0, sel.lx1);
-      const minLY = Math.min(sel.ly0, sel.ly1);
-      const maxLY = Math.max(sel.ly0, sel.ly1);
+      // BBox in logical space
+      let minX = Infinity,
+        minY = Infinity,
+        maxX = -Infinity,
+        maxY = -Infinity;
+      for (const p of poly) {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+      }
+      if (
+        !isFinite(minX) ||
+        !isFinite(minY) ||
+        !isFinite(maxX) ||
+        !isFinite(maxY)
+      )
+        return;
 
-      // Convert bounding box to row/col range
-      const a = logicalToRowColApprox(minLX, minLY);
-      const b = logicalToRowColApprox(maxLX, maxLY);
-      const minRowC = Math.min(a.row, b.row) - 2;
-      const maxRowC = Math.max(a.row, b.row) + 2;
-      const minColC = Math.min(a.col, b.col) - 2;
-      const maxColC = Math.max(a.col, b.col) + 2;
+      // Tight row/col bounds (like circle/rect)
+      const a = logicalToRowColApprox(minX, minY);
+      const b = logicalToRowColApprox(maxX, maxY);
 
-      if (selectionMode === "square") {
-        for (let r = minRowC; r <= maxRowC; r++) {
-          for (let c = minColC; c <= maxColC; c++) {
-            const p = rcToLogical(r, c);
-            if (p.x >= minLX && p.x <= maxLX && p.y >= minLY && p.y <= maxLY) {
-              cells.add(`${r}-${c}`);
-            }
-          }
-        }
-      } else if (selectionMode === "circle") {
-        const cx = sel.lx0;
-        const cy = sel.ly0;
-        const dx2 = sel.lx1 - sel.lx0;
-        const dy2 = sel.ly1 - sel.ly0;
-        const rr = Math.sqrt(dx2 * dx2 + dy2 * dy2);
+      const minRow = Math.min(a.row, b.row) - 2;
+      const maxRow = Math.max(a.row, b.row) + 2;
+      const minCol = Math.min(a.col, b.col) - 2;
+      const maxCol = Math.max(a.col, b.col) + 2;
 
-        for (let r = minRowC; r <= maxRowC; r++) {
-          for (let c = minColC; c <= maxColC; c++) {
-            const p = rcToLogical(r, c);
-            const ddx = p.x - cx;
-            const ddy = p.y - cy;
-            if (ddx * ddx + ddy * ddy <= rr * rr) {
-              cells.add(`${r}-${c}`);
-            }
-          }
+      const cells: Array<{ row: number; col: number }> = [];
+
+      for (let r = minRow; r <= maxRow; r++) {
+        for (let c = minCol; c <= maxCol; c++) {
+          const p = rcToLogical(r, c); // returns {x,y} in logical space
+          if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) continue;
+          if (!pointInPoly(p.x, p.y, poly)) continue;
+          cells.push({ row: r, col: c });
         }
       }
 
-      setLastSelectionCount(cells.size);
+      if (!cells.length) return;
 
-      drawSelectionOverlay();
-      return;
-    }
+      // Deterministic order
+      cells.sort((u, v) => u.row - v.row || u.col - v.col);
 
-    // Pan drag
-    if (!panMode || !isPanning || !panStart.current) return;
+      // Apply like circle/rect
+      const mapCopy: RingMap = new Map(rings);
+      let clusterId = nextClusterId;
 
-    e.preventDefault();
+      for (const cell of cells) {
+        const { ring, newCluster } = resolvePlacement(
+          cell.col,
+          cell.row,
+          mapCopy,
+          clusterId,
+          paint,
+          settings,
+        );
 
-    const { sx, sy } = getCanvasPoint(e);
-    const { lx, ly } = screenToWorld(sx, sy);
+        clusterId = newCluster;
 
-    const dxLogical = panStart.current.lx - lx;
-    const dyLogical = panStart.current.ly - ly;
+        // FORCE stored ring color (important for instanced renderer paths)
+        ring.color = paint;
 
-    setPanWorldX(panStart.current.panX + dxLogical);
-    setPanWorldY(panStart.current.panY + dyLogical);
-  },
-  [
-    isSelecting,
-    selectionMode,
-    panMode,
-    isPanning,
-    getCanvasPoint,
-    screenToWorld,
-    logicalToRowColApprox,
-    rcToLogical,
-    drawSelectionOverlay,
-    computeDimsFromSelection,
-    eventToScreen,
-  ]
-);
-// ======================================================
-// SPLINE -> RINGS (CLOSED POLYGON FILL)
-// Uses the SAME logic as circle/rect fill (cells + resolvePlacement)
-// polygonScreen is in SCREEN px (from SplineSandbox)
-// ======================================================
-const applyClosedSplineAsRings = useCallback(
-  (polygonScreen: { x: number; y: number }[], colorHex: string) => {
-    if (!polygonScreen || polygonScreen.length < 3) return;
-    const paint = normalizeColor6(colorHex);
-
-    // Convert polygon from screen -> logical (same space used by rcToLogical)
-    const poly = polygonScreen.map((p) => {
-      const w = screenToWorld(p.x, p.y);
-      return { x: w.lx, y: w.ly };
-    });
-
-    // BBox in logical space
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const p of poly) {
-      if (p.x < minX) minX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y > maxY) maxY = p.y;
-    }
-    if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) return;
-
-    // Tight row/col bounds (like circle/rect)
-    const a = logicalToRowColApprox(minX, minY);
-    const b = logicalToRowColApprox(maxX, maxY);
-
-    const minRow = Math.min(a.row, b.row) - 2;
-    const maxRow = Math.max(a.row, b.row) + 2;
-    const minCol = Math.min(a.col, b.col) - 2;
-    const maxCol = Math.max(a.col, b.col) + 2;
-
-    const cells: Array<{ row: number; col: number }> = [];
-
-    for (let r = minRow; r <= maxRow; r++) {
-      for (let c = minCol; c <= maxCol; c++) {
-        const p = rcToLogical(r, c); // returns {x,y} in logical space
-        if (p.x < minX || p.x > maxX || p.y < minY || p.y > maxY) continue;
-        if (!pointInPoly(p.x, p.y, poly)) continue;
-        cells.push({ row: r, col: c });
+        mapCopy.set(`${ring.row}-${ring.col}`, ring);
       }
-    }
 
-    if (!cells.length) return;
-
-    // Deterministic order
-    cells.sort((u, v) => u.row - v.row || u.col - v.col);
-
-    // Apply like circle/rect
-    const mapCopy: RingMap = new Map(rings);
-    let clusterId = nextClusterId;
-
-    for (const cell of cells) {
-      const { ring, newCluster } = resolvePlacement(
-        cell.col,
-        cell.row,
-        mapCopy,
-        clusterId,
-        paint,
-        settings
-      );
-
-      clusterId = newCluster;
-
-      // FORCE stored ring color (important for instanced renderer paths)
-      ring.color = paint;
-
-      mapCopy.set(`${ring.row}-${ring.col}`, ring);
-    }
-
-    setRings(mapCopy);
-    setnextClusterId(clusterId);
-  },
-  [
-    rings,
-    nextClusterId,
-    settings,
-    screenToWorld,
-    logicalToRowColApprox,
-    rcToLogical,
-    setRings,
-    setnextClusterId,
-  ]
-);
+      setRings(mapCopy);
+      setnextClusterId(clusterId);
+    },
+    [
+      rings,
+      nextClusterId,
+      settings,
+      screenToWorld,
+      logicalToRowColApprox,
+      rcToLogical,
+      setRings,
+      setnextClusterId,
+    ],
+  );
 
   // ====================================================
   // Bulk apply selection
   // - Adds rings in selection (or erases if eraseMode)
   // - Uses resolvePlacement per cell to preserve cluster logic
   // ====================================================
-  const applySelectionToRings = useCallback(
+  const applySelectionToActiveLayer = useCallback(
     (sel: SelectionDrag, mode: SelectionMode) => {
       if (mode === "none") return;
 
@@ -2307,6 +2582,23 @@ const applyClosedSplineAsRings = useCallback(
       // Highlight selected cells (for render feedback)
       setSelectedKeys(new Set(cells.map((c) => `${c.row}-${c.col}`)));
 
+      // Apply to scales (no cluster logic)
+      if (activeLayerRef.current === "scales") {
+        setScaleColors((prev) => {
+          const next = new Map(prev);
+          if (eraseModeRef.current) {
+            for (const cell of cells) next.delete(`${cell.row},${cell.col}`);
+          } else {
+            const col = normalizeColor6(activeColorRef.current);
+            for (const cell of cells) next.set(`${cell.row},${cell.col}`, col);
+          }
+          return next;
+        });
+        setLastSelectionCount(cells.length);
+        setSelectedKeys(new Set());
+        return;
+      }
+
       // Apply to rings
       const mapCopy: RingMap = new Map(rings);
       let clusterId = nextClusterId;
@@ -2325,7 +2617,7 @@ const applyClosedSplineAsRings = useCallback(
             mapCopy,
             clusterId,
             eraseMode ? "#000000" : normalizeColor6(activeColorRef.current),
-            settings
+            settings,
           );
 
           clusterId = newCluster;
@@ -2342,8 +2634,19 @@ const applyClosedSplineAsRings = useCallback(
       // Clear highlight after apply (overlay picking retains highlight by its own path)
       setSelectedKeys(new Set());
     },
-    [rings, nextClusterId, eraseMode, settings, logicalToRowColApprox, rcToLogical]
+    [
+      rings,
+      nextClusterId,
+      eraseMode,
+      settings,
+      logicalToRowColApprox,
+      rcToLogical,
+    ],
   );
+
+  // Back-compat alias: legacy callers still reference applySelectionToRings.
+  // Keep this so selection finalize / overlay picking code doesn't crash.
+  const applySelectionToRings = applySelectionToActiveLayer;
 
   const handleMouseUp = useCallback(() => {
     // Finish selection drag
@@ -2365,7 +2668,7 @@ const applyClosedSplineAsRings = useCallback(
           overlayPickingRef.current = false;
         } else {
           setSelectedKeys(keys);
-          applySelectionToRings(sel, selectionMode);
+          applySelectionToActiveLayer(sel, selectionMode);
         }
       } else {
         setLiveDims(null);
@@ -2408,38 +2711,37 @@ const applyClosedSplineAsRings = useCallback(
       setPanWorldX((p) => p + dx);
       setPanWorldY((p) => p + dy);
     },
-    [zoom, screenToWorld]
+    [zoom, screenToWorld],
   );
-  
-  
-// ============================================================
-// DROP-IN SECTION 1/3: Tool state + tiny helpers
-// Put near your other useState() declarations (top of component)
-// ============================================================
 
-// selectionMode remains your "shape tool" ("none" | "square" | "circle") and stays mutually exclusive.
-// eraseMode becomes an independent toggle that can be ON while selectionMode is "square" or "circle".
+  // ============================================================
+  // DROP-IN SECTION 1/3: Tool state + tiny helpers
+  // Put near your other useState() declarations (top of component)
+  // ============================================================
 
-// ✅ No emoji/UI changes required — this is behavior-only.
+  // selectionMode remains your "shape tool" ("none" | "square" | "circle") and stays mutually exclusive.
+  // eraseMode becomes an independent toggle that can be ON while selectionMode is "square" or "circle".
 
-const clearSelectionState = useCallback(() => {
-  setSelectedKeys(new Set());
-}, [setSelectedKeys]);
+  // ✅ No emoji/UI changes required — this is behavior-only.
 
-const exitSelectionMode = useCallback(() => {
-  setSelectionMode("none");
-  setIsSelecting(false);
-  selectionRef.current = null;
-  clearInteractionCanvas();
-}, [setSelectionMode, setIsSelecting, clearInteractionCanvas]);
+  const clearSelectionState = useCallback(() => {
+    setSelectedKeys(new Set());
+  }, [setSelectedKeys]);
 
-const cancelOverlayPickingIfActive = useCallback(() => {
-  if (overlayPickingRef.current) {
-    overlayPickingRef.current = false;
-    // do NOT destroy already-picked keys unless you want that.
-    // setOverlayMaskKeys(new Set()); // <-- leave commented unless desired
-  }
-}, []);
+  const exitSelectionMode = useCallback(() => {
+    setSelectionMode("none");
+    setIsSelecting(false);
+    selectionRef.current = null;
+    clearInteractionCanvas();
+  }, [setSelectionMode, setIsSelecting, clearInteractionCanvas]);
+
+  const cancelOverlayPickingIfActive = useCallback(() => {
+    if (overlayPickingRef.current) {
+      overlayPickingRef.current = false;
+      // do NOT destroy already-picked keys unless you want that.
+      // setOverlayMaskKeys(new Set()); // <-- leave commented unless desired
+    }
+  }, []);
   // ====================================================
   // ✅ FIX: remove React onWheel/onTouch* preventDefault passive warnings
   // We attach native listeners with { passive:false } to the interaction canvas.
@@ -2451,7 +2753,7 @@ const cancelOverlayPickingIfActive = useCallback(() => {
       const { sx, sy } = getCanvasPoint(e);
       zoomAroundPoint(sx, sy, factor);
     },
-    [getCanvasPoint, zoomAroundPoint]
+    [getCanvasPoint, zoomAroundPoint],
   );
 
   const handleTouchStartNative = useCallback(
@@ -2497,7 +2799,9 @@ const cancelOverlayPickingIfActive = useCallback(() => {
         drawSelectionOverlay();
         setCursorPx({ x: t.clientX, y: t.clientY });
         if (selectionRef.current) {
-          setLiveDims(computeDimsFromSelection(selectionRef.current, selectionMode));
+          setLiveDims(
+            computeDimsFromSelection(selectionRef.current, selectionMode),
+          );
         }
         return;
       }
@@ -2535,7 +2839,7 @@ const cancelOverlayPickingIfActive = useCallback(() => {
       panWorldX,
       panWorldY,
       computeDimsFromSelection,
-    ]
+    ],
   );
 
   const handleTouchMoveNative = useCallback(
@@ -2596,7 +2900,9 @@ const cancelOverlayPickingIfActive = useCallback(() => {
         selectionRef.current.lx1 = lx;
         selectionRef.current.ly1 = ly;
 
-        setLiveDims(computeDimsFromSelection(selectionRef.current, selectionMode));
+        setLiveDims(
+          computeDimsFromSelection(selectionRef.current, selectionMode),
+        );
         drawSelectionOverlay();
         return;
       }
@@ -2632,7 +2938,7 @@ const cancelOverlayPickingIfActive = useCallback(() => {
       getViewRect,
       drawSelectionOverlay,
       computeDimsFromSelection,
-    ]
+    ],
   );
 
   const handleTouchEndNative = useCallback(() => {
@@ -2657,7 +2963,7 @@ const cancelOverlayPickingIfActive = useCallback(() => {
           overlayPickingRef.current = false;
         } else {
           finalizeSelection();
-          applySelectionToRings(sel, selectionMode);
+          applySelectionToActiveLayer(sel, selectionMode);
         }
       } else {
         setLiveDims(null);
@@ -2696,7 +3002,9 @@ const cancelOverlayPickingIfActive = useCallback(() => {
     canvas.addEventListener("touchmove", handleTouchMoveNative, {
       passive: false,
     });
-    canvas.addEventListener("touchend", handleTouchEndNative, { passive: true });
+    canvas.addEventListener("touchend", handleTouchEndNative, {
+      passive: true,
+    });
     canvas.addEventListener("touchcancel", handleTouchEndNative, {
       passive: true,
     });
@@ -2738,8 +3046,19 @@ const cancelOverlayPickingIfActive = useCallback(() => {
 
       const { row: approxRow, col: approxCol } = logicalToRowColApprox(
         adjLx,
-        adjLy
+        adjLy,
       );
+
+      if (activeLayerRef.current === "scales") {
+        const key = `${approxRow},${approxCol}`;
+        setScaleColors((prev) => {
+          const next = new Map(prev);
+          if (eraseModeRef.current) next.delete(key);
+          else next.set(key, activeColorRef.current);
+          return next;
+        });
+        return;
+      }
 
       const effectiveInnerRadiusMm = getEffectiveInnerRadiusMm(approxRow);
       const baseCircleRmm = effectiveInnerRadiusMm;
@@ -2782,7 +3101,7 @@ const cancelOverlayPickingIfActive = useCallback(() => {
         rings,
         nextClusterId,
         eraseMode ? "#000000" : normalizeColor6(activeColorRef.current),
-        settings
+        settings,
       );
       const mapCopy: RingMap = new Map(rings);
 
@@ -2802,7 +3121,7 @@ const cancelOverlayPickingIfActive = useCallback(() => {
       if (showDiagnostics) {
         setDiagLog((prev) => {
           const line = `lx=${lx.toFixed(3)} ly=${ly.toFixed(
-            3
+            3,
           )} row=${bestRow} col=${bestCol}\n`;
           return (prev || "") + line;
         });
@@ -2828,25 +3147,44 @@ const cancelOverlayPickingIfActive = useCallback(() => {
       nextClusterId,
       eraseMode,
       settings,
-    ]
+    ],
   );
 
   // ===============================
   // CLEAR / GEOMETRY RESET
   // ===============================
   const handleClear = useCallback(() => {
-    if (!window.confirm("Clear all rings?")) return;
+    if (!window.confirm("Clear all rings and scales?")) return;
+
+    // ✅ Clear rings
     setRings(new Map());
     setnextClusterId(1);
-    setSelectedKeys(new Set());
-    applyHistory();
-  }, []);
 
-  const resetGeometryToDefaults = useCallback(() => {
-    setCenterSpacing(WEAVE_SETTINGS_DEFAULT.spacingX);
-    setAngleIn(25);
-    setAngleOut(-25);
-  }, []);
+    // ✅ Clear scales (state + ref cache)
+    setScaleColors(new Map());
+    scaleColorsRef.current?.clear();
+
+    // ✅ Clear selection / overlay selection
+    setSelectedKeys(new Set());
+    setOverlayMaskKeys(new Set());
+
+    // ✅ Clear any cached hit canvas pixels (prevents “stuck” scales)
+    if (hitCanvasRef.current) {
+      const c = hitCanvasRef.current;
+      const ctx = c.getContext("2d");
+      ctx?.clearRect(0, 0, c.width, c.height);
+    }
+
+    // ✅ If you have any cached interaction canvases, wipe them
+    clearInteractionCanvas?.();
+  }, [
+    setRings,
+    setnextClusterId,
+    setScaleColors,
+    setSelectedKeys,
+    setOverlayMaskKeys,
+    clearInteractionCanvas,
+  ]);
   // ===============================
   // UI RESET (tools/pan/zoom/panels/overlays/drag positions)
   // ===============================
@@ -3011,8 +3349,7 @@ const cancelOverlayPickingIfActive = useCallback(() => {
   }, [autoFollowTuner]);
 
   useEffect(() => {
-    if (activeRingSetId)
-      localStorage.setItem(ACTIVE_SET_KEY, activeRingSetId);
+    if (activeRingSetId) localStorage.setItem(ACTIVE_SET_KEY, activeRingSetId);
   }, [activeRingSetId]);
 
   // Prevent panning inside RingRenderer; we own pan/zoom here
@@ -3028,7 +3365,9 @@ const cancelOverlayPickingIfActive = useCallback(() => {
 
     // thumbnail from renderer canvas (≈480px wide)
     const cvs = getRendererCanvas();
-    let thumb: { pngDataUrl: string; width: number; height: number } | undefined;
+    let thumb:
+      | { pngDataUrl: string; width: number; height: number }
+      | undefined;
     if (cvs) {
       const targetW = 480;
       const scale = targetW / cvs.width;
@@ -3125,7 +3464,7 @@ const cancelOverlayPickingIfActive = useCallback(() => {
 
       setRings(map);
       setnextClusterId(
-        Math.max(1, ...Array.from(map.values()).map((r) => r.cluster ?? 1)) + 1
+        Math.max(1, ...Array.from(map.values()).map((r) => r.cluster ?? 1)) + 1,
       );
 
       if (data.geometry) {
@@ -3140,11 +3479,11 @@ const cancelOverlayPickingIfActive = useCallback(() => {
         setAssignment(data.paletteAssignment);
         localStorage.setItem(
           "freeform.paletteAssignment",
-          JSON.stringify(data.paletteAssignment)
+          JSON.stringify(data.paletteAssignment),
         );
       }
     },
-    [innerIDmm, wireMm, centerSpacing, angleIn, angleOut]
+    [innerIDmm, wireMm, centerSpacing, angleIn, angleOut],
   );
 
   // ====================================================
@@ -3160,9 +3499,12 @@ const cancelOverlayPickingIfActive = useCallback(() => {
         try {
           const data = JSON.parse(String(ev.target?.result || "{}"));
 
-          if (typeof data.innerDiameter === "number") setInnerIDmm(data.innerDiameter);
-          if (typeof data.wireDiameter === "number") setWireMm(data.wireDiameter);
-          if (typeof data.centerSpacing === "number") setCenterSpacing(data.centerSpacing);
+          if (typeof data.innerDiameter === "number")
+            setInnerIDmm(data.innerDiameter);
+          if (typeof data.wireDiameter === "number")
+            setWireMm(data.wireDiameter);
+          if (typeof data.centerSpacing === "number")
+            setCenterSpacing(data.centerSpacing);
           if (typeof data.angleIn === "number") setAngleIn(data.angleIn);
           if (typeof data.angleOut === "number") setAngleOut(data.angleOut);
 
@@ -3177,7 +3519,7 @@ const cancelOverlayPickingIfActive = useCallback(() => {
 
       reader.readAsText(file);
     },
-    []
+    [],
   );
 
   // ====================================================
@@ -3200,7 +3542,7 @@ const cancelOverlayPickingIfActive = useCallback(() => {
       bgColor: "#020617",
       centerSpacing,
     }),
-    [innerIDmm, wireMm, centerSpacing, maxRowSpan, maxColSpan]
+    [innerIDmm, wireMm, centerSpacing, maxRowSpan, maxColSpan],
   );
 
   // ====================================================
@@ -3220,7 +3562,6 @@ const cancelOverlayPickingIfActive = useCallback(() => {
         position: "relative",
       }}
     >
-
       <DraggablePill id="freeform-toolbar" defaultPosition={{ x: 20, y: 20 }}>
         <div
           style={{
@@ -3242,143 +3583,148 @@ const cancelOverlayPickingIfActive = useCallback(() => {
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
         >
-
-
-<ToolButton
-  active={showCompass}
-  onClick={() => setShowCompass((v) => !v)}
-  title="Navigation Menu"
->
-  🧭
-</ToolButton>
-
-<ToolButton
-  onClick={() => setFinalizeOpen(true)}
-  title="Finalize & Export (SKU mapping, numbered maps, true-size print)"
->
-  📦
-</ToolButton>
-
-<ToolButton
-  active={!toolbarCollapsed}
-  onClick={() => setToolbarCollapsed((v) => !v)}
-  title={toolbarCollapsed ? "Expand tools" : "Collapse tools"}
->
-  {toolbarCollapsed ? "▸" : "▾"}
-</ToolButton>
-
-
-<ToolButton
-  active={showUtilityPanel}
-  onClick={() => setShowUtilityPanel((v) => !v)}
-  title={showUtilityPanel ? "Hide utility panel" : "Show utility panel (toolbox, save/load, reset)"}
->
-  ⚙️
-</ToolButton>
-
-{!toolbarCollapsed && (
-            <>
-
-<ToolButton
-  active={!eraseMode && selectionMode === "none"}
-  onClick={() => {
-    setEraseMode(false);
-    setSelectionMode("none");
-    clearSelectionState();
-    cancelOverlayPickingIfActive();
-  }}
-  title="Paint rings"
->
-  🎨
-</ToolButton>
-
-
-<ToolButton
-  active={eraseMode}
-  onClick={() => {
- 
-     setEraseMode((v) => !v);
-
-
-    clearSelectionState();
-
-
-    if (isSelecting) {
-      setIsSelecting(false);
-      selectionRef.current = null;
-      clearInteractionCanvas();
-    }
-
-  }}
-  title="Erase rings"
->
-  🧽
-</ToolButton>
-
-
-<ToolButton
-  active={selectionMode !== "none"}
-  onClick={() => {
-    setShapePanelOpen((v) => !v);
-    setPanMode(false);
-    clearSelectionState();
-  }}
-  title="Shapes"
->
-  <IconSquare />
-</ToolButton>
-
-<ShapePanel
-  open={shapePanelOpen}
-  onClose={() => setShapePanelOpen(false)}
-  active={selectionMode === "none" ? "square" : selectionMode}
-  onPick={(t) => {
-    setSelectionMode((m) => (m === t ? "none" : t));
-    setPanMode(false);
-    clearSelectionState();
-
-    if (isSelecting) {
-      setIsSelecting(false);
-      selectionRef.current = null;
-      clearInteractionCanvas();
-    }
-
-    setShapePanelOpen(false);
-  }}
-/>
-
-<ToolButton
-  active={panMode}
-  onClick={() => {
-    setPanMode((v) => !v);
-    setSelectionMode("none");
-    clearSelectionState();
-
-
-    if (isSelecting) {
-      setIsSelecting(false);
-      selectionRef.current = null;
-      clearInteractionCanvas();
-    }
-  }}
-  title="Pan / Drag view"
->
-  ✋
-</ToolButton>
-{/* Image Overlay */}
           <ToolButton
-            active={showImageOverlay}
-            onClick={() => setShowImageOverlay((v) => !v)}
-            title="Image overlay (apply to rings)"
+            active={showCompass}
+            onClick={() => setShowCompass((v) => !v)}
+            title="Navigation Menu"
           >
-            🖼️
+            🧭
           </ToolButton>
 
-          {/* Clear */}
-          <ToolButton onClick={handleClear} title="Clear all">
-            🧹
+          <ToolButton
+            onClick={() => setFinalizeOpen(true)}
+            title="Finalize & Export (SKU mapping, numbered maps, true-size print)"
+          >
+            📦
           </ToolButton>
-</>
+
+          <ToolButton
+            active={!toolbarCollapsed}
+            onClick={() => setToolbarCollapsed((v) => !v)}
+            title={toolbarCollapsed ? "Expand tools" : "Collapse tools"}
+          >
+            {toolbarCollapsed ? "▸" : "▾"}
+          </ToolButton>
+
+          <ToolButton
+            active={showUtilityPanel}
+            onClick={() => setShowUtilityPanel((v) => !v)}
+            title={
+              showUtilityPanel
+                ? "Hide utility panel"
+                : "Show utility panel (toolbox, save/load, reset)"
+            }
+          >
+            ⚙️
+          </ToolButton>
+
+          {!toolbarCollapsed && (
+            <>
+              <ToolButton
+                active={!eraseMode && selectionMode === "none"}
+                onClick={() => {
+                  setEraseMode(false);
+                  setSelectionMode("none");
+                  clearSelectionState();
+                  cancelOverlayPickingIfActive();
+                }}
+                title="Paint rings"
+              >
+                🎨
+              </ToolButton>
+
+              <ToolButton
+                active={eraseMode}
+                onClick={() => {
+                  setEraseMode((v) => !v);
+
+                  clearSelectionState();
+
+                  if (isSelecting) {
+                    setIsSelecting(false);
+                    selectionRef.current = null;
+                    clearInteractionCanvas();
+                  }
+                }}
+                title="Erase rings"
+              >
+                🧽
+              </ToolButton>
+
+              <ToolButton
+                active={selectionMode !== "none"}
+                onClick={() => {
+                  setShapePanelOpen((v) => !v);
+                  setPanMode(false);
+                  clearSelectionState();
+                }}
+                title="Shapes"
+              >
+                <IconSquare />
+              </ToolButton>
+
+              <ToolButton
+                active={activeLayer === "scales"}
+                onClick={() => {
+                  setActiveLayer((p) => (p === "rings" ? "scales" : "rings"));
+                  setPanMode(false);
+                  clearSelectionState();
+                }}
+                title="Toggle Rings/Scales"
+              >
+                {activeLayer === "rings" ? "R" : "S"}
+              </ToolButton>
+
+              <ShapePanel
+                open={shapePanelOpen}
+                onClose={() => setShapePanelOpen(false)}
+                active={selectionMode === "none" ? "square" : selectionMode}
+                onPick={(t) => {
+                  setSelectionMode((m) => (m === t ? "none" : t));
+                  setPanMode(false);
+                  clearSelectionState();
+
+                  if (isSelecting) {
+                    setIsSelecting(false);
+                    selectionRef.current = null;
+                    clearInteractionCanvas();
+                  }
+
+                  setShapePanelOpen(false);
+                }}
+              />
+
+              <ToolButton
+                active={panMode}
+                onClick={() => {
+                  setPanMode((v) => !v);
+                  setSelectionMode("none");
+                  clearSelectionState();
+
+                  if (isSelecting) {
+                    setIsSelecting(false);
+                    selectionRef.current = null;
+                    clearInteractionCanvas();
+                  }
+                }}
+                title="Pan / Drag view"
+              >
+                ✋
+              </ToolButton>
+              {/* Image Overlay */}
+              <ToolButton
+                active={showImageOverlay}
+                onClick={() => setShowImageOverlay((v) => !v)}
+                title="Image overlay (apply to rings)"
+              >
+                🖼️
+              </ToolButton>
+
+              {/* Clear */}
+              <ToolButton onClick={handleClear} title="Clear all">
+                🧹
+              </ToolButton>
+            </>
           )}
         </div>
       </DraggablePill>
@@ -3387,7 +3733,10 @@ const cancelOverlayPickingIfActive = useCallback(() => {
       {/* ✅ SECONDARY UTILITY PANEL (toolbox + save/load + reset) */}
       {/* ============================= */}
       {showUtilityPanel && (
-        <DraggablePill id="freeform-utility" defaultPosition={{ x: 110, y: 20 }}>
+        <DraggablePill
+          id="freeform-utility"
+          defaultPosition={{ x: 110, y: 20 }}
+        >
           <div
             style={{
               display: "flex",
@@ -3419,14 +3768,16 @@ const cancelOverlayPickingIfActive = useCallback(() => {
             <ProjectSaveLoadButtons
               onSave={saveFreeformProject}
               onLoad={(json) => {
-                if (!window.confirm("Load project and replace current work?")) return;
+                if (!window.confirm("Load project and replace current work?"))
+                  return;
                 loadFreeformProject(json);
               }}
             />
 
             <ToolButton
               onClick={() => {
-                if (!window.confirm("Reset UI layout and view settings?")) return;
+                if (!window.confirm("Reset UI layout and view settings?"))
+                  return;
                 resetUI();
               }}
               title="Reset UI (layout + view + tool states)"
@@ -3434,20 +3785,26 @@ const cancelOverlayPickingIfActive = useCallback(() => {
               ♻️
             </ToolButton>
             <button
-  onClick={() => setShowFreeformStats((v) => !v)}
-  title={showFreeformStats ? "Hide Freeform Stats" : "Show Freeform Stats"}
-  style={{
-    width: 44,              // match your toolbox button size if different
-    height: 44,
-    borderRadius: 14,
-    border: "1px solid rgba(255,255,255,0.10)",
-    background: showFreeformStats ? "rgba(59,130,246,0.25)" : "rgba(255,255,255,0.06)",
-    color: "#e5e7eb",
-    cursor: "pointer",
-  }}
->
-  ✨
-</button>
+              onClick={() => setShowFreeformStats((v) => !v)}
+              title={
+                showFreeformStats
+                  ? "Hide Freeform Stats"
+                  : "Show Freeform Stats"
+              }
+              style={{
+                width: 44, // match your toolbox button size if different
+                height: 44,
+                borderRadius: 14,
+                border: "1px solid rgba(255,255,255,0.10)",
+                background: showFreeformStats
+                  ? "rgba(59,130,246,0.25)"
+                  : "rgba(255,255,255,0.06)",
+                color: "#e5e7eb",
+                cursor: "pointer",
+              }}
+            >
+              ✨
+            </button>
           </div>
         </DraggablePill>
       )}
@@ -3545,7 +3902,6 @@ const cancelOverlayPickingIfActive = useCallback(() => {
             >
               S
             </button>
- 
           </div>
 
           {paletteManagerOpen && (
@@ -3642,7 +3998,9 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                 </button>
               </div>
 
-              <div style={{ height: 1, background: "rgba(255,255,255,0.08)" }} />
+              <div
+                style={{ height: 1, background: "rgba(255,255,255,0.08)" }}
+              />
 
               <label
                 style={{
@@ -3730,7 +4088,7 @@ const cancelOverlayPickingIfActive = useCallback(() => {
           onApply={applyPicker}
         />
       )}
-{/* ==============================
+      {/* ==============================
     📏 Floating Stats Panel (Freeform)
    ============================== */}
 
@@ -3757,289 +4115,323 @@ const cancelOverlayPickingIfActive = useCallback(() => {
       )}
 
       {showFreeformStats && (
-  <DraggablePill
-    id="freeform-stats"
-    defaultPosition={{
-      x:
-        (typeof window !== "undefined" ? window.innerWidth : 1200) - 360,
-      y:
-        (typeof window !== "undefined" ? window.innerHeight : 900) - 320,
-    }}
-  >
-    <div
-      style={{
-        minWidth: 260,
-        maxWidth: 340,
-        background: "rgba(17,24,39,0.97)",
-        border: "1px solid rgba(0,0,0,.6)",
-        borderRadius: 14,
-        padding: 12,
-        color: "#e5e7eb",
-        fontSize: 13,
-        boxShadow: "0 12px 40px rgba(0,0,0,.45)",
-      }}
-      onMouseDown={(e) => e.stopPropagation()}
-      onTouchStart={(e) => e.stopPropagation()}
-    >
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 8,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-
-  <strong style={{ fontSize: 14 }}>📏 Freeform Stats</strong>
-</div>
-        <button
-          onClick={() => setShowFreeformStats(false)}
-          style={{
-            background: "none",
-            border: "none",
-            color: "#9ca3af",
-            cursor: "pointer",
-            fontSize: 16,
+        <DraggablePill
+          id="freeform-stats"
+          defaultPosition={{
+            x: (typeof window !== "undefined" ? window.innerWidth : 1200) - 360,
+            y: (typeof window !== "undefined" ? window.innerHeight : 900) - 320,
           }}
-          title="Close"
         >
-          ✕
-        </button>
-      </div>
-
-      {/* Cursor */}
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ color: "#9ca3af" }}>Cursor (px)</span>
-          <span
+          <div
             style={{
-              fontFamily:
-                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+              minWidth: 260,
+              maxWidth: 340,
+              background: "rgba(17,24,39,0.97)",
+              border: "1px solid rgba(0,0,0,.6)",
+              borderRadius: 14,
+              padding: 12,
+              color: "#e5e7eb",
+              fontSize: 13,
+              boxShadow: "0 12px 40px rgba(0,0,0,.45)",
             }}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
           >
-            {cursorPx ? `${Math.round(cursorPx.x)}, ${Math.round(cursorPx.y)}` : "—"}
-          </span>
-        </div>
-      </div>
-
-      {/* Ring + geometry summary */}
-      <div style={{ marginBottom: 10, display: "grid", gap: 6 }}>
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ color: "#9ca3af" }}>Rings</span>
-          <span style={{ fontWeight: 800 }}>{ringStats?.total ?? 0}</span>
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ color: "#9ca3af" }}>Colors used</span>
-          <span style={{ fontWeight: 800 }}>{ringStats?.uniqueColors ?? 0}</span>
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ color: "#9ca3af" }}>Inner ID</span>
-          <span
-            style={{
-              fontFamily:
-                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-            }}
-          >
-            {typeof innerIDmm === "number" ? `${formatNum(innerIDmm, 2)} mm` : "—"}
-          </span>
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ color: "#9ca3af" }}>Wire</span>
-          <span
-            style={{
-              fontFamily:
-                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-            }}
-          >
-            {typeof wireMm === "number" ? `${formatNum(wireMm, 2)} mm` : "—"}
-          </span>
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "space-between" }}>
-          <span style={{ color: "#9ca3af" }}>Center spacing</span>
-          <span
-            style={{
-              fontFamily:
-                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-            }}
-          >
-            {typeof centerSpacing === "number"
-              ? `${formatNum(centerSpacing, 2)} mm`
-              : "—"}
-          </span>
-        </div>
-      </div>
-
-      {/* Dimensions */}
-      <div style={{ marginBottom: 10 }}>
-        <div style={{ fontWeight: 800, marginBottom: 6 }}>Design bounds</div>
-
-        {!dimsNow ? (
-          <div style={{ color: "#9ca3af" }}>—</div>
-        ) : dimsNow.kind === "square" ? (
-          <div style={{ display: "grid", gap: 6 }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "#9ca3af" }}>Width</span>
-              <span
+            {/* Header */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <strong style={{ fontSize: 14 }}>📏 Freeform Stats</strong>
+              </div>
+              <button
+                onClick={() => setShowFreeformStats(false)}
                 style={{
-                  fontFamily:
-                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                  background: "none",
+                  border: "none",
+                  color: "#9ca3af",
+                  cursor: "pointer",
+                  fontSize: 16,
                 }}
+                title="Close"
               >
-                {`${formatNum(dimsNow.widthMm, 1)} mm`}
-              </span>
+                ✕
+              </button>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "#9ca3af" }}>Height</span>
-              <span
-                style={{
-                  fontFamily:
-                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                }}
-              >
-                {`${formatNum(dimsNow.heightMm, 1)} mm`}
-              </span>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "#9ca3af" }}>Width (rings)</span>
-              <span
-                style={{
-                  fontFamily:
-                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                }}
-              >
-                {dimsNow.widthRings}
-              </span>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "#9ca3af" }}>Height (rings)</span>
-              <span
-                style={{
-                  fontFamily:
-                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                }}
-              >
-                {dimsNow.heightRings}
-              </span>
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: "grid", gap: 6 }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "#9ca3af" }}>Radius</span>
-              <span
-                style={{
-                  fontFamily:
-                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                }}
-              >
-                {`${formatNum(dimsNow.radiusMm, 1)} mm`}
-              </span>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "#9ca3af" }}>Diameter</span>
-              <span
-                style={{
-                  fontFamily:
-                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                }}
-              >
-                {`${formatNum(dimsNow.diameterMm, 1)} mm`}
-              </span>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "#9ca3af" }}>Radius (rings)</span>
-              <span
-                style={{
-                  fontFamily:
-                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                }}
-              >
-                {formatNum(dimsNow.radiusRings, 1)}
-              </span>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "#9ca3af" }}>Diameter (rings)</span>
-              <span
-                style={{
-                  fontFamily:
-                    "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                }}
-              >
-                {formatNum(dimsNow.diameterRings, 1)}
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Color breakdown */}
-      <div>
-        <div style={{ fontWeight: 800, marginBottom: 6 }}>By color</div>
-
-        {!ringStats?.byColor?.length ? (
-          <div style={{ color: "#9ca3af" }}>No rings placed.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 6 }}>
-            {ringStats.byColor.slice(0, 12).map(([hex, count]: [string, number]) => (
-              <div
-                key={hex}
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span
-                    style={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: 3,
-                      background: hex,
-                      border: "1px solid rgba(0,0,0,.8)",
-                    }}
-                  />
-                  <span
-                    style={{
-                      fontFamily:
-                        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                    }}
-                  >
-                    {hex}
-                  </span>
+            {/* Cursor */}
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#9ca3af" }}>Cursor (px)</span>
+                <span
+                  style={{
+                    fontFamily:
+                      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                  }}
+                >
+                  {cursorPx
+                    ? `${Math.round(cursorPx.x)}, ${Math.round(cursorPx.y)}`
+                    : "—"}
                 </span>
-                <span style={{ fontWeight: 800 }}>{count}</span>
               </div>
-            ))}
-            {ringStats.byColor.length > 12 && (
-              <div style={{ color: "#9ca3af", fontSize: 12 }}>
-                + {ringStats.byColor.length - 12} more…
+            </div>
+
+            {/* Ring + geometry summary */}
+            <div style={{ marginBottom: 10, display: "grid", gap: 6 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#9ca3af" }}>Rings</span>
+                <span style={{ fontWeight: 800 }}>{ringStats?.total ?? 0}</span>
               </div>
-            )}
+
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#9ca3af" }}>Colors used</span>
+                <span style={{ fontWeight: 800 }}>
+                  {ringStats?.uniqueColors ?? 0}
+                </span>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#9ca3af" }}>Inner ID</span>
+                <span
+                  style={{
+                    fontFamily:
+                      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                  }}
+                >
+                  {typeof innerIDmm === "number"
+                    ? `${formatNum(innerIDmm, 2)} mm`
+                    : "—"}
+                </span>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#9ca3af" }}>Wire</span>
+                <span
+                  style={{
+                    fontFamily:
+                      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                  }}
+                >
+                  {typeof wireMm === "number"
+                    ? `${formatNum(wireMm, 2)} mm`
+                    : "—"}
+                </span>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "#9ca3af" }}>Center spacing</span>
+                <span
+                  style={{
+                    fontFamily:
+                      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                  }}
+                >
+                  {typeof centerSpacing === "number"
+                    ? `${formatNum(centerSpacing, 2)} mm`
+                    : "—"}
+                </span>
+              </div>
+            </div>
+
+            {/* Dimensions */}
+            <div style={{ marginBottom: 10 }}>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>
+                Design bounds
+              </div>
+
+              {!dimsNow ? (
+                <div style={{ color: "#9ca3af" }}>—</div>
+              ) : dimsNow.kind === "square" ? (
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div
+                    style={{ display: "flex", justifyContent: "space-between" }}
+                  >
+                    <span style={{ color: "#9ca3af" }}>Width</span>
+                    <span
+                      style={{
+                        fontFamily:
+                          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                      }}
+                    >
+                      {`${formatNum(dimsNow.widthMm, 1)} mm`}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{ display: "flex", justifyContent: "space-between" }}
+                  >
+                    <span style={{ color: "#9ca3af" }}>Height</span>
+                    <span
+                      style={{
+                        fontFamily:
+                          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                      }}
+                    >
+                      {`${formatNum(dimsNow.heightMm, 1)} mm`}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{ display: "flex", justifyContent: "space-between" }}
+                  >
+                    <span style={{ color: "#9ca3af" }}>Width (rings)</span>
+                    <span
+                      style={{
+                        fontFamily:
+                          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                      }}
+                    >
+                      {dimsNow.widthRings}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{ display: "flex", justifyContent: "space-between" }}
+                  >
+                    <span style={{ color: "#9ca3af" }}>Height (rings)</span>
+                    <span
+                      style={{
+                        fontFamily:
+                          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                      }}
+                    >
+                      {dimsNow.heightRings}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: 6 }}>
+                  <div
+                    style={{ display: "flex", justifyContent: "space-between" }}
+                  >
+                    <span style={{ color: "#9ca3af" }}>Radius</span>
+                    <span
+                      style={{
+                        fontFamily:
+                          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                      }}
+                    >
+                      {`${formatNum(dimsNow.radiusMm, 1)} mm`}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{ display: "flex", justifyContent: "space-between" }}
+                  >
+                    <span style={{ color: "#9ca3af" }}>Diameter</span>
+                    <span
+                      style={{
+                        fontFamily:
+                          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                      }}
+                    >
+                      {`${formatNum(dimsNow.diameterMm, 1)} mm`}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{ display: "flex", justifyContent: "space-between" }}
+                  >
+                    <span style={{ color: "#9ca3af" }}>Radius (rings)</span>
+                    <span
+                      style={{
+                        fontFamily:
+                          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                      }}
+                    >
+                      {formatNum(dimsNow.radiusRings, 1)}
+                    </span>
+                  </div>
+
+                  <div
+                    style={{ display: "flex", justifyContent: "space-between" }}
+                  >
+                    <span style={{ color: "#9ca3af" }}>Diameter (rings)</span>
+                    <span
+                      style={{
+                        fontFamily:
+                          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                      }}
+                    >
+                      {formatNum(dimsNow.diameterRings, 1)}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Color breakdown */}
+            <div>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>By color</div>
+
+              {!ringStats?.byColor?.length ? (
+                <div style={{ color: "#9ca3af" }}>No rings placed.</div>
+              ) : (
+                <div style={{ display: "grid", gap: 6 }}>
+                  {ringStats.byColor
+                    .slice(0, 12)
+                    .map(([hex, count]: [string, number]) => (
+                      <div
+                        key={hex}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 10,
+                        }}
+                      >
+                        <span
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: 12,
+                              height: 12,
+                              borderRadius: 3,
+                              background: hex,
+                              border: "1px solid rgba(0,0,0,.8)",
+                            }}
+                          />
+                          <span
+                            style={{
+                              fontFamily:
+                                "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                            }}
+                          >
+                            {hex}
+                          </span>
+                        </span>
+                        <span style={{ fontWeight: 800 }}>{count}</span>
+                      </div>
+                    ))}
+                  {ringStats.byColor.length > 12 && (
+                    <div style={{ color: "#9ca3af", fontSize: 12 }}>
+                      + {ringStats.byColor.length - 12} more…
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
-    </div>
-  </DraggablePill>
-)}
+        </DraggablePill>
+      )}
       {/* ============================= */}
       {/* ✅ IMAGE OVERLAY PANEL (Freeform) */}
       {/* ============================= */}
       {showImageOverlay && (
-        <DraggablePill id="freeform-image-overlay" defaultPosition={{ x: 120, y: 120 }}>
+        <DraggablePill
+          id="freeform-image-overlay"
+          defaultPosition={{ x: 120, y: 120 }}
+        >
           <div
             style={{
               width: 320,
@@ -4056,7 +4448,13 @@ const cancelOverlayPickingIfActive = useCallback(() => {
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
               <strong style={{ fontSize: 13 }}>🖼️ Image Overlay</strong>
               <button
                 onClick={() => setShowImageOverlay(false)}
@@ -4084,10 +4482,26 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                 background: "rgba(2,6,23,0.75)",
               }}
             >
-              <div style={{ fontWeight: 800, fontSize: 12 }}>Transfer Scope</div>
+              <div style={{ fontWeight: 800, fontSize: 12 }}>
+                Transfer Scope
+              </div>
 
-              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                }}
+              >
+                <label
+                  style={{
+                    display: "flex",
+                    gap: 6,
+                    alignItems: "center",
+                    cursor: "pointer",
+                  }}
+                >
                   <input
                     type="radio"
                     name="overlayScope"
@@ -4097,7 +4511,14 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                   <span>All rings</span>
                 </label>
 
-                <label style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                <label
+                  style={{
+                    display: "flex",
+                    gap: 6,
+                    alignItems: "center",
+                    cursor: "pointer",
+                  }}
+                >
                   <input
                     type="radio"
                     name="overlayScope"
@@ -4137,14 +4558,15 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                     🎯 Pick selection area (then drag on canvas)
                   </button>
 
-<div style={{ fontSize: 11, opacity: 0.85 }}>
-  Picked cells: <b>{overlayMaskKeys.size}</b>{" "}
-  {overlayMaskKeys.size === 0 ? "(none yet)" : ""}
-  {overlayPickingRef.current ? " • Picking…" : ""}
-</div>
+                  <div style={{ fontSize: 11, opacity: 0.85 }}>
+                    Picked cells: <b>{overlayMaskKeys.size}</b>{" "}
+                    {overlayMaskKeys.size === 0 ? "(none yet)" : ""}
+                    {overlayPickingRef.current ? " • Picking…" : ""}
+                  </div>
                   {overlayMaskKeys.size === 0 && (
                     <div style={{ fontSize: 11, color: "#fbbf24" }}>
-                      Tip: click “Pick selection area”, then drag a selection. Press <b>Esc</b> to cancel.
+                      Tip: click “Pick selection area”, then drag a selection.
+                      Press <b>Esc</b> to cancel.
                     </div>
                   )}
                 </div>
@@ -4188,7 +4610,10 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                 step={0.01}
                 value={Number((overlay as any)?.scale ?? 1)}
                 onChange={(e) =>
-                  setOverlay((p: any) => ({ ...(p ?? {}), scale: Number(e.target.value) }))
+                  setOverlay((p: any) => ({
+                    ...(p ?? {}),
+                    scale: Number(e.target.value),
+                  }))
                 }
               />
             </label>
@@ -4202,19 +4627,31 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                 step={0.01}
                 value={Number((overlay as any)?.opacity ?? 0.8)}
                 onChange={(e) =>
-                  setOverlay((p: any) => ({ ...(p ?? {}), opacity: Number(e.target.value) }))
+                  setOverlay((p: any) => ({
+                    ...(p ?? {}),
+                    opacity: Number(e.target.value),
+                  }))
                 }
               />
             </label>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+              }}
+            >
               <label style={{ display: "grid", gap: 4 }}>
                 Offset X
                 <input
                   type="number"
                   value={Number((overlay as any)?.offsetX ?? 0)}
                   onChange={(e) =>
-                    setOverlay((p: any) => ({ ...(p ?? {}), offsetX: Number(e.target.value) }))
+                    setOverlay((p: any) => ({
+                      ...(p ?? {}),
+                      offsetX: Number(e.target.value),
+                    }))
                   }
                   style={{
                     padding: 6,
@@ -4231,7 +4668,10 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                   type="number"
                   value={Number((overlay as any)?.offsetY ?? 0)}
                   onChange={(e) =>
-                    setOverlay((p: any) => ({ ...(p ?? {}), offsetY: Number(e.target.value) }))
+                    setOverlay((p: any) => ({
+                      ...(p ?? {}),
+                      offsetY: Number(e.target.value),
+                    }))
                   }
                   style={{
                     padding: 6,
@@ -4249,18 +4689,28 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                 type="checkbox"
                 checked={!!(overlay as any)?.tile}
                 onChange={(e) =>
-                  setOverlay((p: any) => ({ ...(p ?? {}), tile: e.target.checked }))
+                  setOverlay((p: any) => ({
+                    ...(p ?? {}),
+                    tile: e.target.checked,
+                  }))
                 }
               />
               <span>Tile (repeat)</span>
             </label>
 
             <div style={{ fontSize: 11, opacity: 0.85 }}>
-              Crop (normalized 0..1). These values enable your “window selection” pipeline.
-              You can wire a drag-rect UI later to set these.
+              Crop (normalized 0..1). These values enable your “window
+              selection” pipeline. You can wire a drag-rect UI later to set
+              these.
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 8,
+              }}
+            >
               <label style={{ display: "grid", gap: 4 }}>
                 U0
                 <input
@@ -4270,7 +4720,10 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                   max={1}
                   value={Number((overlay as any)?.cropU0 ?? 0)}
                   onChange={(e) =>
-                    setOverlay((p: any) => ({ ...(p ?? {}), cropU0: Number(e.target.value) }))
+                    setOverlay((p: any) => ({
+                      ...(p ?? {}),
+                      cropU0: Number(e.target.value),
+                    }))
                   }
                   style={{
                     padding: 6,
@@ -4290,7 +4743,10 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                   max={1}
                   value={Number((overlay as any)?.cropV0 ?? 0)}
                   onChange={(e) =>
-                    setOverlay((p: any) => ({ ...(p ?? {}), cropV0: Number(e.target.value) }))
+                    setOverlay((p: any) => ({
+                      ...(p ?? {}),
+                      cropV0: Number(e.target.value),
+                    }))
                   }
                   style={{
                     padding: 6,
@@ -4310,7 +4766,10 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                   max={1}
                   value={Number((overlay as any)?.cropU1 ?? 1)}
                   onChange={(e) =>
-                    setOverlay((p: any) => ({ ...(p ?? {}), cropU1: Number(e.target.value) }))
+                    setOverlay((p: any) => ({
+                      ...(p ?? {}),
+                      cropU1: Number(e.target.value),
+                    }))
                   }
                   style={{
                     padding: 6,
@@ -4330,7 +4789,10 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                   max={1}
                   value={Number((overlay as any)?.cropV1 ?? 1)}
                   onChange={(e) =>
-                    setOverlay((p: any) => ({ ...(p ?? {}), cropV1: Number(e.target.value) }))
+                    setOverlay((p: any) => ({
+                      ...(p ?? {}),
+                      cropV1: Number(e.target.value),
+                    }))
                   }
                   style={{
                     padding: 6,
@@ -4347,7 +4809,11 @@ const cancelOverlayPickingIfActive = useCallback(() => {
               type="button"
               onClick={transferOverlayToRings}
               disabled={
-                !((overlay as any)?.dataUrl ?? (overlay as any)?.src ?? (overlay as any)?.url) ||
+                !(
+                  (overlay as any)?.dataUrl ??
+                  (overlay as any)?.src ??
+                  (overlay as any)?.url
+                ) ||
                 (overlayScope === "selection" && overlayMaskKeys.size === 0)
               }
               style={{
@@ -4361,7 +4827,11 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                 fontSize: 12,
                 fontWeight: 900,
                 opacity:
-                  !((overlay as any)?.dataUrl ?? (overlay as any)?.src ?? (overlay as any)?.url) ||
+                  !(
+                    (overlay as any)?.dataUrl ??
+                    (overlay as any)?.src ??
+                    (overlay as any)?.url
+                  ) ||
                   (overlayScope === "selection" && overlayMaskKeys.size === 0)
                     ? 0.6
                     : 1,
@@ -4457,7 +4927,7 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                   overlayPickingRef.current = false;
                 } else {
                   finalizeSelection();
-                  applySelectionToRings(sel, selectionMode);
+                  applySelectionToActiveLayer(sel, selectionMode);
                 }
               }
               selectionRef.current = null;
@@ -4510,88 +4980,94 @@ const cancelOverlayPickingIfActive = useCallback(() => {
               </div>
             );
           })}
-      {/* ==================================================== */}
-      {/* SPLINE TOOL (MOVEABLE PANEL) */}
-      {/* IMPORTANT: Only one SplineSandbox instance is rendered. */}
-      {/* - This is draggable (panel is moveable). */}
-      {/* - It is NOT duplicated in the right control panel. */}
-      {/* ==================================================== */}
-      {showSplineTool && (
-<DraggablePill id="freeform-spline" defaultPosition={{ x: 160, y: 120 }}>
-  <div
-    style={{
-      display: "inline-block",
-      width: "max-content",
-      maxWidth: "calc(100vw - 24px)",
-      background: "rgba(17,24,39,0.97)",
-      border: "1px solid rgba(0,0,0,0.6)",
-      borderRadius: 14,
-      boxShadow: "0 12px 40px rgba(0,0,0,.45)",
-      overflow: "hidden",
-    }}
-    onMouseDown={(e) => e.stopPropagation()}
-    onTouchStart={(e) => e.stopPropagation()}
-  >
-    <SplineSandbox
-      key={splineResetKey}
-      embedded
-      showPanel={true}
-      mode="freeform"
-      currentColorHex={normalizeColor6(activeColor)}
-      onRequestClose={() => setShowSplineTool(false)}
-      onApplyClosedSpline={({ polygon }) => {
-        applyClosedSplineAsRings(polygon, normalizeColor6(activeColor));
-        setSplineResetKey((k) => k + 1);
-      }}
-    />
-  </div>
-</DraggablePill>
-      )}
-
-      {/* HIT CIRCLES CANVAS */}
-      <canvas
-        ref={hitCanvasRef}
-        style={{
-          position: "absolute",
-          inset: 0,
-          pointerEvents: "none",
-          background: "transparent",
-          zIndex: 2,
-        }}
-      />
-
-      {/* DEBUG CLICK MARKERS (ONLY WHEN DIAGNOSTICS ON, and circles visible) */}
-      {showDiagnostics &&
-        !hideCircles &&
-        debugClicks.map((marker) => {
-          const { wx, wy } = logicalToWorld(marker.lx, marker.ly);
-          const { sx, sy } = worldToScreen(wx, wy);
-
-          return (
+        {/* ==================================================== */}
+        {/* SPLINE TOOL (MOVEABLE PANEL) */}
+        {/* IMPORTANT: Only one SplineSandbox instance is rendered. */}
+        {/* - This is draggable (panel is moveable). */}
+        {/* - It is NOT duplicated in the right control panel. */}
+        {/* ==================================================== */}
+        {showSplineTool && (
+          <DraggablePill
+            id="freeform-spline"
+            defaultPosition={{ x: 160, y: 120 }}
+          >
             <div
-              key={marker.id}
               style={{
-                position: "absolute",
-                left: sx - 10,
-                top: sy - 10,
-                width: 20,
-                height: 20,
-                backgroundColor: "rgba(0,255,0,0.85)",
-                color: "black",
-                fontSize: "14px",
-                fontWeight: "bold",
-                borderRadius: "2px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                pointerEvents: "none",
-                zIndex: 4,
+                display: "inline-block",
+                width: "max-content",
+                maxWidth: "calc(100vw - 24px)",
+                background: "rgba(17,24,39,0.97)",
+                border: "1px solid rgba(0,0,0,0.6)",
+                borderRadius: 14,
+                boxShadow: "0 12px 40px rgba(0,0,0,.45)",
+                overflow: "hidden",
               }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onTouchStart={(e) => e.stopPropagation()}
             >
-              {marker.id}
+              <SplineSandbox
+                key={splineResetKey}
+                embedded
+                showPanel={true}
+                mode="freeform"
+                currentColorHex={normalizeColor6(activeColor)}
+                onRequestClose={() => setShowSplineTool(false)}
+                onApplyClosedSpline={({ polygon }) => {
+                  applyClosedSplineAsRings(
+                    polygon,
+                    normalizeColor6(activeColor),
+                  );
+                  setSplineResetKey((k) => k + 1);
+                }}
+              />
             </div>
-          );
-        })}
+          </DraggablePill>
+        )}
+
+        {/* HIT CIRCLES CANVAS */}
+        <canvas
+          ref={hitCanvasRef}
+          style={{
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            background: "transparent",
+            zIndex: 2,
+          }}
+        />
+
+        {/* DEBUG CLICK MARKERS (ONLY WHEN DIAGNOSTICS ON, and circles visible) */}
+        {showDiagnostics &&
+          !hideCircles &&
+          debugClicks.map((marker) => {
+            const { wx, wy } = logicalToWorld(marker.lx, marker.ly);
+            const { sx, sy } = worldToScreen(wx, wy);
+
+            return (
+              <div
+                key={marker.id}
+                style={{
+                  position: "absolute",
+                  left: sx - 10,
+                  top: sy - 10,
+                  width: 20,
+                  height: 20,
+                  backgroundColor: "rgba(0,255,0,0.85)",
+                  color: "black",
+                  fontSize: "14px",
+                  fontWeight: "bold",
+                  borderRadius: "2px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  pointerEvents: "none",
+                  zIndex: 4,
+                }}
+              >
+                {marker.id}
+              </div>
+            );
+          })}
 
         {/* RIGHT CONTROL PANEL */}
         {showControls && (
@@ -4616,11 +5092,14 @@ const cancelOverlayPickingIfActive = useCallback(() => {
               fontSize: 12,
             }}
           >
-            <h3 style={{ margin: 0, fontSize: 14 }}>Freeform Geometry (Tuner-linked)</h3>
+            <h3 style={{ margin: 0, fontSize: 14 }}>
+              Freeform Geometry (Tuner-linked)
+            </h3>
 
             <p style={{ margin: 0, opacity: 0.8, lineHeight: 1.3 }}>
-              Uses the same <b>center spacing</b> and hex grid as the Weave Tuner. Vertical spacing is{" "}
-              <code>center × 0.866</code> and odd rows are shifted by <code>center / 2</code>.
+              Uses the same <b>center spacing</b> and hex grid as the Weave
+              Tuner. Vertical spacing is <code>center × 0.866</code> and odd
+              rows are shifted by <code>center / 2</code>.
             </p>
 
             <SliderRow
@@ -4636,7 +5115,15 @@ const cancelOverlayPickingIfActive = useCallback(() => {
               unit="mm"
             />
 
-            <SliderRow label="Angle In (°)" value={angleIn} setValue={setAngleIn} min={-75} max={75} step={1} unit="°" />
+            <SliderRow
+              label="Angle In (°)"
+              value={angleIn}
+              setValue={setAngleIn}
+              min={-75}
+              max={75}
+              step={1}
+              unit="°"
+            />
 
             <SliderRow
               label="Angle Out (°)"
@@ -4663,11 +5150,17 @@ const cancelOverlayPickingIfActive = useCallback(() => {
               }}
             >
               <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <input type="checkbox" checked={hideCircles} onChange={(e) => setHideCircles(e.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={hideCircles}
+                  onChange={(e) => setHideCircles(e.target.checked)}
+                />
                 <span>Hide circles (still clickable)</span>
               </label>
 
-              <div style={{ fontWeight: 700, fontSize: 12, textAlign: "left" }}>Circles (on placed rings only)</div>
+              <div style={{ fontWeight: 700, fontSize: 12, textAlign: "left" }}>
+                Circles (on placed rings only)
+              </div>
 
               <SliderRow
                 label="Circle Offset X (mm)"
@@ -4736,7 +5229,9 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                 gap: 8,
               }}
             >
-              <div style={{ fontWeight: 800, fontSize: 12 }}>Ring Sets (from Tuner)</div>
+              <div style={{ fontWeight: 800, fontSize: 12 }}>
+                Ring Sets (from Tuner)
+              </div>
 
               <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <input
@@ -4808,8 +5303,8 @@ const cancelOverlayPickingIfActive = useCallback(() => {
               <div style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.35 }}>
                 Current:{" "}
                 <b>
-                  ID {formatNum(innerIDmm, 2)}mm • Wire {formatNum(wireMm, 2)}mm • Center{" "}
-                  {formatNum(centerSpacing, 2)}mm
+                  ID {formatNum(innerIDmm, 2)}mm • Wire {formatNum(wireMm, 2)}mm
+                  • Center {formatNum(centerSpacing, 2)}mm
                 </b>
                 <br />
                 Aspect ratio: <b>{formatNum(aspectRatio, 2)}</b>
@@ -4884,7 +5379,8 @@ const cancelOverlayPickingIfActive = useCallback(() => {
                 <div style={{ fontWeight: 800, fontSize: 12 }}>Diagnostics</div>
 
                 <div style={{ fontSize: 11, opacity: 0.85 }}>
-                  Rings: <b>{rings.size}</b> • Selected: <b>{lastSelectionCount}</b>
+                  Rings: <b>{rings.size}</b> • Selected:{" "}
+                  <b>{lastSelectionCount}</b>
                 </div>
 
                 <textarea
