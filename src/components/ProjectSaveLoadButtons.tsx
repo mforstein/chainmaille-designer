@@ -62,7 +62,7 @@ async function shareOrDownloadJson(payload: any, filename: string) {
   const blob = new Blob([json], { type: "application/json" });
 
   const iOS = isIOS();
-  const navAny = navigator as any;
+  const navAny = (typeof navigator !== "undefined" ? (navigator as any) : null) as any;
 
   // If you're on iOS over http://<LAN-IP>, file sharing is usually disabled.
   // (You'll see share "Options: PDF/Web Archive" like your screenshot.)
@@ -75,18 +75,29 @@ async function shareOrDownloadJson(payload: any, filename: string) {
   }
 
   // --- iOS: try Share Sheet with FILES first ---
-  if (iOS && typeof navAny?.share === "function" && typeof File !== "undefined") {
+  if (
+    iOS &&
+    typeof navAny?.share === "function" &&
+    typeof File !== "undefined"
+  ) {
     const file = new File([blob], filename, { type: "application/json" });
 
     try {
-      // Try file-sharing even if canShare is missing/false
-      await navAny.share({
-        title: filename,
-        files: [file],
-        // adding text helps some share targets show "Save to Files"
-        text: "Chainmail project file",
-      });
-      return; // ✅ success
+      // Prefer canShare if available, but don't require it (some iOS versions lie)
+      const canShare =
+        typeof navAny?.canShare === "function"
+          ? navAny.canShare({ files: [file] })
+          : true;
+
+      if (canShare) {
+        await navAny.share({
+          title: filename,
+          files: [file],
+          // adding text helps some share targets show "Save to Files"
+          text: "Chainmail project file",
+        });
+        return; // ✅ success
+      }
     } catch (err) {
       // fall through to download attempts
       console.warn("iOS share(files) failed, falling back:", err);
