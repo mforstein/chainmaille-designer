@@ -23,6 +23,8 @@ const INCH_TO_MM = 25.4;
 // If rings are above this threshold, use instanced renderer.
 // Tune this number if you want; 5k is a safe default for torus-per-mesh.
 const LARGE_THRESHOLD = 5000;
+const SCALE_THICKNESS_RR = 0.8;
+const DEG_RR = Math.PI / 180;
 
 export function parseInchFractionToInches(v: string | number): number {
   if (typeof v === "number") return v;
@@ -110,6 +112,27 @@ export interface RenderParams {
 
 export type PaintMap = Map<string, string | null>;
 
+export type ScaleRenderItem = {
+  key: string;
+  row: number;
+  col: number;
+  x: number;
+  y: number;
+  z: number;
+  bodyX: number;
+  bodyY: number;
+  color: string;
+  holeDiameter: number;
+  width: number;
+  height: number;
+  shape: string;
+  tiltRad: number;
+  planeZMm: number;
+  tipLiftDeg: number;
+  rowClearanceZMm: number;
+  dropMm: number;
+};
+
 // ✅ External authoritative 2D view state (optional)
 export type ExternalViewState = {
   panX: number;
@@ -128,6 +151,9 @@ type Props = {
   initialPaintMode?: boolean;
   initialEraseMode?: boolean;
   initialRotationLocked?: boolean;
+  scales3D?: ScaleRenderItem[];
+  showScales?: boolean;
+  scalesBehindRings?: boolean;
 };
 
 export type RingRendererHandle = {
@@ -164,6 +190,63 @@ export type RingRendererHandle = {
 // ============================================================
 // Camera Dolly Utility
 // ============================================================
+// ============================================================
+// Scale rendering helpers (mirrors ChainmailWeaveTuner.tsx)
+// ============================================================
+function makeScaleShapeRR(
+  shape: string,
+  w: number,
+  h: number,
+  holeDia: number,
+  bodyOffY: number,
+): THREE.Shape {
+  const hw = w / 2;
+  const tipY = bodyOffY - h;
+  const shoulderY = bodyOffY - h * 0.08;
+  const bellyY = bodyOffY - h * 0.45;
+  const lowerY = bodyOffY - h * 0.78;
+  const s = new THREE.Shape();
+  if (shape === "leaf") {
+    s.moveTo(0, shoulderY);
+    s.bezierCurveTo(hw * 0.95, bodyOffY - h * 0.16, hw * 1.05, bellyY, hw * 0.34, lowerY);
+    s.bezierCurveTo(hw * 0.18, bodyOffY - h * 0.9, hw * 0.08, bodyOffY - h * 0.96, 0, tipY);
+    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.96, -hw * 0.18, bodyOffY - h * 0.9, -hw * 0.34, lowerY);
+    s.bezierCurveTo(-hw * 1.05, bellyY, -hw * 0.95, bodyOffY - h * 0.16, 0, shoulderY);
+  } else if (shape === "round") {
+    s.moveTo(0, shoulderY);
+    s.bezierCurveTo(hw * 0.95, shoulderY, hw * 1.05, bodyOffY - h * 0.52, 0, tipY);
+    s.bezierCurveTo(-hw * 1.05, bodyOffY - h * 0.52, -hw * 0.95, shoulderY, 0, shoulderY);
+  } else if (shape === "kite") {
+    s.moveTo(0, shoulderY);
+    s.lineTo(hw * 0.96, bodyOffY - h * 0.3);
+    s.lineTo(hw * 0.56, lowerY);
+    s.lineTo(0, tipY);
+    s.lineTo(-hw * 0.56, lowerY);
+    s.lineTo(-hw * 0.96, bodyOffY - h * 0.3);
+    s.closePath();
+  } else {
+    s.moveTo(0, shoulderY);
+    s.bezierCurveTo(hw * 1.08, bodyOffY - h * 0.14, hw * 1.16, bellyY, hw * 0.36, lowerY);
+    s.bezierCurveTo(hw * 0.18, bodyOffY - h * 0.88, hw * 0.08, bodyOffY - h * 0.95, 0, tipY);
+    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.95, -hw * 0.18, bodyOffY - h * 0.88, -hw * 0.36, lowerY);
+    s.bezierCurveTo(-hw * 1.16, bellyY, -hw * 1.08, bodyOffY - h * 0.14, 0, shoulderY);
+  }
+  const hole = new THREE.Path();
+  hole.absellipse(0, 0, holeDia / 2, holeDia / 2, 0, Math.PI * 2, true, 0);
+  s.holes.push(hole);
+  return s;
+}
+
+function makeHoleRimRR(r: number, z: number, color: number): THREE.LineLoop {
+  const pts = new THREE.EllipseCurve(0, 0, r, r, 0, Math.PI * 2, false, 0)
+    .getPoints(64)
+    .map((p) => new THREE.Vector3(p.x, p.y, z));
+  return new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 }),
+  );
+}
+
 function dollyCamera(
   camera: THREE.PerspectiveCamera,
   controls: OrbitControls | undefined,
@@ -378,6 +461,9 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       initialPaintMode = true,
       initialEraseMode = false,
       initialRotationLocked = true,
+      scales3D,
+      showScales,
+      scalesBehindRings,
     },
     ref,
   ) {
@@ -432,6 +518,9 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
 
     const meshesRef = useRef<THREE.Mesh[]>([]);
     const groupRef = useRef<THREE.Group | null>(null);
+    const scaleGroupRef = useRef<THREE.Group | null>(null);
+    const showScalesRef = useRef(showScales ?? false);
+    const scalesBehindRingsRef = useRef(scalesBehindRings ?? false);
 
     // For accurate picking & fast lookup
     const meshByKeyRef = useRef<Map<string, THREE.Mesh>>(new Map());
@@ -481,6 +570,9 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
     useEffect(() => {
       panEnabledRef.current = panEnabled;
     }, [panEnabled]);
+
+    useEffect(() => { showScalesRef.current = showScales ?? false; }, [showScales]);
+    useEffect(() => { scalesBehindRingsRef.current = scalesBehindRings ?? false; }, [scalesBehindRings]);
 
     const initialZRef = useRef(240);
     const initialTargetRef = useRef(new THREE.Vector3(0, 0, 0));
@@ -1131,30 +1223,47 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         controlsRef.current = null;
         cameraRef.current = null;
         sceneRef.current = null;
+        scaleGroupRef.current = null;
       };
     }, [safeParams.bgColor, glEpoch]);
 
     // ============================================================
     // External view-state sync (optional)
     // ============================================================
+    const applyExternalCamera = React.useCallback(
+      (vs: ExternalViewState | undefined) => {
+        if (!vs) return;
+        const cam = cameraRef.current;
+        const ctr = controlsRef.current;
+        if (!cam || !ctr) return;
+        const zoom = Math.max(1e-6, vs.zoom);
+        const dist = initialZRef.current / zoom;
+        if (showScalesRef.current) {
+          const tilt = scalesBehindRingsRef.current ? 0.08 : 0.22;
+          cam.position.set(vs.panX, vs.panY + dist * Math.sin(tilt), dist * Math.cos(tilt));
+        } else {
+          cam.position.set(vs.panX, vs.panY, dist);
+        }
+        ctr.target.set(vs.panX, vs.panY, 0);
+        cam.near = 0.01;
+        cam.far = 100000;
+        cam.lookAt(ctr.target);
+        cam.updateProjectionMatrix();
+        ctr.update();
+      },
+      [],
+    );
+
     useEffect(() => {
-      if (!externalViewState) return;
-      const cam = cameraRef.current;
-      const ctr = controlsRef.current;
-      if (!cam || !ctr) return;
+      applyExternalCamera(externalViewState);
+    }, [externalViewState, applyExternalCamera]);
 
-      const zoom = Math.max(1e-6, externalViewState.zoom);
-      const z = initialZRef.current / zoom;
-
-      cam.position.set(externalViewState.panX, externalViewState.panY, z);
-      ctr.target.set(externalViewState.panX, externalViewState.panY, 0);
-
-      cam.near = 0.01;
-      cam.far = 100000;
-      cam.lookAt(ctr.target);
-      cam.updateProjectionMatrix();
-      ctr.update();
-    }, [externalViewState]);
+    // Re-apply camera when scale tilt changes (showScales / scalesBehindRings)
+    const externalViewStateRef = useRef(externalViewState);
+    useEffect(() => { externalViewStateRef.current = externalViewState; }, [externalViewState]);
+    useEffect(() => {
+      applyExternalCamera(externalViewStateRef.current);
+    }, [showScales, scalesBehindRings, applyExternalCamera]);
 
     // ============================================================
     // Geometry Build (Rings) — CHECKED-IN STYLE (non-instanced)
@@ -1295,6 +1404,91 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       safeParams.centerSpacing,
       externalViewState,
     ]);
+
+    // ============================================================
+    // Scale geometry build
+    // ============================================================
+    useEffect(() => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+
+      // Clean up previous scale group
+      if (scaleGroupRef.current) {
+        try {
+          scaleGroupRef.current.traverse((o: any) => {
+            o.geometry?.dispose?.();
+            if (Array.isArray(o.material)) o.material.forEach((m: any) => m?.dispose?.());
+            else o.material?.dispose?.();
+          });
+        } catch {}
+        try { scene.remove(scaleGroupRef.current); } catch {}
+        scaleGroupRef.current = null;
+      }
+
+      if (!showScales || !Array.isArray(scales3D) || scales3D.length === 0) return;
+
+      const sg = new THREE.Group();
+      const maxRow = scales3D.reduce((m, s) => Math.max(m, s.row), 0);
+
+      scales3D.forEach((s, i) => {
+        const hsi = Math.max(s.holeDiameter * 0.54, s.height * 0.15);
+        const bodyOffY = -hsi + s.dropMm;
+
+        const shape = makeScaleShapeRR(s.shape, s.width, s.height, s.holeDiameter, bodyOffY);
+        const geo = new THREE.ExtrudeGeometry(shape, {
+          depth: SCALE_THICKNESS_RR,
+          bevelEnabled: false,
+          curveSegments: 72,
+          steps: 1,
+        });
+        geo.translate(0, 0, -SCALE_THICKNESS_RR / 2);
+        geo.computeVertexNormals();
+
+        const mat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(s.color),
+          side: THREE.DoubleSide,
+          metalness: 0.08,
+          roughness: 0.8,
+          depthWrite: true,
+          depthTest: true,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1,
+        });
+
+        const pivot = new THREE.Group();
+        pivot.position.set(s.x, -s.y, s.planeZMm + i * 0.001);
+        pivot.rotation.order = "YXZ";
+        pivot.rotation.y = s.tiltRad ?? 0;
+        pivot.rotation.x = -((s.tipLiftDeg ?? 0) * DEG_RR);
+
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.renderOrder = 20 + (maxRow - s.row);
+        pivot.add(mesh);
+
+        const edgeMat = new THREE.LineBasicMaterial({ color: 0x234050, transparent: true, opacity: 0.98 });
+        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat);
+        edges.renderOrder = mesh.renderOrder + 1;
+        pivot.add(edges);
+
+        const rimF = makeHoleRimRR(s.holeDiameter / 2, SCALE_THICKNESS_RR / 2 + 0.004, 0x1f4755);
+        rimF.renderOrder = mesh.renderOrder + 2;
+        pivot.add(rimF);
+
+        const rimB = makeHoleRimRR(s.holeDiameter / 2, -SCALE_THICKNESS_RR / 2 - 0.004, 0x1f4755);
+        rimB.renderOrder = mesh.renderOrder + 2;
+        pivot.add(rimB);
+
+        sg.add(pivot);
+      });
+
+      scaleGroupRef.current = sg;
+      scene.add(sg);
+
+      // Re-apply camera tilt now that scales are present
+      applyExternalCamera(externalViewStateRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scales3D, showScales, scalesBehindRings]);
 
     // ============================================================
     // Keep mesh colors updated if paint changes (without rebuild)

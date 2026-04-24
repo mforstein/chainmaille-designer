@@ -603,6 +603,157 @@ interface RingSet {
 const TUNER_LS_KEY = "chainmailMatrix";
 const AUTO_FOLLOW_KEY = "freeformAutoFollowTuner";
 const ACTIVE_SET_KEY = "freeformActiveRingSetId";
+const FREEFORM_TUNER_SNAPSHOT_KEY = "freeform.tunerSnapshot.v1";
+const DEG = Math.PI / 180;
+
+type ScaleShape = "teardrop" | "leaf" | "round" | "kite";
+type ScaleWeaveMode = "independent" | "interlocked";
+
+type FreeformScaleSettings = {
+  enabled: boolean;
+  behindRings: boolean;
+  holeIdMm: number;
+  widthMm: number;
+  heightMm: number;
+  shape: ScaleShape;
+  dropMm: number;
+  colorHex: string;
+  onEveryCell: boolean;
+  lockScaleHolesToRingCenters: boolean;
+  centerSpacingMm: number;
+  gridOffsetXmm: number;
+  gridOffsetYmm: number;
+  holeOffsetYMm: number;
+  weaveMode: ScaleWeaveMode;
+  angleInDeg: number;
+  angleOutDeg: number;
+  scalePlaneZ: number;
+  scaleTipLiftDeg: number;
+  scaleRowClearanceZ: number;
+};
+
+type TunerSnapshotScale = {
+  key?: string;
+  row: number;
+  col: number;
+  holeX?: number;
+  holeY?: number;
+  bodyX?: number;
+  bodyY?: number;
+  holeDiameter?: number;
+  width?: number;
+  height?: number;
+  colorHex?: string;
+  shape?: ScaleShape;
+  tiltRad?: number;
+  dropMm?: number;
+  holeOffsetYMm?: number;
+};
+
+type TunerSnapshot = {
+  scaleSettings?: Partial<FreeformScaleSettings> & Record<string, any>;
+  scales?: TunerSnapshotScale[];
+  [k: string]: any;
+};
+
+type ExportScale = {
+  key: string;
+  row: number;
+  col: number;
+  x_mm: number;
+  y_mm: number;
+  bodyX_mm: number;
+  bodyY_mm: number;
+  colorHex: string;
+  holeIdMm: number;
+  widthMm: number;
+  heightMm: number;
+  shape: ScaleShape;
+  dropMm: number;
+  holeOffsetYMm: number;
+  tiltRad: number;
+  planeZMm: number;
+  tipLiftDeg: number;
+  rowClearanceZMm: number;
+};
+
+function normalizeFreeformScaleSettings(src: Record<string, any>): FreeformScaleSettings {
+  const next: FreeformScaleSettings = {
+    enabled: true,
+    behindRings: false,
+    holeIdMm: 9.1,
+    widthMm: 19,
+    heightMm: 22.3,
+    shape: "teardrop",
+    dropMm: -0.7,
+    colorHex: "#4dd0e1",
+    onEveryCell: true,
+    lockScaleHolesToRingCenters: true,
+    centerSpacingMm: 7,
+    gridOffsetXmm: 0,
+    gridOffsetYmm: 0,
+    holeOffsetYMm: 0,
+    weaveMode: "interlocked",
+    angleInDeg: 25,
+    angleOutDeg: -25,
+    scalePlaneZ: 10,
+    scaleTipLiftDeg: 18,
+    scaleRowClearanceZ: 0.22,
+  };
+
+  if (!src || typeof src !== "object") return next;
+  if (typeof src.scaleEnabled === "boolean") next.enabled = src.scaleEnabled;
+  if (typeof src.enabled === "boolean") next.enabled = src.enabled;
+  if (typeof src.scaleBehindRings === "boolean") next.behindRings = src.scaleBehindRings;
+  if (typeof src.behindRings === "boolean") next.behindRings = src.behindRings;
+  if (typeof src.scaleHoleDiameter === "number") next.holeIdMm = src.scaleHoleDiameter;
+  if (typeof src.holeIdMm === "number") next.holeIdMm = src.holeIdMm;
+  if (typeof src.scaleWidth === "number") next.widthMm = src.scaleWidth;
+  if (typeof src.widthMm === "number") next.widthMm = src.widthMm;
+  if (typeof src.scaleHeight === "number") next.heightMm = src.scaleHeight;
+  if (typeof src.heightMm === "number") next.heightMm = src.heightMm;
+  if (typeof src.scaleShape === "string") next.shape = src.scaleShape as ScaleShape;
+  if (typeof src.shape === "string") next.shape = src.shape as ScaleShape;
+  if (typeof src.scaleDrop === "number") next.dropMm = src.scaleDrop;
+  if (typeof src.dropMm === "number") next.dropMm = src.dropMm;
+  if (typeof src.scaleColor === "string") next.colorHex = src.scaleColor;
+  if (typeof src.colorHex === "string") next.colorHex = src.colorHex;
+  if (typeof src.scaleOnEveryCell === "boolean") next.onEveryCell = src.scaleOnEveryCell;
+  if (typeof src.onEveryCell === "boolean") next.onEveryCell = src.onEveryCell;
+  if (typeof src.lockScaleHolesToRingCenters === "boolean") next.lockScaleHolesToRingCenters = src.lockScaleHolesToRingCenters;
+  if (typeof src.scaleCenterSpacing === "number") next.centerSpacingMm = src.scaleCenterSpacing;
+  if (typeof src.centerSpacingMm === "number") next.centerSpacingMm = src.centerSpacingMm;
+  if (typeof src.scaleGridOffsetX === "number") next.gridOffsetXmm = src.scaleGridOffsetX;
+  if (typeof src.gridOffsetXmm === "number") next.gridOffsetXmm = src.gridOffsetXmm;
+  if (typeof src.scaleGridOffsetY === "number") next.gridOffsetYmm = src.scaleGridOffsetY;
+  if (typeof src.gridOffsetYmm === "number") next.gridOffsetYmm = src.gridOffsetYmm;
+  if (typeof src.scaleHoleOffsetY === "number") next.holeOffsetYMm = src.scaleHoleOffsetY;
+  if (typeof src.holeOffsetYMm === "number") next.holeOffsetYMm = src.holeOffsetYMm;
+  if (src.scaleWeaveMode === "independent" || src.scaleWeaveMode === "interlocked") next.weaveMode = src.scaleWeaveMode;
+  if (src.weaveMode === "independent" || src.weaveMode === "interlocked") next.weaveMode = src.weaveMode;
+  if (typeof src.scaleAngleIn === "number") next.angleInDeg = src.scaleAngleIn;
+  if (typeof src.angleInDeg === "number") next.angleInDeg = src.angleInDeg;
+  if (typeof src.scaleAngleOut === "number") next.angleOutDeg = src.scaleAngleOut;
+  if (typeof src.angleOutDeg === "number") next.angleOutDeg = src.angleOutDeg;
+  if (typeof src.scalePlaneZ === "number") next.scalePlaneZ = src.scalePlaneZ;
+  if (typeof src.scaleTipLiftDeg === "number") {
+    next.scaleTipLiftDeg = src.scaleTipLiftDeg;
+  }
+  if (typeof src.scaleRowClearanceZ === "number") next.scaleRowClearanceZ = src.scaleRowClearanceZ;
+  return next;
+}
+
+function loadFreeformTunerSnapshot(): TunerSnapshot | null {
+  try {
+    const raw = localStorage.getItem(FREEFORM_TUNER_SNAPSHOT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? (parsed as TunerSnapshot) : null;
+  } catch {
+    return null;
+  }
+}
+
 
 // ======================================================
 // Dimension
@@ -852,6 +1003,58 @@ const FreeformChainmail2D: React.FC = () => {
   const [ringSets, setRingSets] = useState<RingSet[]>([]);
   const [activeRingSetId, setActiveRingSetId] = useState<string | null>(null);
   const [autoFollowTuner, setAutoFollowTuner] = useState<boolean>(true);
+  const [tunerSnapshot, setTunerSnapshot] = useState<TunerSnapshot | null>(() =>
+    loadFreeformTunerSnapshot(),
+  );
+
+  const baseScaleSettings = useMemo(() => {
+    if (tunerSnapshot?.scaleSettings) {
+      return normalizeFreeformScaleSettings(tunerSnapshot.scaleSettings);
+    }
+    const activeSet = ringSets.find((r) => r.id === activeRingSetId);
+    return normalizeFreeformScaleSettings(activeSet ?? {});
+  }, [tunerSnapshot, ringSets, activeRingSetId]);
+
+  const [scaleSettingsOverride, setScaleSettingsOverride] =
+    useState<Partial<FreeformScaleSettings>>({});
+
+  // (axis selectors removed — Z rotation and depth handled in RingRenderer directly)
+
+  // Only clear overrides when Tuner snapshot content actually changes —
+  // not just the object reference. loadFreeformTunerSnapshot() always
+  // JSON.parses a new object, so comparing stringified content stops
+  // slider values from being wiped on every focus or unrelated state update.
+  const lastSnapshotKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = tunerSnapshot
+      ? JSON.stringify(tunerSnapshot.scaleSettings ?? null)
+      : null;
+    if (key !== lastSnapshotKeyRef.current) {
+      lastSnapshotKeyRef.current = key;
+      setScaleSettingsOverride({});
+    }
+  }, [tunerSnapshot]);
+
+  const activeScaleSettings = useMemo(
+    () => ({ ...baseScaleSettings, ...scaleSettingsOverride }),
+    [baseScaleSettings, scaleSettingsOverride],
+  );
+
+  useEffect(() => {
+    const refreshTunerSnapshot = () => setTunerSnapshot(loadFreeformTunerSnapshot());
+    refreshTunerSnapshot();
+    const onStorage = (e: StorageEvent) => {
+      if (!e.key || e.key === FREEFORM_TUNER_SNAPSHOT_KEY) refreshTunerSnapshot();
+    };
+    window.addEventListener("storage", onStorage);
+    window.addEventListener("freeform:tunerSnapshotSaved", refreshTunerSnapshot as EventListener);
+    // NOTE: "focus" listener intentionally removed — it fired on every window
+    // focus and wiped all slider overrides by creating a new snapshot object.
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener("freeform:tunerSnapshotSaved", refreshTunerSnapshot as EventListener);
+    };
+  }, []);
 
   // ====================================================
   // WEAVE GRID SETTINGS (for resolvePlacement)
@@ -1561,53 +1764,54 @@ const FreeformChainmail2D: React.FC = () => {
   // ====================================================
   // ✅ ONE-PASS DERIVED DATA (Rings3D + Paint + Stats + Lazy Export)
   // ====================================================
-  const derived = useMemo(() => {
-    const rings3D: any[] = [];
-    const paintMap = new Map<string, string>();
+// ====================================================
+// ✅ ONE-PASS DERIVED DATA (Rings3D + Paint + Stats + Lazy Export)
+// ====================================================
+const derived = useMemo(() => {
+  const rings3D: any[] = [];
+  const paintMap = new Map<string, string>();
 
-    // ✅ Stats should remain on STORED (true) colors, not calibrated render colors
-    const colorCountsStored = new Map<string, number>();
+  // ✅ Stats should remain on STORED (true) colors, not calibrated render colors
+  const colorCountsStored = new Map<string, number>();
 
-    const outerRadiusMm = (innerIDmm + 2 * wireMm) / 2;
+  const outerRadiusMm = (innerIDmm + 2 * wireMm) / 2;
 
-    // Lazy: only build export list when needed (Finalize panel)
-    const wantExport = finalizeOpen;
-    const exportRings: ExportRing[] = wantExport ? [] : [];
+  // Lazy: only build export list when needed (Finalize panel)
+  const wantExport = finalizeOpen;
+  const exportRings: ExportRing[] = [];
 
-    rings.forEach((r: PlacedRing) => {
-      //const key = `${r.row},${r.col}`;
+  rings.forEach((r: PlacedRing) => {
+    const { x: baseX, y: baseY } = rcToLogical(r.row, r.col);
 
-      const { x: baseX, y: baseY } = rcToLogical(r.row, r.col);
+    // Apply origin shift for stable rendering coordinates
+    const shiftedX = baseX - logicalOrigin.ox;
+    const shiftedY = baseY - logicalOrigin.oy;
 
-      // Apply origin shift for stable rendering coordinates
-      const shiftedX = baseX - logicalOrigin.ox;
-      const shiftedY = baseY - logicalOrigin.oy;
+    const tiltDeg = r.row % 2 === 0 ? angleIn : angleOut;
+    const tiltRad = THREE.MathUtils.degToRad(tiltDeg);
 
-      const tiltDeg = r.row % 2 === 0 ? angleIn : angleOut;
-      const tiltRad = THREE.MathUtils.degToRad(tiltDeg);
+    // ✅ STORED physical color (#rrggbb)
+    const storedColor = normalizeColor6((r as any).color ?? "#ffffff");
 
-      // ✅ STORED physical color (#rrggbb)
-      const storedColor = normalizeColor6((r as any).color ?? "#ffffff");
+    // ✅ RENDER color (calibrated) for display only
+    const renderColor = applyCalibrationHex(storedColor);
 
-      // ✅ RENDER color (calibrated) for display only
-      const renderColor = applyCalibrationHex(storedColor);
+    const key = `${r.row},${r.col}`;
 
-      const key = `${r.row},${r.col}`;
-      const ringKey = (row: number, col: number) => `${row},${col}`;
-      rings3D.push({
-        id: `${r.row},${r.col}`, // ✅ keep ids consistent too
-        row: r.row,
-        col: r.col,
-        x: shiftedX,
-        y: shiftedY,
-        z: 0,
-        innerDiameter: innerIDmm,
-        wireDiameter: wireMm,
-        radius: outerRadiusMm,
-        centerSpacing: centerSpacing,
-        tilt: tiltDeg,
-        tiltRad: tiltRad,
-        color: renderColor,
+    rings3D.push({
+      id: key,
+      row: r.row,
+      col: r.col,
+      x: shiftedX,
+      y: shiftedY,
+      z: 0,
+      innerDiameter: innerIDmm,
+      wireDiameter: wireMm,
+      radius: outerRadiusMm,
+      centerSpacing,
+      tilt: tiltDeg,
+      tiltRad,
+      color: renderColor,
       });
 
       paintMap.set(key, renderColor);
@@ -1832,146 +2036,181 @@ const FreeformChainmail2D: React.FC = () => {
   // SCALES DRAWING: hole + position-based stacking
   // ====================================================
 
-  type ScaleCell = { row: number; col: number; color: string };
-
-  function parseScaleKey(key: string): { row: number; col: number } | null {
-    const m = /^(-?\d+),(-?\d+)$/.exec(key);
-    if (!m) return null;
-    return { row: Number(m[1]), col: Number(m[2]) };
-  }
-
   /**
-   * Draws a ScaleDesigner-like scale: teardrop + top hole.
-   * Uses evenodd fill so the hole is a real cutout.
+   * Draw a 2D scale using the same geometry fields as Tuner.
    */
-  function drawScale(
+  function drawScaleFromExport(
     ctx: CanvasRenderingContext2D,
-    sx: number,
-    sy: number,
-    w: number,
-    h: number,
-    color: string,
+    scale: ExportScale,
+    project: (xMm: number, yMm: number) => { x: number; y: number },
+    mmToPx: (mm: number) => number,
   ) {
-    // NOTE:
-    // sx,sy are treated as the *HOLE / RING CENTER* for this scale cell.
-    // This makes the scale hole line up exactly with the hit-circle and ring center.
-    // The body of the scale "hangs" below the hole like ScaleDesigner.
-
-    const holeCx = sx;
-    const holeCy = sy;
-
-    // Hole radius (tuned to look like ScaleDesigner and still leave enough material)
-    const holeR = Math.max(2, Math.min(w, h) * 0.16);
-
-    // Outer teardrop body bounds (relative to the hole center)
-    const topY = holeCy - h * 0.22; // slight cap above hole
-    const midY = holeCy + h * 0.22; // belly
-    const bottomY = holeCy + h * 0.98; // point / tip
-    const leftX = holeCx - w * 0.5;
-    const rightX = holeCx + w * 0.5;
-
-    // Outer body (teardrop-ish)
-    const outer = new Path2D();
-    outer.moveTo(holeCx, topY);
-    outer.bezierCurveTo(rightX, topY + h * 0.18, rightX, midY, holeCx, bottomY);
-    outer.bezierCurveTo(leftX, midY, leftX, topY + h * 0.18, holeCx, topY);
-    outer.closePath();
-
-    // Hole (cutout) centered exactly on sx,sy
-    const hole = new Path2D();
-    hole.arc(holeCx, holeCy, holeR, 0, Math.PI * 2);
-
-    // Combine using evenodd fill rule (outer minus hole)
-    const shape = new Path2D();
-    shape.addPath(outer);
-    shape.addPath(hole);
+    const hole = project(scale.x_mm, scale.y_mm);
+    const body = project(scale.bodyX_mm, scale.bodyY_mm);
+    const w = Math.max(2, mmToPx(scale.widthMm));
+    const h = Math.max(2, mmToPx(scale.heightMm));
+    const holeR = Math.max(1, mmToPx(scale.holeIdMm) / 2);
+    const dx = body.x - hole.x;
+    const dy = body.y - hole.y;
+    const tilt = scale.tiltRad ?? 0;
+    const tipLiftRad = (scale.tipLiftDeg ?? 0) * (Math.PI / 180);
 
     ctx.save();
+    ctx.translate(hole.x, hole.y);
+    ctx.scale(Math.cos(tilt), Math.cos(tipLiftRad));
 
-    // Fill
+    const topY = -h * 0.08 + dy;
+    const midY = h * 0.38 + dy;
+    const tipY = h * 0.98 + dy;
+    const halfW = w / 2;
+
+    const outer = new Path2D();
+    switch (scale.shape) {
+      case "leaf":
+        outer.moveTo(0, topY);
+        outer.bezierCurveTo(halfW * 0.95, h * 0.08 + dy, halfW * 1.05, midY, halfW * 0.34, h * 0.76 + dy);
+        outer.bezierCurveTo(halfW * 0.18, h * 0.9 + dy, halfW * 0.08, h * 0.96 + dy, 0, tipY);
+        outer.bezierCurveTo(-halfW * 0.08, h * 0.96 + dy, -halfW * 0.18, h * 0.9 + dy, -halfW * 0.34, h * 0.76 + dy);
+        outer.bezierCurveTo(-halfW * 1.05, midY, -halfW * 0.95, h * 0.08 + dy, 0, topY);
+        outer.closePath();
+        break;
+      case "round":
+        outer.moveTo(0, topY);
+        outer.bezierCurveTo(halfW * 0.95, topY, halfW * 1.05, h * 0.46 + dy, 0, tipY);
+        outer.bezierCurveTo(-halfW * 1.05, h * 0.46 + dy, -halfW * 0.95, topY, 0, topY);
+        outer.closePath();
+        break;
+      case "kite":
+        outer.moveTo(0, topY);
+        outer.lineTo(halfW * 0.96, h * 0.2 + dy);
+        outer.lineTo(halfW * 0.56, h * 0.78 + dy);
+        outer.lineTo(0, tipY);
+        outer.lineTo(-halfW * 0.56, h * 0.78 + dy);
+        outer.lineTo(-halfW * 0.96, h * 0.2 + dy);
+        outer.closePath();
+        break;
+      case "teardrop":
+      default:
+        outer.moveTo(0, topY);
+        outer.bezierCurveTo(halfW, h * 0.16 + dy, halfW, midY, 0, tipY);
+        outer.bezierCurveTo(-halfW, midY, -halfW, h * 0.16 + dy, 0, topY);
+        outer.closePath();
+        break;
+    }
+
+    const holePath = new Path2D();
+    holePath.arc(0, 0, holeR, 0, Math.PI * 2);
+    const shape = new Path2D();
+    shape.addPath(outer);
+    shape.addPath(holePath);
+
     ctx.globalAlpha = 0.95;
-    ctx.fillStyle = color;
+    ctx.fillStyle = scale.colorHex;
     ctx.fill(shape, "evenodd");
 
-    // Subtle shading to mimic ScaleDesigner depth
     ctx.globalAlpha = 0.12;
     ctx.fillStyle = "#000";
     const shade = new Path2D();
-    shade.moveTo(holeCx, holeCy + h * 0.08);
-    shade.bezierCurveTo(
-      holeCx + w * 0.3,
-      midY,
-      holeCx + w * 0.16,
-      bottomY,
-      holeCx,
-      bottomY - h * 0.12,
-    );
-    shade.bezierCurveTo(
-      holeCx - w * 0.1,
-      bottomY - h * 0.14,
-      holeCx - w * 0.06,
-      midY,
-      holeCx,
-      holeCy + h * 0.08,
-    );
+    shade.moveTo(0, holeR * 0.5);
+    shade.bezierCurveTo(halfW * 0.3, h * 0.34 + dy, halfW * 0.16, tipY, 0, tipY - h * 0.12);
+    shade.bezierCurveTo(-halfW * 0.1, tipY - h * 0.14, -halfW * 0.06, h * 0.34 + dy, 0, holeR * 0.5);
     shade.closePath();
     ctx.fill(shade);
 
-    // Outline of the body
     ctx.globalAlpha = 0.55;
     ctx.strokeStyle = "#0b1220";
     ctx.lineWidth = Math.max(1, w * 0.03);
     ctx.stroke(outer);
 
-    // Hole rim (so it reads as a cutout)
     ctx.globalAlpha = 0.8;
     ctx.beginPath();
-    ctx.arc(holeCx, holeCy, holeR, 0, Math.PI * 2);
+    ctx.arc(0, 0, holeR, 0, Math.PI * 2);
     ctx.stroke();
-
     ctx.restore();
   }
 
-  /**
-   * Position stack: render bottom rows first, top rows last.
-   * This avoids "time sequence" stacking (Map insertion order).
-   */
-  function sortScalesForDraw(a: ScaleCell, b: ScaleCell) {
-    if (a.row !== b.row) return b.row - a.row; // bottom -> top
-    return a.col - b.col; // left -> right
-  }
-
-  /**
-   * Replace your existing "draw all scales" block with this.
-   *
-   * You must provide:
-   * - scaleColors: Map<string,string>
-   * - scaleCellToScreen(row,col) -> { x, y } in screen coords (or logical->screen)
-   * - scaleW, scaleH in screen coords
-   */
   function drawAllScales(args: {
     ctx: CanvasRenderingContext2D;
-    scaleColors: Map<string, string>;
-    scaleCellToScreen: (row: number, col: number) => { x: number; y: number };
-    scaleW: number;
-    scaleH: number;
+    scales: ExportScale[];
+    project: (xMm: number, yMm: number) => { x: number; y: number };
+    mmToPx: (mm: number) => number;
   }) {
-    const { ctx, scaleColors, scaleCellToScreen, scaleW, scaleH } = args;
-
-    const cells: ScaleCell[] = [];
-    for (const [key, color] of scaleColors.entries()) {
-      const rc = parseScaleKey(key);
-      if (!rc) continue;
-      cells.push({ row: rc.row, col: rc.col, color });
-    }
-
-    cells.sort(sortScalesForDraw);
-
-    for (const c of cells) {
-      const p = scaleCellToScreen(c.row, c.col);
-      drawScale(ctx, p.x, p.y, scaleW, scaleH, c.color);
-    }
+    const { ctx, scales, project, mmToPx } = args;
+    const ordered = [...scales].sort((a, b) => (a.row !== b.row ? b.row - a.row : a.col - b.col));
+    for (const scale of ordered) drawScaleFromExport(ctx, scale, project, mmToPx);
   }
+ const exportScales = useMemo<ExportScale[]>(() => {
+  if (scaleColors.size === 0) return [];
+
+  return Array.from(scaleColors.entries()).flatMap(([key, colorHex]) => {
+    const m = /^(-?\d+),(-?\d+)$/.exec(key);
+    if (!m) return [];
+
+    const row = Number(m[1]);
+    const col = Number(m[2]);
+    if (!Number.isFinite(row) || !Number.isFinite(col)) return [];
+
+    const useInterlocked =
+      activeScaleSettings.lockScaleHolesToRingCenters ||
+      activeScaleSettings.weaveMode === "interlocked";
+
+    const ringP = rcToLogical(row, col);
+    let holeX = ringP.x;
+    let holeY = ringP.y;
+
+    if (!useInterlocked) {
+      const rowOffset = row & 1 ? activeScaleSettings.centerSpacingMm / 2 : 0;
+      holeX =
+        col * activeScaleSettings.centerSpacingMm +
+        rowOffset +
+        activeScaleSettings.gridOffsetXmm;
+
+      holeY =
+        row * activeScaleSettings.centerSpacingMm * 0.866 +
+        activeScaleSettings.gridOffsetYmm;
+    }
+
+    const holeShoulderInset = Math.max(
+      activeScaleSettings.holeIdMm * 0.54,
+      activeScaleSettings.heightMm * 0.15
+    );
+
+    const bodyY =
+      holeY -
+      holeShoulderInset +
+      activeScaleSettings.dropMm +
+      (useInterlocked ? 0 : activeScaleSettings.holeOffsetYMm);
+
+    const isIn = row % 2 === 0;
+    const tiltDeg = isIn ? activeScaleSettings.angleInDeg : activeScaleSettings.angleOutDeg;
+    const tipLiftDeg = activeScaleSettings.scaleTipLiftDeg;
+
+    return [
+      {
+        key,
+        row,
+        col,
+        x_mm: holeX,
+        y_mm: holeY,
+        bodyX_mm: holeX,
+        bodyY_mm: bodyY,
+        colorHex: normalizeColor6(
+          colorHex || activeScaleSettings.colorHex
+        ),
+        holeIdMm: activeScaleSettings.holeIdMm,
+        widthMm: activeScaleSettings.widthMm,
+        heightMm: activeScaleSettings.heightMm,
+        shape: activeScaleSettings.shape,
+        dropMm: activeScaleSettings.dropMm,
+        holeOffsetYMm: activeScaleSettings.holeOffsetYMm,
+        tiltRad: tiltDeg * DEG,
+        planeZMm: activeScaleSettings.scalePlaneZ,
+        tipLiftDeg,
+        rowClearanceZMm: activeScaleSettings.scaleRowClearanceZ,
+      },
+    ];
+  });
+}, [scaleColors, activeScaleSettings, rcToLogical]); 
   // ====================================================
   // HIT CIRCLE DRAWING (WORLD SPACE → SCREEN SPACE)
   // ✅ FIX: RAF-throttle + viewport cull (keeps huge counts responsive)
@@ -1990,36 +2229,9 @@ const FreeformChainmail2D: React.FC = () => {
     const rect = wrap.getBoundingClientRect();
     ctx.clearRect(0, 0, rect.width, rect.height);
 
-    // Scales overlay (drawn on hit canvas so it sits above WebGL rings)
-    if (scaleColorsRef.current.size) {
-      // Derive scale size from the ring diameter in pixels (stable across pan/zoom).
-      const base = rcToLogical(0, 0);
-      const baseInner = getEffectiveInnerRadiusMm(0);
-      const baseRPx =
-        projectRingRadiusPx(
-          base.x + circleOffsetX,
-          base.y + circleOffsetY,
-          baseInner,
-        ) * circleScale;
-      const circleDiameterPx = baseRPx * 2;
-
-      drawAllScales({
-        ctx,
-        scaleColors: scaleColorsRef.current,
-        scaleCellToScreen: (row, col) => {
-          const p = rcToLogical(row, col);
-          const lx = p.x + circleOffsetX;
-          const ly = p.y + circleOffsetY;
-          const { wx, wy } = logicalToWorld(lx, ly);
-          const { sx, sy } = worldToScreen(wx, wy);
-          return { x: sx, y: sy };
-        },
-        scaleW: circleDiameterPx * 1.75,
-        scaleH: circleDiameterPx * 2.15,
-      });
+    if (hideCircles) {
+      return;
     }
-
-    if (hideCircles) return;
 
     ctx.strokeStyle = "rgba(20,184,166,0.8)";
     ctx.lineWidth = 1;
@@ -2583,13 +2795,13 @@ const FreeformChainmail2D: React.FC = () => {
       setSelectedKeys(new Set(cells.map((c) => `${c.row}-${c.col}`)));
 
       // Apply to scales (no cluster logic)
-      if (activeLayerRef.current === "scales") {
+      if (activeLayer === "scales") {
         setScaleColors((prev) => {
           const next = new Map(prev);
           if (eraseModeRef.current) {
             for (const cell of cells) next.delete(`${cell.row},${cell.col}`);
           } else {
-            const col = normalizeColor6(activeColorRef.current);
+            const col = normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex);
             for (const cell of cells) next.set(`${cell.row},${cell.col}`, col);
           }
           return next;
@@ -3049,12 +3261,12 @@ const FreeformChainmail2D: React.FC = () => {
         adjLy,
       );
 
-      if (activeLayerRef.current === "scales") {
+      if (activeLayer === "scales") {
         const key = `${approxRow},${approxCol}`;
         setScaleColors((prev) => {
           const next = new Map(prev);
           if (eraseModeRef.current) next.delete(key);
-          else next.set(key, activeColorRef.current);
+          else next.set(key, normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex));
           return next;
         });
         return;
@@ -3147,6 +3359,8 @@ const FreeformChainmail2D: React.FC = () => {
       nextClusterId,
       eraseMode,
       settings,
+      activeLayer,
+      activeScaleSettings,
     ],
   );
 
@@ -3485,7 +3699,6 @@ const FreeformChainmail2D: React.FC = () => {
     },
     [innerIDmm, wireMm, centerSpacing, angleIn, angleOut],
   );
-
   // ====================================================
   // Manual JSON load
   // ====================================================
@@ -3521,6 +3734,9 @@ const FreeformChainmail2D: React.FC = () => {
     },
     [],
   );
+  
+
+
 
   // ====================================================
   // External view state passed to RingRenderer
@@ -3544,6 +3760,63 @@ const FreeformChainmail2D: React.FC = () => {
     }),
     [innerIDmm, wireMm, centerSpacing, maxRowSpan, maxColSpan],
   );
+
+const scales3D = useMemo(() => {
+  if (!exportScales.length) return [];
+
+  const maxScaleRow = exportScales.reduce(
+    (maxRow, s) => Math.max(maxRow, Number.isFinite(s.row) ? s.row : 0),
+    0,
+  );
+
+  return exportScales.map((s, index) => {
+    const row = Number.isFinite(s.row) ? s.row : 0;
+    const col = Number.isFinite(s.col) ? s.col : 0;
+
+    const rowClearance = s.rowClearanceZMm ?? 0;
+    const planeZ = s.planeZMm ?? 0;
+    const stackedZ = planeZ + (maxScaleRow - row) * rowClearance;
+
+    // holeX/holeY = where pivot sits (ring center = scale hole center)
+    const holeX = (s.x_mm ?? 0) - logicalOrigin.ox;
+    const holeY = (s.y_mm ?? 0) - logicalOrigin.oy;
+
+    // bodyY in world space (origin-shifted), used by RingRenderer for bodyOffsetY
+    const bodyY = (s.bodyY_mm ?? s.y_mm ?? 0) - logicalOrigin.oy;
+
+    return {
+      key: s.key,
+      row,
+      col,
+      x: holeX,
+      y: holeY,
+      z: stackedZ + index * 0.001,
+      bodyX: holeX,   // bodyX == holeX (scales hang directly below hole)
+      bodyY,
+      color: normalizeColor6(s.colorHex ?? activeScaleSettings.colorHex ?? activeColorRef.current ?? "#ffffff"),
+      holeDiameter: s.holeIdMm,
+      width: s.widthMm,
+      height: s.heightMm,
+      shape: s.shape,
+      tiltRad: s.tiltRad,
+      planeZMm: stackedZ,
+      tipLiftDeg: s.tipLiftDeg,
+      rowClearanceZMm: 0,  // stacking already baked into stackedZ above
+      dropMm: s.dropMm,
+    };
+  });
+}, [
+  exportScales,
+  logicalOrigin.ox,
+  logicalOrigin.oy,
+  activeScaleSettings.colorHex,
+  activeScaleSettings.scalePlaneZ,
+  activeScaleSettings.scaleTipLiftDeg,
+  activeScaleSettings.scaleRowClearanceZ,
+  activeScaleSettings.angleInDeg,
+  activeScaleSettings.angleOutDeg,
+  calibrationVersion,
+]);
 
   // ====================================================
   // RENDER
@@ -3666,7 +3939,12 @@ const FreeformChainmail2D: React.FC = () => {
               <ToolButton
                 active={activeLayer === "scales"}
                 onClick={() => {
-                  setActiveLayer((p) => (p === "rings" ? "scales" : "rings"));
+                  setActiveLayer((prev) => {
+                    const next = prev === "rings" ? "scales" : "rings";
+                    activeLayerRef.current = next;
+                    console.log("[Freeform][toggle] activeLayer ->", next);
+                    return next;
+                  });
                   setPanMode(false);
                   clearSelectionState();
                 }}
@@ -4847,11 +5125,13 @@ const FreeformChainmail2D: React.FC = () => {
       {finalizeOpen && (
         <FinalizeAndExportPanel
           rings={exportRings}
+          scales={exportScales}
+          scaleSettings={activeScaleSettings}
           initialAssignment={assignment}
           onAssignmentChange={(p) => setAssignment(p)}
           getRendererCanvas={getRendererCanvas}
           onClose={() => setFinalizeOpen(false)}
-          mapMode="freeform" // ✅ Freeform wants the numbered full-image map
+          mapMode="freeform"
         />
       )}
 
@@ -4888,6 +5168,9 @@ const FreeformChainmail2D: React.FC = () => {
             initialEraseMode={false}
             initialRotationLocked={true}
             externalViewState={externalViewState}
+            scales3D={scales3D}
+            showScales={scales3D.length > 0}
+            scalesBehindRings={activeScaleSettings.behindRings}
           />
         </div>
 
@@ -5113,26 +5396,6 @@ const FreeformChainmail2D: React.FC = () => {
               max={25}
               step={0.1}
               unit="mm"
-            />
-
-            <SliderRow
-              label="Angle In (°)"
-              value={angleIn}
-              setValue={setAngleIn}
-              min={-75}
-              max={75}
-              step={1}
-              unit="°"
-            />
-
-            <SliderRow
-              label="Angle Out (°)"
-              value={angleOut}
-              setValue={setAngleOut}
-              min={-75}
-              max={75}
-              step={1}
-              unit="°"
             />
 
             {/* CIRCLE TUNING PANEL */}
@@ -5362,7 +5625,171 @@ const FreeformChainmail2D: React.FC = () => {
                 </div>
               </div>
             </div>
+            {/* SCALE TUNERS (from Tuner) */}
+            <div
+              style={{
+                marginTop: 6,
+                padding: 10,
+                borderRadius: 12,
+                background: "rgba(15,23,42,0.95)",
+                border: "1px solid rgba(148,163,184,0.25)",
+                display: "grid",
+                gap: 8,
+              }}
+            >
+              <div style={{ fontWeight: 800, fontSize: 12 }}>
+                Scale Tuners (from Tuner)
+              </div>
 
+              <div style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.35 }}>
+                These values drive Freeform scale geometry locally without
+                changing Freeform placement locking.
+              </div>
+
+              <SliderRow
+                label="Scale Hole ID (mm)"
+                value={activeScaleSettings.holeIdMm}
+                setValue={(v) => {
+                  setAutoFollowTuner(false);
+                  setScaleSettingsOverride((prev) => ({
+                    ...prev,
+                    holeIdMm: Math.max(1, Math.min(20, v)),
+                  }));
+                }}
+                min={1}
+                max={20}
+                step={0.1}
+                unit="mm"
+              />
+
+              <SliderRow
+                label="Scale Width (mm)"
+                value={activeScaleSettings.widthMm}
+                setValue={(v) => {
+                  setAutoFollowTuner(false);
+                  setScaleSettingsOverride((prev) => ({
+                    ...prev,
+                    widthMm: v,
+                  }));
+                }}
+                min={4}
+                max={30}
+                step={0.1}
+                unit="mm"
+              />
+
+              <SliderRow
+                label="Scale Height (mm)"
+                value={activeScaleSettings.heightMm}
+                setValue={(v) => {
+                  setAutoFollowTuner(false);
+                  setScaleSettingsOverride((prev) => ({
+                    ...prev,
+                    heightMm: v,
+                  }));
+                }}
+                min={6}
+                max={45}
+                step={0.1}
+                unit="mm"
+              />
+
+              <SliderRow
+                label="Scale Drop (mm)"
+                value={activeScaleSettings.dropMm}
+                setValue={(v) => {
+                  setAutoFollowTuner(false);
+                  setScaleSettingsOverride((prev) => ({
+                    ...prev,
+                    dropMm: v,
+                  }));
+                }}
+                min={-10}
+                max={20}
+                step={0.05}
+                unit="mm"
+              />
+
+              <SliderRow
+                label="Angle In (°)"
+                value={activeScaleSettings.angleInDeg}
+                setValue={(v) => {
+                  setAutoFollowTuner(false);
+                  setScaleSettingsOverride((prev) => ({
+                    ...prev,
+                    angleInDeg: v,
+                  }));
+                }}
+                min={-45}
+                max={45}
+                step={0.5}
+                unit="°"
+              />
+
+              <SliderRow
+                label="Angle Out (°)"
+                value={activeScaleSettings.angleOutDeg}
+                setValue={(v) => {
+                  setAutoFollowTuner(false);
+                  setScaleSettingsOverride((prev) => ({
+                    ...prev,
+                    angleOutDeg: v,
+                  }));
+                }}
+                min={-45}
+                max={45}
+                step={0.5}
+                unit="°"
+              />
+
+              <SliderRow
+                label="Scale Plane Z (mm)"
+                value={activeScaleSettings.scalePlaneZ}
+                setValue={(v) => {
+                  setAutoFollowTuner(false);
+                  setScaleSettingsOverride((prev) => ({
+                    ...prev,
+                    scalePlaneZ: v,
+                  }));
+                }}
+                min={-30}
+                max={30}
+                step={0.1}
+                unit="mm"
+              />
+
+              <SliderRow
+                label="Scale Tip Lift (°)"
+                value={activeScaleSettings.scaleTipLiftDeg}
+                setValue={(v) => {
+                  setAutoFollowTuner(false);
+                  setScaleSettingsOverride((prev) => ({
+                    ...prev,
+                    scaleTipLiftDeg: v,
+                  }));
+                }}
+                min={-10}
+                max={70}
+                step={1}
+                unit="°"
+              />
+
+              <SliderRow
+                label="Scale Row Clearance Z (mm)"
+                value={activeScaleSettings.scaleRowClearanceZ}
+                setValue={(v) => {
+                  setAutoFollowTuner(false);
+                  setScaleSettingsOverride((prev) => ({
+                    ...prev,
+                    scaleRowClearanceZ: v,
+                  }));
+                }}
+                min={0}
+                max={3}
+                step={0.01}
+                unit="mm"
+              />
+            </div>
             {/* DIAGNOSTICS */}
             {showDiagnostics && (
               <div
