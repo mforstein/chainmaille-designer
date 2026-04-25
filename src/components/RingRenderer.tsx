@@ -1245,8 +1245,9 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
           cam.position.set(vs.panX, vs.panY, dist);
         }
         ctr.target.set(vs.panX, vs.panY, 0);
-        cam.near = 0.01;
-        cam.far = 100000;
+        // Tight near/far keeps depth buffer precision adequate for sub-mm Z differences
+        cam.near = Math.max(0.1, dist * 0.005);
+        cam.far = Math.max(10000, dist * 200);
         cam.lookAt(ctr.target);
         cam.updateProjectionMatrix();
         ctr.update();
@@ -1456,8 +1457,10 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
           polygonOffsetUnits: 1,
         });
 
+        // 0.5 mm per row ensures depth-buffer can distinguish rows even at rowClearanceZ=0
+        const rowZ = (maxRow - s.row) * 0.5;
         const pivot = new THREE.Group();
-        pivot.position.set(s.x, -s.y, s.planeZMm + i * 0.001);
+        pivot.position.set(s.x, -s.y, s.planeZMm + rowZ + i * 0.001);
         pivot.rotation.order = "YXZ";
         pivot.rotation.y = s.tiltRad ?? 0;
         pivot.rotation.x = -((s.tipLiftDeg ?? 0) * DEG_RR);
