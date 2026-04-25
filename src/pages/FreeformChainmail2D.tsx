@@ -29,7 +29,7 @@ import {
 
 import { DraggablePill, DraggableCompassNav } from "../App";
 import type { ExportRing, PaletteAssignment } from "../types/project";
-import { IconCircle, IconSquare } from "../components/icons/ToolIcons";
+import { IconCircle, IconSquare, IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo } from "../components/icons/ToolIcons";
 import ShapePanel, { ShapeTool as ShapeToolId } from "../components/ShapePanel";
 import { computeShapeCells } from "../utils/shapeFill";
 // ⬇️ SAFETY STUB (keeps App.tsx safe if it calls this early; BOM UI removed)
@@ -430,7 +430,7 @@ type SelectionDrag = {
 
 const ToolButton: React.FC<
   React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }
-> = ({ active, children, ...rest }) => (
+> = ({ active, children, style: styleProp, ...rest }) => (
   <button
     {...rest}
     style={{
@@ -448,8 +448,8 @@ const ToolButton: React.FC<
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      // ✅ helps iOS Safari + ensures SVG inherits currentColor cleanly
       lineHeight: 1,
+      ...styleProp,
     }}
   >
     {/* ✅ ensures SVG icons have a predictable visible size without changing your callsites */}
@@ -860,6 +860,71 @@ const FreeformChainmail2D: React.FC = () => {
   useEffect(() => {
     scaleColorsRef.current = scaleColors;
   }, [scaleColors]);
+
+  // ====================================================
+  // UNDO / REDO  (ring + scale history, max 50 entries)
+  // ====================================================
+  type HistoryEntry = { rings: RingMap; scaleColors: Map<string, string> };
+  const historyRef = useRef<HistoryEntry[]>([]);
+  const historyIndexRef = useRef(-1);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const lastPushTimeRef = useRef(0);
+
+  const pushToHistory = useCallback((ringsSnap: RingMap, scalesSnap: Map<string, string>) => {
+    const stack = historyRef.current.slice(0, historyIndexRef.current + 1);
+    stack.push({ rings: new Map(ringsSnap), scaleColors: new Map(scalesSnap) });
+    if (stack.length > 50) stack.shift();
+    historyRef.current = stack;
+    historyIndexRef.current = stack.length - 1;
+    setCanUndo(historyIndexRef.current > 0);
+    setCanRedo(false);
+  }, []);
+
+  // Debounced version for rapid click-painting (consolidates strokes < 600ms apart)
+  const pushToHistoryDebounced = useCallback((ringsSnap: RingMap, scalesSnap: Map<string, string>) => {
+    const now = Date.now();
+    if (now - lastPushTimeRef.current < 600) return;
+    lastPushTimeRef.current = now;
+    pushToHistory(ringsSnap, scalesSnap);
+  }, [pushToHistory]);
+
+  const handleUndoAction = useCallback(() => {
+    if (historyIndexRef.current <= 0) return;
+    historyIndexRef.current--;
+    const snap = historyRef.current[historyIndexRef.current];
+    setRings(new Map(snap.rings));
+    setScaleColors(new Map(snap.scaleColors));
+    setCanUndo(historyIndexRef.current > 0);
+    setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
+  }, []);
+
+  const handleRedoAction = useCallback(() => {
+    if (historyIndexRef.current >= historyRef.current.length - 1) return;
+    historyIndexRef.current++;
+    const snap = historyRef.current[historyIndexRef.current];
+    setRings(new Map(snap.rings));
+    setScaleColors(new Map(snap.scaleColors));
+    setCanUndo(historyIndexRef.current > 0);
+    setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
+  }, []);
+
+  // Keyboard shortcut: Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z or Ctrl+Y = redo
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      if (e.key === "z" || e.key === "Z") {
+        e.preventDefault();
+        if (e.shiftKey) handleRedoAction(); else handleUndoAction();
+      } else if (e.key === "y" || e.key === "Y") {
+        e.preventDefault();
+        handleRedoAction();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleUndoAction, handleRedoAction]);
 
   // ====================================================
   // COLOR PALETTE (editable + persisted)
@@ -2796,6 +2861,7 @@ const derived = useMemo(() => {
 
       // Apply to scales (no cluster logic)
       if (activeLayerRef.current === "scales") {
+        pushToHistory(rings, scaleColorsRef.current);
         setScaleColors((prev) => {
           const next = new Map(prev);
           if (eraseModeRef.current) {
@@ -2812,6 +2878,7 @@ const derived = useMemo(() => {
       }
 
       // Apply to rings
+      pushToHistory(rings, scaleColorsRef.current);
       const mapCopy: RingMap = new Map(rings);
       let clusterId = nextClusterId;
 
@@ -2853,6 +2920,7 @@ const derived = useMemo(() => {
       settings,
       logicalToRowColApprox,
       rcToLogical,
+      pushToHistory,
     ],
   );
 
@@ -3263,6 +3331,7 @@ const derived = useMemo(() => {
 
       if (activeLayer === "scales") {
         const key = `${approxRow},${approxCol}`;
+        pushToHistoryDebounced(rings, scaleColorsRef.current);
         setScaleColors((prev) => {
           const next = new Map(prev);
           if (eraseModeRef.current) next.delete(key);
@@ -3307,6 +3376,7 @@ const derived = useMemo(() => {
 
       if (!found) return;
 
+      pushToHistoryDebounced(rings, scaleColorsRef.current);
       const { ring, newCluster } = resolvePlacement(
         bestCol,
         bestRow,
@@ -3361,6 +3431,7 @@ const derived = useMemo(() => {
       settings,
       activeLayer,
       activeScaleSettings,
+      pushToHistoryDebounced,
     ],
   );
 
@@ -3861,7 +3932,7 @@ const scales3D = useMemo(() => {
             onClick={() => setShowCompass((v) => !v)}
             title="Navigation Menu"
           >
-            🧭
+            <IconHamburger size={18} />
           </ToolButton>
 
           <ToolButton
@@ -3919,9 +3990,25 @@ const scales3D = useMemo(() => {
                     clearInteractionCanvas();
                   }
                 }}
-                title="Erase rings"
+                title="Eraser — click rings/scales to remove"
               >
-                🧽
+                <IconEraser size={18} />
+              </ToolButton>
+
+              <ToolButton
+                onClick={handleUndoAction}
+                title="Undo (Ctrl+Z)"
+                style={{ opacity: canUndo ? 1 : 0.35, cursor: canUndo ? "pointer" : "default" }}
+              >
+                <IconUndo size={18} />
+              </ToolButton>
+
+              <ToolButton
+                onClick={handleRedoAction}
+                title="Redo (Ctrl+Shift+Z)"
+                style={{ opacity: canRedo ? 1 : 0.35, cursor: canRedo ? "pointer" : "default" }}
+              >
+                <IconRedo size={18} />
               </ToolButton>
 
               <ToolButton
@@ -4161,7 +4248,7 @@ const scales3D = useMemo(() => {
             {/* ✅ Spline toggle button (same row) */}
             <button
               type="button"
-              title="Spline"
+              title="Spline — draw bezier curves"
               onClick={() => setShowSplineTool((v) => !v)}
               style={{
                 width: 30,
@@ -4173,12 +4260,13 @@ const scales3D = useMemo(() => {
                   : "rgba(255,255,255,0.06)",
                 color: "#f8fafc",
                 cursor: "pointer",
-                fontSize: 13,
-                fontWeight: 900,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
                 userSelect: "none",
               }}
             >
-              S
+              <IconSpline size={14} />
             </button>
           </div>
 
