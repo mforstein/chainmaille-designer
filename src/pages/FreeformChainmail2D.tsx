@@ -2795,7 +2795,7 @@ const derived = useMemo(() => {
       setSelectedKeys(new Set(cells.map((c) => `${c.row}-${c.col}`)));
 
       // Apply to scales (no cluster logic)
-      if (activeLayer === "scales") {
+      if (activeLayerRef.current === "scales") {
         setScaleColors((prev) => {
           const next = new Map(prev);
           if (eraseModeRef.current) {
