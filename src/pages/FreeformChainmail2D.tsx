@@ -16,6 +16,7 @@ import RingRenderer from "../components/RingRenderer";
 import type { OverlayState } from "../components/ImageOverlayPanel";
 import FinalizeAndExportPanel from "../components/FinalizeAndExportPanel";
 import ProjectSaveLoadButtons from "../components/ProjectSaveLoadButtons";
+import { ProjectLibraryPanel, type LoadMode } from "../components/ProjectLibraryPanel";
 import {
   applyCalibrationHex,
   calibrationUpdatedEventName,
@@ -30,8 +31,12 @@ import {
 import { DraggablePill, DraggableCompassNav } from "../App";
 import type { ExportRing, PaletteAssignment } from "../types/project";
 import { IconCircle, IconSquare, IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo } from "../components/icons/ToolIcons";
+import { ToolBtn } from "../components/ui/ToolBtn";
 import ShapePanel, { ShapeTool as ShapeToolId } from "../components/ShapePanel";
 import { computeShapeCells } from "../utils/shapeFill";
+import { useAuth, tierAtLeast } from "../auth/AuthContext";
+import defaultFreeformDesign from "../data/defaultFreeformDesign";
+import SupplierColorPalette from "../components/SupplierColorPalette";
 // ⬇️ SAFETY STUB (keeps App.tsx safe if it calls this early; BOM UI removed)
 declare global {
   interface Window {
@@ -422,51 +427,6 @@ type SelectionDrag = {
 };
 // ======================================================
 // UI HELPERS
-// ======================================================
-// ======================================================
-// ToolButton (Copy/paste replacement)
-// Keeps all existing behavior + makes SVG icons visible
-// ======================================================
-
-const ToolButton: React.FC<
-  React.ButtonHTMLAttributes<HTMLButtonElement> & { active?: boolean }
-> = ({ active, children, style: styleProp, ...rest }) => (
-  <button
-    {...rest}
-    style={{
-      width: 48,
-      height: 48,
-      borderRadius: 14,
-      border: "none",
-      fontSize: 24,
-      cursor: "pointer",
-      background: active ? "#2563eb" : "#0f172a",
-      color: active ? "#f9fafb" : "#e5e7eb",
-      boxShadow: active
-        ? "0 10px 25px rgba(37,99,235,0.45)"
-        : "0 4px 12px rgba(0,0,0,0.5)",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      lineHeight: 1,
-      ...styleProp,
-    }}
-  >
-    {/* ✅ ensures SVG icons have a predictable visible size without changing your callsites */}
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: 32,
-        height: 32,
-        color: "inherit",
-      }}
-    >
-      {children}
-    </span>
-  </button>
-);
 
 const smallBtn: React.CSSProperties = {
   flex: 1,
@@ -681,24 +641,24 @@ function normalizeFreeformScaleSettings(src: Record<string, any>): FreeformScale
   const next: FreeformScaleSettings = {
     enabled: true,
     behindRings: false,
-    holeIdMm: 9.1,
-    widthMm: 19,
-    heightMm: 22.3,
+    holeIdMm: 7.94,       // 5/16 inch — matches Tuner default scaleHoleId
+    widthMm: 9.1,          // matches Tuner default scaleWidth
+    heightMm: 22.2,        // matches Tuner default scaleHeight
     shape: "teardrop",
-    dropMm: -0.7,
+    dropMm: 9.2,           // matches Tuner default scaleDrop
     colorHex: "#4dd0e1",
     onEveryCell: true,
     lockScaleHolesToRingCenters: true,
-    centerSpacingMm: 7,
+    centerSpacingMm: 19.6, // matches Tuner default scaleCenterSpacing
     gridOffsetXmm: 0,
     gridOffsetYmm: 0,
-    holeOffsetYMm: 0,
+    holeOffsetYMm: -6.2,   // matches Tuner default scaleHoleOffsetY
     weaveMode: "interlocked",
     angleInDeg: 25,
     angleOutDeg: -25,
-    scalePlaneZ: 10,
-    scaleTipLiftDeg: 18,
-    scaleRowClearanceZ: 0.22,
+    scalePlaneZ: 0,        // matches Tuner default scalePlaneZ
+    scaleTipLiftDeg: 14,   // matches Tuner default scaleTipLiftDeg
+    scaleRowClearanceZ: 1.2, // matches Tuner default scaleRowClearanceZ
   };
 
   if (!src || typeof src !== "object") return next;
@@ -808,6 +768,9 @@ function formatNum(n: number, digits = 1) {
 // ======================================================
 const FreeformChainmail2D: React.FC = () => {
   const navigate = useNavigate();
+  const { tier } = useAuth();
+  const canUseOverlay = tierAtLeast(tier, "studio");
+  const isPreviewOnly = !tierAtLeast(tier, "studio");
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null); // interaction + selection overlay
@@ -816,6 +779,16 @@ const FreeformChainmail2D: React.FC = () => {
 
   // Finalize & Export (must be inside the component)
   const [finalizeOpen, setFinalizeOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+
+  // Canvas background color — persisted across sessions
+  const [canvasBg, setCanvasBg] = useState<string>(() => {
+    return localStorage.getItem("freeform.canvasBg") ?? "#020617";
+  });
+  const updateCanvasBg = (color: string) => {
+    setCanvasBg(color);
+    localStorage.setItem("freeform.canvasBg", color);
+  };
 
   const [assignment, setAssignment] = useState<PaletteAssignment | null>(() => {
     try {
@@ -839,7 +812,17 @@ const FreeformChainmail2D: React.FC = () => {
   // ====================================================
   // PLACED RINGS
   // ====================================================
-  const [rings, setRings] = useState<RingMap>(() => new Map());
+  const [rings, setRings] = useState<RingMap>(() => {
+    // Crafter preview: load default design when no studio access
+    if (!tierAtLeast(tier, "studio")) {
+      const map: RingMap = new Map();
+      for (const r of defaultFreeformDesign.rings) {
+        map.set(`${r.row}-${r.col}`, { row: r.row, col: r.col, cluster: r.cluster, color: r.color } as PlacedRing);
+      }
+      return map;
+    }
+    return new Map();
+  });
   const [nextClusterId, setnextClusterId] = useState(1);
 
   // ✅ DEFAULT COLOR OF RINGS SHOULD BE WHITE
@@ -853,9 +836,12 @@ const FreeformChainmail2D: React.FC = () => {
     activeLayerRef.current = activeLayer;
   }, [activeLayer]);
 
-  const [scaleColors, setScaleColors] = useState<Map<string, string>>(
-    () => new Map(),
-  );
+  const [scaleColors, setScaleColors] = useState<Map<string, string>>(() => {
+    if (!tierAtLeast(tier, "studio")) {
+      return new Map(defaultFreeformDesign.scaleColors.map((s) => [s.key, s.color]));
+    }
+    return new Map();
+  });
   const scaleColorsRef = useRef(scaleColors);
   useEffect(() => {
     scaleColorsRef.current = scaleColors;
@@ -994,6 +980,7 @@ const FreeformChainmail2D: React.FC = () => {
   // ✅ Secondary utility panel (toolbox/save-load/reset)
   const [showUtilityPanel, setShowUtilityPanel] = useState(false);
   const [showSplineTool, setShowSplineTool] = useState(false);
+  const [showSupplierColors, setShowSupplierColors] = useState(false);
   const [splineResetKey, setSplineResetKey] = useState(0);
   // ==============================
   // 📏 Freeform Stats (dims + counts)
@@ -1036,6 +1023,7 @@ const FreeformChainmail2D: React.FC = () => {
   const overlayImgRef = useRef<HTMLImageElement | null>(null);
   const [showImageOverlay, setShowImageOverlay] = useState(false);
   const [overlay, setOverlay] = useState<OverlayState | null>(null);
+  const overlayDragRef = useRef<{ x: number; y: number } | null>(null);
 
   type OverlayScope = "all" | "selection";
   const [overlayScope, setOverlayScope] = useState<OverlayScope>("all");
@@ -1137,7 +1125,7 @@ const FreeformChainmail2D: React.FC = () => {
   // ====================================================
   // PAN / ZOOM (virtual camera → applied to both rings & circles)
   // ====================================================
-  const [zoom, setZoom] = useState(1.0);
+  const [zoom, setZoom] = useState(isPreviewOnly ? 1.6 : 1.0);
   const [panWorldX, setPanWorldX] = useState(0);
   const [panWorldY, setPanWorldY] = useState(0);
 
@@ -1364,23 +1352,8 @@ const FreeformChainmail2D: React.FC = () => {
       im.src = src;
     });
 
-    const cvs = document.createElement("canvas");
-    cvs.width = img.naturalWidth || img.width;
-    cvs.height = img.naturalHeight || img.height;
-
-    const ictx = cvs.getContext("2d", {
-      willReadFrequently: true,
-    } as CanvasRenderingContext2DSettings);
-    if (!ictx) return;
-
-    ictx.clearRect(0, 0, cvs.width, cvs.height);
-    ictx.drawImage(img, 0, 0);
-
-    const imgData = ictx.getImageData(0, 0, cvs.width, cvs.height);
-    const data = imgData.data;
-
-    const W = cvs.width;
-    const H = cvs.height;
+    const iW = img.naturalWidth || img.width;
+    const iH = img.naturalHeight || img.height;
 
     // ---------------------------
     // Compute WORLD bounds of the target cells (rings or scales)
@@ -1422,53 +1395,112 @@ const FreeformChainmail2D: React.FC = () => {
       }
     }
 
-    if (!Number.isFinite(minX)) return;
+    if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) return;
 
     const worldW = Math.max(1e-6, maxX - minX);
     const worldH = Math.max(1e-6, maxY - minY);
+    const worldCenterX = (minX + maxX) * 0.5;
+    const worldCenterY = (minY + maxY) * 0.5;
 
-    // Center of bounds, then apply overlay offset
-    const cx = (minX + maxX) * 0.5 + offsetX;
-    const cy = (minY + maxY) * 0.5 + offsetY;
+    // Preview panel: 360px wide, 14px padding each side → 332px content, 180px tall.
+    const PREVIEW_W = 332;
+    const PREVIEW_H = 180;
+    // Height the image occupies in the preview at scale=1 (fills PREVIEW_W, height auto)
+    const imageDisplayH = (PREVIEW_W * iH) / iW;
+    const imgCanvasH = Math.max(1, Math.ceil(imageDisplayH));
 
-    const invScale = 1 / scale;
+    const isTiled = (overlay as any)?.repeat === "tile";
+    const patternScaleVal = Number((overlay as any)?.patternScale ?? 100);
+    const rotationDeg = Number((overlay as any)?.rotation ?? 0);
 
-    // Base blend against white (matches previous behavior)
-    const baseHex = "#ffffff";
-    const baseR = parseInt(baseHex.slice(1, 3), 16);
-    const baseG = parseInt(baseHex.slice(3, 5), 16);
-    const baseB = parseInt(baseHex.slice(5, 7), 16);
+    const offCanvas = document.createElement("canvas");
+    const offCtx = offCanvas.getContext("2d", {
+      willReadFrequently: true,
+    } as CanvasRenderingContext2DSettings) as CanvasRenderingContext2D | null;
+    if (!offCtx) return;
+
+    let offData: Uint8ClampedArray;
+    let offW: number;
+    let offH: number;
+
+    if (isTiled) {
+      // Tile mode: full preview canvas, tiles always cover everything.
+      offCanvas.width = PREVIEW_W;
+      offCanvas.height = PREVIEW_H;
+      offW = PREVIEW_W;
+      offH = PREVIEW_H;
+      const tilePx = Math.max(1, PREVIEW_W * (patternScaleVal / 100));
+      const tilePy = Math.max(1, tilePx * iH / iW);
+      const tileCanvas = document.createElement("canvas");
+      tileCanvas.width = Math.ceil(tilePx);
+      tileCanvas.height = Math.ceil(tilePy);
+      const tileCtx = tileCanvas.getContext("2d") as CanvasRenderingContext2D | null;
+      if (tileCtx) {
+        tileCtx.drawImage(img, 0, 0, tileCanvas.width, tileCanvas.height);
+      }
+      const pattern = offCtx.createPattern(tileCanvas, "repeat");
+      if (pattern) {
+        pattern.setTransform(new DOMMatrix().translate(offsetX, offsetY));
+        offCtx.fillStyle = pattern;
+      }
+      offCtx.save();
+      offCtx.translate(PREVIEW_W / 2, PREVIEW_H / 2);
+      offCtx.rotate(rotationDeg * (Math.PI / 180));
+      offCtx.translate(-PREVIEW_W / 2, -PREVIEW_H / 2);
+      offCtx.fillRect(0, 0, PREVIEW_W, PREVIEW_H);
+      offCtx.restore();
+      offData = offCtx.getImageData(0, 0, offW, offH).data;
+    } else {
+      // Non-tiled: draw image at display size (no zoom/pan/rotation).
+      // Use inverse transform per-ring with clamping so every ring always
+      // gets a valid image color — no grey gaps from transparent canvas edges.
+      offCanvas.width = PREVIEW_W;
+      offCanvas.height = imgCanvasH;
+      offW = PREVIEW_W;
+      offH = imgCanvasH;
+      offCtx.drawImage(img, 0, 0, PREVIEW_W, imgCanvasH);
+      offData = offCtx.getImageData(0, 0, offW, offH).data;
+    }
+
+    // Base blend against white
+    const baseR = 255, baseG = 255, baseB = 255;
+
+    const rotRad = rotationDeg * (Math.PI / 180);
+    const cosR = Math.cos(rotRad);
+    const sinR = Math.sin(rotRad);
 
     const sampleAtWorld = (wx: number, wy: number): string | null => {
-      // Map world point into normalized [0..1] in overlay frame
-      let nx = ((wx - cx) / worldW) * invScale + 0.5;
-      let ny = ((wy - cy) / worldH) * invScale + 0.5;
+      const nxWorld = (wx - worldCenterX) / worldW;
+      const nyWorld = (wy - worldCenterY) / worldH;
 
-      if (tileX) nx = wrap01(nx);
-      if (tileY) ny = wrap01(ny);
+      let sx: number;
+      let sy: number;
 
-      if (!tileX && (nx < 0 || nx > 1)) return null;
-      if (!tileY && (ny < 0 || ny > 1)) return null;
+      if (isTiled) {
+        sx = Math.floor(PREVIEW_W * (0.5 + nxWorld));
+        sy = Math.floor(PREVIEW_H * (0.5 - nyWorld));
+        sx = Math.max(0, Math.min(offW - 1, sx));
+        sy = Math.max(0, Math.min(offH - 1, sy));
+      } else {
+        // Inverse transform: translate(ox,oy) scale(s) rotate(r) with origin at preview center.
+        // Ring preview position relative to center: (PREVIEW_W*nxWorld, -PREVIEW_H*nyWorld)
+        let dx = PREVIEW_W * nxWorld - offsetX;
+        let dy = -PREVIEW_H * nyWorld - offsetY;
+        dx /= scale;
+        dy /= scale;
+        // Inverse rotation (rotate by -r):
+        const rdx = dx * cosR + dy * sinR;
+        const rdy = -dx * sinR + dy * cosR;
+        // Add image-display center and clamp — guarantees a color for every ring.
+        sx = Math.max(0, Math.min(offW - 1, Math.round(rdx + PREVIEW_W / 2)));
+        sy = Math.max(0, Math.min(offH - 1, Math.round(rdy + imageDisplayH / 2)));
+      }
 
-      // Apply crop window
-      let u = cu0 + nx * cropW;
-      let v = cv0 + ny * cropH;
-
-      if (tileX) u = cu0 + wrap01((u - cu0) / cropW) * cropW;
-      if (tileY) v = cv0 + wrap01((v - cv0) / cropH) * cropH;
-
-      let px = Math.floor(u * W);
-      let py = Math.floor((1 - v) * H);
-
-      if (px === W) px = W - 1;
-      if (py === H) py = H - 1;
-      if (px < 0 || px >= W || py < 0 || py >= H) return null;
-
-      const idx = (py * W + px) * 4;
-      const r = data[idx + 0];
-      const g = data[idx + 1];
-      const b = data[idx + 2];
-      const a255 = data[idx + 3];
+      const idx = (sy * offW + sx) * 4;
+      const r = offData[idx];
+      const g = offData[idx + 1];
+      const b = offData[idx + 2];
+      const a255 = offData[idx + 3];
 
       if (a255 <= 2) return null;
 
@@ -1605,7 +1637,7 @@ const FreeformChainmail2D: React.FC = () => {
         const rMm = Math.sqrt(dx * dx + dy * dy);
         const dMm = rMm * 2;
 
-        // approximate “rings” using center spacing
+        // approximate "rings" using center spacing
         const rRings = centerSpacing > 0 ? rMm / centerSpacing : 0;
         const dRings = rRings * 2;
 
@@ -1928,6 +1960,14 @@ const derived = useMemo(() => {
   const ringStats = derived.ringStats;
   const exportRings = derived.exportRings;
 
+  const scaleStats = useMemo(() => {
+    if (scaleColors.size === 0) return null;
+    const byColor = new Map<string, number>();
+    for (const [, hex] of scaleColors) byColor.set(hex, (byColor.get(hex) ?? 0) + 1);
+    const sorted = [...byColor.entries()].sort((a, b) => b[1] - a[1]);
+    return { total: scaleColors.size, uniqueColors: sorted.length, byColor: sorted };
+  }, [scaleColors]);
+
   // ✅ keep window bridge valid (BOM UI removed)
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2007,6 +2047,11 @@ const derived = useMemo(() => {
 
     return out;
   }, []);
+
+  const getExportGroups = useCallback(
+    () => (ringRendererRef.current as any)?.getExportGroups?.() ?? null,
+    [],
+  );
 
   // ====================================================
   // Clear interaction canvas (selection overlay canvas)
@@ -3453,7 +3498,7 @@ const derived = useMemo(() => {
     setSelectedKeys(new Set());
     setOverlayMaskKeys(new Set());
 
-    // ✅ Clear any cached hit canvas pixels (prevents “stuck” scales)
+    // ✅ Clear any cached hit canvas pixels (prevents "stuck" scales)
     if (hitCanvasRef.current) {
       const c = hitCanvasRef.current;
       const ctx = c.getContext("2d");
@@ -3680,6 +3725,7 @@ const derived = useMemo(() => {
         cluster: r.cluster,
         color: (r as any).color ?? "#ffffff",
       })),
+      scaleColors: Array.from(scaleColors.entries()).map(([key, color]) => ({ key, color })),
       geometry: {
         innerDiameter: innerIDmm,
         wireDiameter: wireMm,
@@ -3687,6 +3733,40 @@ const derived = useMemo(() => {
         angleIn,
         angleOut,
       },
+      scaleSettings: {
+        scaleEnabled: activeScaleSettings.enabled,
+        scaleBehindRings: activeScaleSettings.behindRings,
+        scaleHoleDiameter: activeScaleSettings.holeIdMm,
+        scaleWidth: activeScaleSettings.widthMm,
+        scaleHeight: activeScaleSettings.heightMm,
+        scaleShape: activeScaleSettings.shape,
+        scaleDrop: activeScaleSettings.dropMm,
+        scaleColor: activeScaleSettings.colorHex,
+        scaleOnEveryCell: activeScaleSettings.onEveryCell,
+        lockScaleHolesToRingCenters: activeScaleSettings.lockScaleHolesToRingCenters,
+        scaleCenterSpacing: activeScaleSettings.centerSpacingMm,
+        scaleGridOffsetX: activeScaleSettings.gridOffsetXmm,
+        scaleGridOffsetY: activeScaleSettings.gridOffsetYmm,
+        scaleHoleOffsetY: activeScaleSettings.holeOffsetYMm,
+        scaleWeaveMode: activeScaleSettings.weaveMode,
+        scaleAngleIn: activeScaleSettings.angleInDeg,
+        scaleAngleOut: activeScaleSettings.angleOutDeg,
+        scalePlaneZ: activeScaleSettings.scalePlaneZ,
+        scaleTipLiftDeg: activeScaleSettings.scaleTipLiftDeg,
+        scaleRowClearanceZ: activeScaleSettings.scaleRowClearanceZ,
+      },
+      overlay: overlay
+        ? {
+            dataUrl: overlay.dataUrl,
+            scale: overlay.scale,
+            rotation: overlay.rotation,
+            offsetX: overlay.offsetX,
+            offsetY: overlay.offsetY,
+            opacity: overlay.opacity,
+            repeat: overlay.repeat,
+            patternScale: overlay.patternScale,
+          }
+        : null,
       paletteAssignment: assignment,
       metadata: {
         page: "freeform",
@@ -3697,20 +3777,22 @@ const derived = useMemo(() => {
       },
     };
 
-    // persist to workspace index
-    const idxRaw = localStorage.getItem("chainmail.projectIndex.v1");
-    const idx = idxRaw ? JSON.parse(idxRaw) : [];
-    idx.push({
-      id,
-      tool: "freeform",
-      name,
-      updatedAt: Date.now(),
-      thumbnail: thumb,
-    });
-    localStorage.setItem("chainmail.projectIndex.v1", JSON.stringify(idx));
-
-    // persist payload
-    localStorage.setItem(`chainmail.project:${id}`, JSON.stringify(payload));
+    // persist to workspace index + payload (best-effort; large overlays may exceed quota)
+    try {
+      const idxRaw = localStorage.getItem("chainmail.projectIndex.v1");
+      const idx = idxRaw ? JSON.parse(idxRaw) : [];
+      idx.push({
+        id,
+        tool: "freeform",
+        name,
+        updatedAt: Date.now(),
+        thumbnail: thumb,
+      });
+      localStorage.setItem("chainmail.projectIndex.v1", JSON.stringify(idx));
+      localStorage.setItem(`chainmail.project:${id}`, JSON.stringify(payload));
+    } catch {
+      // QuotaExceededError — project still downloads as a file below
+    }
 
     return payload; // ProjectSaveLoadButtons will still download this JSON
   }, [
@@ -3721,6 +3803,9 @@ const derived = useMemo(() => {
     angleIn,
     angleOut,
     assignment,
+    scaleColors,
+    activeScaleSettings,
+    overlay,
     getRendererCanvas,
   ]);
 
@@ -3767,9 +3852,71 @@ const derived = useMemo(() => {
           JSON.stringify(data.paletteAssignment),
         );
       }
+
+      // Restore scale colors
+      if (Array.isArray(data.scaleColors)) {
+        const newScaleColors = new Map<string, string>();
+        for (const entry of data.scaleColors) {
+          if (entry && typeof entry.key === "string" && typeof entry.color === "string") {
+            newScaleColors.set(entry.key, entry.color);
+          }
+        }
+        setScaleColors(newScaleColors);
+      }
+
+      // Restore scale settings via tuner snapshot
+      if (data.scaleSettings && typeof data.scaleSettings === "object") {
+        const newSnapshot: TunerSnapshot = { ...data, scaleSettings: data.scaleSettings };
+        localStorage.setItem(FREEFORM_TUNER_SNAPSHOT_KEY, JSON.stringify(newSnapshot));
+        setTunerSnapshot(newSnapshot);
+      }
+
+      // Restore image overlay
+      if (data.overlay && data.overlay.dataUrl) {
+        setOverlay(data.overlay as OverlayState);
+      } else {
+        setOverlay(null);
+      }
     },
-    [innerIDmm, wireMm, centerSpacing, angleIn, angleOut],
+    [innerIDmm, wireMm, centerSpacing, angleIn, angleOut, setTunerSnapshot],
   );
+
+  const handleLibraryLoad = useCallback(
+    (data: any, mode: LoadMode) => {
+      if (mode === "replace") {
+        loadFreeformProject(data);
+        return;
+      }
+      // Append: col-offset all rings and scaleColors to the right of existing canvas
+      const currentCols = Array.from(rings.values()).map((r) => r.col);
+      const maxExistingCol = currentCols.length > 0 ? Math.max(...currentCols) : -1;
+      const incomingRings: any[] = Array.isArray(data.rings) ? data.rings : [];
+      const incomingCols = incomingRings.map((r: any) => r.col ?? 0);
+      const minIncomingCol = incomingCols.length > 0 ? Math.min(...incomingCols) : 0;
+      const colOffset = maxExistingCol - minIncomingCol + 2;
+
+      const shiftedRings = incomingRings.map((r: any) => ({ ...r, col: r.col + colOffset }));
+      const shiftedScaleColors = Array.isArray(data.scaleColors)
+        ? data.scaleColors.map((s: any) => {
+            const [row, col] = (s.key ?? "0,0").split(",").map(Number);
+            return { ...s, key: `${row},${col + colOffset}` };
+          })
+        : [];
+
+      const merged = {
+        ...data,
+        type: "freeform",
+        rings: shiftedRings,
+        scaleColors: shiftedScaleColors,
+        // Don't restore overlay or scaleSettings in append mode — keep current ones
+        overlay: undefined,
+        scaleSettings: undefined,
+      };
+      loadFreeformProject(merged);
+    },
+    [rings, loadFreeformProject],
+  );
+
   // ====================================================
   // Manual JSON load
   // ====================================================
@@ -3783,14 +3930,29 @@ const derived = useMemo(() => {
         try {
           const data = JSON.parse(String(ev.target?.result || "{}"));
 
-          if (typeof data.innerDiameter === "number")
-            setInnerIDmm(data.innerDiameter);
-          if (typeof data.wireDiameter === "number")
-            setWireMm(data.wireDiameter);
-          if (typeof data.centerSpacing === "number")
-            setCenterSpacing(data.centerSpacing);
-          if (typeof data.angleIn === "number") setAngleIn(data.angleIn);
-          if (typeof data.angleOut === "number") setAngleOut(data.angleOut);
+          // Ring geometry: support both snapshot format (data.ringGeometry.*) and flat format
+          const geo = (data.ringGeometry && typeof data.ringGeometry === "object") ? data.ringGeometry : data;
+          if (typeof geo.innerDiameter === "number") setInnerIDmm(geo.innerDiameter);
+          if (typeof geo.wireDiameter === "number") setWireMm(geo.wireDiameter);
+          if (typeof geo.centerSpacing === "number") setCenterSpacing(geo.centerSpacing);
+          if (typeof geo.angleIn === "number") setAngleIn(geo.angleIn);
+          if (typeof geo.angleOut === "number") setAngleOut(geo.angleOut);
+
+          // Scale settings: data.scaleSettings (Tuner snapshot format) or flat fields
+          const scaleSrc = (data.scaleSettings && typeof data.scaleSettings === "object")
+            ? data.scaleSettings
+            : data;
+          const hasScaleFields =
+            typeof scaleSrc.scaleHoleDiameter === "number" ||
+            typeof scaleSrc.scaleWidth === "number" ||
+            typeof scaleSrc.scalePlaneZ === "number" ||
+            typeof scaleSrc.holeIdMm === "number";
+
+          if (hasScaleFields) {
+            const newSnapshot: TunerSnapshot = { ...data, scaleSettings: scaleSrc };
+            localStorage.setItem(FREEFORM_TUNER_SNAPSHOT_KEY, JSON.stringify(newSnapshot));
+            setTunerSnapshot(newSnapshot);
+          }
 
           const newId = data.id || `file:${file.name}`;
           setActiveRingSetId(newId);
@@ -3803,8 +3965,57 @@ const derived = useMemo(() => {
 
       reader.readAsText(file);
     },
-    [],
+    [setTunerSnapshot],
   );
+
+  const handleSaveJSON = useCallback(() => {
+    const snap: Record<string, any> = {
+      id: `freeform-${Date.now()}`,
+      savedAt: new Date().toISOString(),
+      ringGeometry: {
+        innerDiameter: innerIDmm,
+        wireDiameter: wireMm,
+        centerSpacing,
+        angleIn,
+        angleOut,
+      },
+      // Flat ring fields for Tuner ring-set import compatibility
+      innerDiameter: innerIDmm,
+      wireDiameter: wireMm,
+      centerSpacing,
+      angleIn,
+      angleOut,
+      scaleSettings: {
+        scaleEnabled: activeScaleSettings.enabled,
+        scaleBehindRings: activeScaleSettings.behindRings,
+        scaleHoleDiameter: activeScaleSettings.holeIdMm,
+        scaleWidth: activeScaleSettings.widthMm,
+        scaleHeight: activeScaleSettings.heightMm,
+        scaleShape: activeScaleSettings.shape,
+        scaleDrop: activeScaleSettings.dropMm,
+        scaleColor: activeScaleSettings.colorHex,
+        scaleOnEveryCell: activeScaleSettings.onEveryCell,
+        lockScaleHolesToRingCenters: activeScaleSettings.lockScaleHolesToRingCenters,
+        scaleCenterSpacing: activeScaleSettings.centerSpacingMm,
+        scaleGridOffsetX: activeScaleSettings.gridOffsetXmm,
+        scaleGridOffsetY: activeScaleSettings.gridOffsetYmm,
+        scaleHoleOffsetY: activeScaleSettings.holeOffsetYMm,
+        scaleWeaveMode: activeScaleSettings.weaveMode,
+        scaleAngleIn: activeScaleSettings.angleInDeg,
+        scaleAngleOut: activeScaleSettings.angleOutDeg,
+        scalePlaneZ: activeScaleSettings.scalePlaneZ,
+        scaleTipLiftDeg: activeScaleSettings.scaleTipLiftDeg,
+        scaleRowClearanceZ: activeScaleSettings.scaleRowClearanceZ,
+      },
+    };
+    const blob = new Blob([JSON.stringify(snap, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `freeform-settings-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [innerIDmm, wireMm, centerSpacing, angleIn, angleOut, activeScaleSettings]);
   
 
 
@@ -3826,10 +4037,10 @@ const derived = useMemo(() => {
       innerDiameter: innerIDmm,
       wireDiameter: wireMm,
       ringColor: "#ffffff",
-      bgColor: "#020617",
+      bgColor: canvasBg,
       centerSpacing,
     }),
-    [innerIDmm, wireMm, centerSpacing, maxRowSpan, maxColSpan],
+    [innerIDmm, wireMm, centerSpacing, maxRowSpan, maxColSpan, canvasBg],
   );
 
 const scales3D = useMemo(() => {
@@ -3846,7 +4057,9 @@ const scales3D = useMemo(() => {
 
     const rowClearance = s.rowClearanceZMm ?? 0;
     const planeZ = s.planeZMm ?? 0;
-    const stackedZ = planeZ + (maxScaleRow - row) * rowClearance;
+    // Tilt axis at center row so Scale Plane Z stays as the true average Z depth
+    const centerRow = maxScaleRow / 2;
+    const stackedZ = planeZ + (centerRow - row) * rowClearance;
 
     // holeX/holeY = where pivot sits (ring center = scale hole center)
     const holeX = (s.x_mm ?? 0) - logicalOrigin.ox;
@@ -3897,7 +4110,7 @@ const scales3D = useMemo(() => {
       style={{
         width: "100vw",
         height: "100vh",
-        background: "#020617",
+        background: canvasBg,
         display: "flex",
         flexDirection: "row",
         color: "#e5e7eb",
@@ -3924,33 +4137,34 @@ const scales3D = useMemo(() => {
             boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
             userSelect: "none",
           }}
+          onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
         >
-          <ToolButton
+          <ToolBtn
             active={showCompass}
             onClick={() => setShowCompass((v) => !v)}
             title="Navigation Menu"
           >
             <IconHamburger size={18} />
-          </ToolButton>
+          </ToolBtn>
 
-          <ToolButton
+          <ToolBtn
             onClick={() => setFinalizeOpen(true)}
             title="Finalize & Export (SKU mapping, numbered maps, true-size print)"
           >
             📦
-          </ToolButton>
+          </ToolBtn>
 
-          <ToolButton
+          <ToolBtn
             active={!toolbarCollapsed}
             onClick={() => setToolbarCollapsed((v) => !v)}
             title={toolbarCollapsed ? "Expand tools" : "Collapse tools"}
           >
             {toolbarCollapsed ? "▸" : "▾"}
-          </ToolButton>
+          </ToolBtn>
 
-          <ToolButton
+          <ToolBtn
             active={showUtilityPanel}
             onClick={() => setShowUtilityPanel((v) => !v)}
             title={
@@ -3960,11 +4174,11 @@ const scales3D = useMemo(() => {
             }
           >
             ⚙️
-          </ToolButton>
+          </ToolBtn>
 
           {!toolbarCollapsed && (
-            <>
-              <ToolButton
+            <div style={isPreviewOnly ? { opacity: 0.3, pointerEvents: "none", display: "contents" } : { display: "contents" }}>
+              <ToolBtn
                 active={!eraseMode && selectionMode === "none"}
                 onClick={() => {
                   setEraseMode(false);
@@ -3975,9 +4189,9 @@ const scales3D = useMemo(() => {
                 title="Paint rings"
               >
                 🎨
-              </ToolButton>
+              </ToolBtn>
 
-              <ToolButton
+              <ToolBtn
                 active={eraseMode}
                 onClick={() => {
                   setEraseMode((v) => !v);
@@ -3993,25 +4207,25 @@ const scales3D = useMemo(() => {
                 title="Eraser — click rings/scales to remove"
               >
                 <IconEraser size={18} />
-              </ToolButton>
+              </ToolBtn>
 
-              <ToolButton
+              <ToolBtn
                 onClick={handleUndoAction}
                 title="Undo (Ctrl+Z)"
                 style={{ opacity: canUndo ? 1 : 0.35, cursor: canUndo ? "pointer" : "default" }}
               >
                 <IconUndo size={18} />
-              </ToolButton>
+              </ToolBtn>
 
-              <ToolButton
+              <ToolBtn
                 onClick={handleRedoAction}
                 title="Redo (Ctrl+Shift+Z)"
                 style={{ opacity: canRedo ? 1 : 0.35, cursor: canRedo ? "pointer" : "default" }}
               >
                 <IconRedo size={18} />
-              </ToolButton>
+              </ToolBtn>
 
-              <ToolButton
+              <ToolBtn
                 active={selectionMode !== "none"}
                 onClick={() => {
                   setShapePanelOpen((v) => !v);
@@ -4021,9 +4235,9 @@ const scales3D = useMemo(() => {
                 title="Shapes"
               >
                 <IconSquare />
-              </ToolButton>
+              </ToolBtn>
 
-              <ToolButton
+              <ToolBtn
                 active={activeLayer === "scales"}
                 onClick={() => {
                   setActiveLayer((prev) => {
@@ -4038,7 +4252,7 @@ const scales3D = useMemo(() => {
                 title="Toggle Rings/Scales"
               >
                 {activeLayer === "rings" ? "R" : "S"}
-              </ToolButton>
+              </ToolBtn>
 
               <ShapePanel
                 open={shapePanelOpen}
@@ -4059,7 +4273,7 @@ const scales3D = useMemo(() => {
                 }}
               />
 
-              <ToolButton
+              <ToolBtn
                 active={panMode}
                 onClick={() => {
                   setPanMode((v) => !v);
@@ -4075,21 +4289,25 @@ const scales3D = useMemo(() => {
                 title="Pan / Drag view"
               >
                 ✋
-              </ToolButton>
-              {/* Image Overlay */}
-              <ToolButton
+              </ToolBtn>
+              {/* Image Overlay — Studio only */}
+              <ToolBtn
                 active={showImageOverlay}
-                onClick={() => setShowImageOverlay((v) => !v)}
-                title="Image overlay (apply to rings)"
+                onClick={() => {
+                  if (canUseOverlay) setShowImageOverlay((v) => !v);
+                  else window.location.href = "/auth?mode=upgrade";
+                }}
+                title={canUseOverlay ? "Image overlay (apply to rings)" : "Image Overlay (Studio)"}
+                style={{ opacity: canUseOverlay ? 1 : 0.45, position: "relative" }}
               >
-                🖼️
-              </ToolButton>
+                🖼️{!canUseOverlay && <span style={{ position: "absolute", top: 2, right: 2, fontSize: 8, lineHeight: 1 }}>🔒</span>}
+              </ToolBtn>
 
               {/* Clear */}
-              <ToolButton onClick={handleClear} title="Clear all">
+              <ToolBtn onClick={handleClear} title="Clear all">
                 🧹
-              </ToolButton>
-            </>
+              </ToolBtn>
+            </div>
           )}
         </div>
       </DraggablePill>
@@ -4119,16 +4337,17 @@ const scales3D = useMemo(() => {
               boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
               userSelect: "none",
             }}
+            onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
-            <ToolButton
+            <ToolBtn
               active={showControls}
               onClick={() => setShowControls((v) => !v)}
               title="Geometry & JSON controls"
             >
               🧰
-            </ToolButton>
+            </ToolBtn>
 
             <ProjectSaveLoadButtons
               onSave={saveFreeformProject}
@@ -4139,7 +4358,57 @@ const scales3D = useMemo(() => {
               }}
             />
 
-            <ToolButton
+            <ToolBtn
+              active={libraryOpen}
+              onClick={() => setLibraryOpen((v) => !v)}
+              title="Design Library — browse starter templates & saved projects"
+            >
+              📚
+            </ToolBtn>
+
+            {/* Canvas background colour */}
+            <div
+              style={{ display: "flex", alignItems: "center", gap: 4, position: "relative" }}
+              title="Canvas background colour"
+            >
+              <button
+                onClick={() => updateCanvasBg(canvasBg === "#020617" ? "#f8fafc" : "#020617")}
+                title={canvasBg === "#020617" ? "Switch to light background" : "Switch to dark background"}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 14,
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: canvasBg,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 18,
+                  boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.15)",
+                  transition: "background 0.2s",
+                }}
+              >
+                {canvasBg === "#020617" ? "🌙" : "☀️"}
+              </button>
+              <input
+                type="color"
+                value={canvasBg}
+                onChange={(e) => updateCanvasBg(e.target.value)}
+                title="Custom canvas background colour"
+                style={{
+                  width: 20,
+                  height: 20,
+                  borderRadius: 5,
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  padding: 0,
+                  cursor: "pointer",
+                  background: "none",
+                }}
+              />
+            </div>
+
+            <ToolBtn
               onClick={() => {
                 if (!window.confirm("Reset UI layout and view settings?"))
                   return;
@@ -4148,7 +4417,7 @@ const scales3D = useMemo(() => {
               title="Reset UI (layout + view + tool states)"
             >
               ♻️
-            </ToolButton>
+            </ToolBtn>
             <button
               onClick={() => setShowFreeformStats((v) => !v)}
               title={
@@ -4177,7 +4446,7 @@ const scales3D = useMemo(() => {
       {/* ============================= */}
       {/* ✅ FLOATING COLOR PALETTE (Designer style) */}
       {/* ============================= */}
-      <DraggablePill
+      {!isPreviewOnly && <DraggablePill
         id="freeform-palette"
         defaultPosition={{
           x: 20,
@@ -4197,6 +4466,7 @@ const scales3D = useMemo(() => {
             boxShadow: "0 6px 18px rgba(0,0,0,0.45)",
             userSelect: "none",
           }}
+          onPointerDown={(e) => e.stopPropagation()}
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
         >
@@ -4245,7 +4515,7 @@ const scales3D = useMemo(() => {
             >
               ↺
             </button>
-            {/* ✅ Spline toggle button (same row) */}
+            {/* Spline toggle */}
             <button
               type="button"
               title="Spline — draw bezier curves"
@@ -4268,6 +4538,27 @@ const scales3D = useMemo(() => {
             >
               <IconSpline size={14} />
             </button>
+            {/* Supplier colors toggle */}
+            <button
+              type="button"
+              title="Browse supplier colors"
+              onClick={() => setShowSupplierColors((v) => !v)}
+              style={{
+                width: 30,
+                height: 26,
+                borderRadius: 10,
+                border: "1px solid rgba(255,255,255,0.16)",
+                background: showSupplierColors
+                  ? "rgba(180,83,9,0.7)"
+                  : "rgba(255,255,255,0.06)",
+                color: "#f8fafc",
+                cursor: "pointer",
+                fontSize: 13,
+                userSelect: "none",
+              }}
+            >
+              🏭
+            </button>
           </div>
 
           {paletteManagerOpen && (
@@ -4282,6 +4573,7 @@ const scales3D = useMemo(() => {
                 display: "grid",
                 gap: 8,
               }}
+              onPointerDown={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
             >
@@ -4443,8 +4735,29 @@ const scales3D = useMemo(() => {
               />
             ))}
           </div>
+
+          {/* Supplier color browser */}
+          {showSupplierColors && (
+            <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 8 }}>
+              <SupplierColorPalette
+                activeColor={activeColor}
+                paletteColors={colorPalette}
+                onSelectColor={(hex, _name) => {
+                  const norm = normalizeColor6(hex);
+                  setActiveColor(norm);
+                  setEraseMode(false);
+                  // Add to palette if not already present
+                  setColorPalette((prev) => {
+                    const lo = norm.toLowerCase();
+                    if (prev.some((c) => c.toLowerCase() === lo)) return prev;
+                    return [...prev, norm];
+                  });
+                }}
+              />
+            </div>
+          )}
         </div>
-      </DraggablePill>
+      </DraggablePill>}
 
       {pickerState && (
         <PaletteColorPickerModal
@@ -4500,6 +4813,7 @@ const scales3D = useMemo(() => {
               fontSize: 13,
               boxShadow: "0 12px 40px rgba(0,0,0,.45)",
             }}
+            onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
@@ -4731,9 +5045,9 @@ const scales3D = useMemo(() => {
               )}
             </div>
 
-            {/* Color breakdown */}
+            {/* Ring color breakdown */}
             <div>
-              <div style={{ fontWeight: 800, marginBottom: 6 }}>By color</div>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>Rings by color</div>
 
               {!ringStats?.byColor?.length ? (
                 <div style={{ color: "#9ca3af" }}>No rings placed.</div>
@@ -4787,425 +5101,230 @@ const scales3D = useMemo(() => {
                 </div>
               )}
             </div>
+
+            {/* Scale stats */}
+            {scaleStats && (
+              <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 10, marginTop: 2 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                  <span style={{ color: "#9ca3af" }}>Scales</span>
+                  <span style={{ fontWeight: 800 }}>{scaleStats.total}</span>
+                </div>
+                <div style={{ fontWeight: 800, marginBottom: 6 }}>Scales by color</div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {scaleStats.byColor.slice(0, 12).map(([hex, count]) => (
+                    <div key={hex} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ width: 12, height: 12, borderRadius: 3, background: hex, border: "1px solid rgba(0,0,0,.8)", flexShrink: 0 }} />
+                        <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" }}>{hex}</span>
+                      </span>
+                      <span style={{ fontWeight: 800 }}>{count}</span>
+                    </div>
+                  ))}
+                  {scaleStats.byColor.length > 12 && (
+                    <div style={{ color: "#9ca3af", fontSize: 12 }}>+ {scaleStats.byColor.length - 12} more…</div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </DraggablePill>
       )}
       {/* ============================= */}
       {/* ✅ IMAGE OVERLAY PANEL (Freeform) */}
       {/* ============================= */}
-      {showImageOverlay && (
+      {showImageOverlay && canUseOverlay && (
         <DraggablePill
           id="freeform-image-overlay"
           defaultPosition={{ x: 120, y: 120 }}
         >
           <div
             style={{
-              width: 320,
+              width: 360,
               background: "rgba(17,24,39,0.97)",
-              border: "1px solid rgba(0,0,0,0.6)",
-              borderRadius: 14,
-              padding: 12,
-              color: "#e5e7eb",
+              border: "1px solid #1f2937",
+              borderRadius: 18,
+              padding: 14,
+              color: "#f3f4f6",
               fontSize: 12,
-              boxShadow: "0 12px 40px rgba(0,0,0,.45)",
+              boxShadow: "0 8px 25px rgba(0,0,0,.5)",
               display: "grid",
               gap: 10,
             }}
+            onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <strong style={{ fontSize: 13 }}>🖼️ Image Overlay</strong>
+            {/* Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <strong style={{ fontSize: 14, fontWeight: 700, color: "#e5e7eb" }}>🖼️ Image Overlay</strong>
               <button
                 onClick={() => setShowImageOverlay(false)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#9ca3af",
-                  cursor: "pointer",
-                  fontSize: 16,
-                }}
+                style={{ background: "none", border: "none", color: "#9ca3af", cursor: "pointer", fontSize: 16 }}
                 title="Close"
-              >
-                ✕
-              </button>
+              >✕</button>
             </div>
 
-            {/* ✅ Scope selector + pick selection */}
+            {/* Drop zone */}
             <div
-              style={{
-                display: "grid",
-                gap: 8,
-                padding: 10,
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.10)",
-                background: "rgba(2,6,23,0.75)",
+              onPointerDown={(e) => e.stopPropagation()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const file = e.dataTransfer.files?.[0];
+                if (file && file.type.startsWith("image/")) {
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    const dataUrl = String(ev.target?.result || "");
+                    setOverlay((p) => ({ ...(p ?? { rotation: 0, repeat: "none", patternScale: 100 } as OverlayState), dataUrl, scale: p?.scale ?? 1, opacity: p?.opacity ?? 0.8, offsetX: 0, offsetY: 0 }));
+                  };
+                  reader.readAsDataURL(file);
+                }
               }}
+              onClick={() => (document.getElementById("freeform-overlay-file-input") as HTMLInputElement)?.click()}
+              style={{ border: "2px dashed #374151", borderRadius: 10, padding: 12, textAlign: "center", cursor: "pointer", userSelect: "none" }}
+              title="Click or drop an image"
             >
-              <div style={{ fontWeight: 800, fontSize: 12 }}>
-                Transfer Scope
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: 10,
-                  alignItems: "center",
-                  flexWrap: "wrap",
+              <input
+                id="freeform-overlay-file-input"
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = (ev) => {
+                    const dataUrl = String(ev.target?.result || "");
+                    setOverlay((p) => ({ ...(p ?? { rotation: 0, repeat: "none", patternScale: 100 } as OverlayState), dataUrl, scale: p?.scale ?? 1, opacity: p?.opacity ?? 0.8, offsetX: 0, offsetY: 0 }));
+                  };
+                  reader.readAsDataURL(file);
                 }}
-              >
-                <label
-                  style={{
-                    display: "flex",
-                    gap: 6,
-                    alignItems: "center",
-                    cursor: "pointer",
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="overlayScope"
-                    checked={overlayScope === "all"}
-                    onChange={() => setOverlayScope("all")}
-                  />
-                  <span>All rings</span>
-                </label>
-
-                <label
-                  style={{
-                    display: "flex",
-                    gap: 6,
-                    alignItems: "center",
-                    cursor: "pointer",
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name="overlayScope"
-                    checked={overlayScope === "selection"}
-                    onChange={() => setOverlayScope("selection")}
-                  />
-                  <span>Selection only</span>
-                </label>
+              />
+              <div style={{ fontSize: 12, color: "#9ca3af" }}>
+                {overlay?.dataUrl ? "🔄 Click or drop to replace image" : "📂 Click or drop an image to overlay"}
               </div>
+            </div>
 
+            {/* Preview — drag to pan */}
+            {overlay?.dataUrl && (
+              <div
+                style={{ position: "relative", width: "100%", height: 180, borderRadius: 8, overflow: "hidden", background: "#000", display: "flex", justifyContent: "center", alignItems: "center", boxShadow: "inset 0 0 12px rgba(0,0,0,0.4)", cursor: overlayDragRef.current ? "grabbing" : "grab", touchAction: "none" }}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  overlayDragRef.current = { x: e.clientX, y: e.clientY };
+                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+                }}
+                onPointerMove={(e) => {
+                  if (!overlayDragRef.current) return;
+                  const dx = e.clientX - overlayDragRef.current.x;
+                  const dy = e.clientY - overlayDragRef.current.y;
+                  overlayDragRef.current = { x: e.clientX, y: e.clientY };
+                  setOverlay((p) => p ? { ...p, offsetX: (p.offsetX ?? 0) + dx, offsetY: (p.offsetY ?? 0) + dy } : p);
+                }}
+                onPointerUp={() => { overlayDragRef.current = null; }}
+                onPointerCancel={() => { overlayDragRef.current = null; }}
+              >
+                <img
+                  src={overlay.dataUrl}
+                  alt="Overlay preview"
+                  style={{
+                    position: "absolute",
+                    transform: `translate(${overlay.offsetX ?? 0}px, ${overlay.offsetY ?? 0}px) scale(${overlay.scale ?? 1}) rotate(${overlay.rotation ?? 0}deg)`,
+                    transformOrigin: "center",
+                    width: "100%", height: "auto",
+                    objectFit: "contain",
+                    opacity: overlay.opacity ?? 0.8,
+                    pointerEvents: "none",
+                  }}
+                />
+              </div>
+            )}
+
+            {/* Sliders */}
+            <label style={{ display: "grid", gap: 3 }}>
+              <span style={{ color: "#9ca3af" }}>Scale</span>
+              <input type="range" min={0.2} max={6} step={0.01}
+                value={overlay?.scale ?? 1}
+                onChange={(e) => setOverlay((p) => p ? { ...p, scale: Number(e.target.value) } : p)}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 3 }}>
+              <span style={{ color: "#9ca3af" }}>Opacity</span>
+              <input type="range" min={0} max={1} step={0.01}
+                value={overlay?.opacity ?? 0.8}
+                onChange={(e) => setOverlay((p) => p ? { ...p, opacity: Number(e.target.value) } : p)}
+              />
+            </label>
+            <label style={{ display: "grid", gap: 3 }}>
+              <span style={{ color: "#9ca3af" }}>Rotation</span>
+              <input type="range" min={0} max={360} step={1}
+                value={overlay?.rotation ?? 0}
+                onChange={(e) => setOverlay((p) => p ? { ...p, rotation: Number(e.target.value) } : p)}
+              />
+            </label>
+
+            {(["offsetX", "offsetY"] as const).map((field) => (
+              <label key={field} style={{ display: "grid", gap: 3 }}>
+                <span style={{ color: "#9ca3af", display: "flex", justifyContent: "space-between" }}>
+                  <span>{field === "offsetX" ? "Pan X" : "Pan Y"}</span>
+                  <span style={{ fontVariantNumeric: "tabular-nums" }}>{Math.round(overlay?.[field] ?? 0)}</span>
+                </span>
+                <input type="range" min={-300} max={300} step={1}
+                  value={overlay?.[field] ?? 0}
+                  onChange={(e) => setOverlay((p) => p ? { ...p, [field]: Number(e.target.value) } : p)}
+                />
+              </label>
+            ))}
+
+            <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
+              <input type="checkbox"
+                checked={overlay?.repeat === "tile"}
+                onChange={(e) => setOverlay((p) => p ? { ...p, repeat: e.target.checked ? "tile" : "none" } : p)}
+              />
+              <span>Tile (repeat)</span>
+            </label>
+
+            {/* Transfer Scope */}
+            <div style={{ display: "grid", gap: 8, padding: 10, borderRadius: 12, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(2,6,23,0.75)" }}>
+              <div style={{ fontWeight: 800 }}>Transfer Scope</div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                {(["all", "selection"] as const).map((scope) => (
+                  <label key={scope} style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
+                    <input type="radio" name="overlayScope" checked={overlayScope === scope} onChange={() => setOverlayScope(scope)} />
+                    <span>{scope === "all" ? "All rings" : "Selection only"}</span>
+                  </label>
+                ))}
+              </div>
               {overlayScope === "selection" && (
                 <div style={{ display: "grid", gap: 6 }}>
-                  <button
-                    type="button"
+                  <button type="button"
                     onClick={() => {
                       overlayPickingRef.current = true;
                       setOverlayMaskKeys(new Set());
                       setSelectedKeys(new Set());
                       setEraseMode(false);
                       setPanMode(false);
-                      // ensure a selection tool is active so user can drag right away
                       setSelectionMode((m) => (m === "none" ? "square" : m));
                     }}
-                    style={{
-                      width: "100%",
-                      padding: "8px 10px",
-                      borderRadius: 12,
-                      border: "1px solid rgba(255,255,255,0.14)",
-                      background: "rgba(255,255,255,0.92)",
-                      color: "#0b1220",
-                      cursor: "pointer",
-                      fontSize: 12,
-                      fontWeight: 900,
-                    }}
-                    title="Click, then drag a rectangle/circle selection on the canvas to define the transfer area."
-                  >
-                    🎯 Pick selection area (then drag on canvas)
-                  </button>
-
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.14)", background: "rgba(255,255,255,0.92)", color: "#0b1220", cursor: "pointer", fontWeight: 900 }}
+                  >🎯 Pick selection area (then drag on canvas)</button>
                   <div style={{ fontSize: 11, opacity: 0.85 }}>
-                    Picked cells: <b>{overlayMaskKeys.size}</b>{" "}
-                    {overlayMaskKeys.size === 0 ? "(none yet)" : ""}
-                    {overlayPickingRef.current ? " • Picking…" : ""}
+                    Picked: <b>{overlayMaskKeys.size}</b>{overlayMaskKeys.size === 0 ? " (none yet)" : ""}{overlayPickingRef.current ? " • Picking…" : ""}
                   </div>
-                  {overlayMaskKeys.size === 0 && (
-                    <div style={{ fontSize: 11, color: "#fbbf24" }}>
-                      Tip: click “Pick selection area”, then drag a selection.
-                      Press <b>Esc</b> to cancel.
-                    </div>
-                  )}
                 </div>
               )}
             </div>
 
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = (ev) => {
-                  const dataUrl = String(ev.target?.result || "");
-                  setOverlay((prev: any) => ({
-                    ...(prev ?? {}),
-                    dataUrl,
-                    scale: prev?.scale ?? 1,
-                    opacity: prev?.opacity ?? 0.8,
-                    offsetX: prev?.offsetX ?? 0,
-                    offsetY: prev?.offsetY ?? 0,
-                    tile: prev?.tile ?? true,
-                    // optional crop defaults to full image
-                    cropU0: prev?.cropU0 ?? 0,
-                    cropV0: prev?.cropV0 ?? 0,
-                    cropU1: prev?.cropU1 ?? 1,
-                    cropV1: prev?.cropV1 ?? 1,
-                  }));
-                };
-                reader.readAsDataURL(file);
-              }}
-            />
-
-            <label style={{ display: "grid", gap: 4 }}>
-              Scale
-              <input
-                type="range"
-                min={0.2}
-                max={6}
-                step={0.01}
-                value={Number((overlay as any)?.scale ?? 1)}
-                onChange={(e) =>
-                  setOverlay((p: any) => ({
-                    ...(p ?? {}),
-                    scale: Number(e.target.value),
-                  }))
-                }
-              />
-            </label>
-
-            <label style={{ display: "grid", gap: 4 }}>
-              Opacity
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.01}
-                value={Number((overlay as any)?.opacity ?? 0.8)}
-                onChange={(e) =>
-                  setOverlay((p: any) => ({
-                    ...(p ?? {}),
-                    opacity: Number(e.target.value),
-                  }))
-                }
-              />
-            </label>
-
-            <div
+            {/* Transfer button */}
+            <button type="button" onClick={transferOverlayToRings}
+              disabled={!overlay?.dataUrl || (overlayScope === "selection" && overlayMaskKeys.size === 0)}
               style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 8,
+                width: "100%", padding: "10px 12px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.14)",
+                background: "#22c55e", color: "#052e16", cursor: "pointer", fontWeight: 900,
+                opacity: !overlay?.dataUrl || (overlayScope === "selection" && overlayMaskKeys.size === 0) ? 0.6 : 1,
               }}
-            >
-              <label style={{ display: "grid", gap: 4 }}>
-                Offset X
-                <input
-                  type="number"
-                  value={Number((overlay as any)?.offsetX ?? 0)}
-                  onChange={(e) =>
-                    setOverlay((p: any) => ({
-                      ...(p ?? {}),
-                      offsetX: Number(e.target.value),
-                    }))
-                  }
-                  style={{
-                    padding: 6,
-                    borderRadius: 10,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(255,255,255,0.06)",
-                    color: "#f8fafc",
-                  }}
-                />
-              </label>
-              <label style={{ display: "grid", gap: 4 }}>
-                Offset Y
-                <input
-                  type="number"
-                  value={Number((overlay as any)?.offsetY ?? 0)}
-                  onChange={(e) =>
-                    setOverlay((p: any) => ({
-                      ...(p ?? {}),
-                      offsetY: Number(e.target.value),
-                    }))
-                  }
-                  style={{
-                    padding: 6,
-                    borderRadius: 10,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(255,255,255,0.06)",
-                    color: "#f8fafc",
-                  }}
-                />
-              </label>
-            </div>
-
-            <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-              <input
-                type="checkbox"
-                checked={!!(overlay as any)?.tile}
-                onChange={(e) =>
-                  setOverlay((p: any) => ({
-                    ...(p ?? {}),
-                    tile: e.target.checked,
-                  }))
-                }
-              />
-              <span>Tile (repeat)</span>
-            </label>
-
-            <div style={{ fontSize: 11, opacity: 0.85 }}>
-              Crop (normalized 0..1). These values enable your “window
-              selection” pipeline. You can wire a drag-rect UI later to set
-              these.
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 8,
-              }}
-            >
-              <label style={{ display: "grid", gap: 4 }}>
-                U0
-                <input
-                  type="number"
-                  step={0.01}
-                  min={0}
-                  max={1}
-                  value={Number((overlay as any)?.cropU0 ?? 0)}
-                  onChange={(e) =>
-                    setOverlay((p: any) => ({
-                      ...(p ?? {}),
-                      cropU0: Number(e.target.value),
-                    }))
-                  }
-                  style={{
-                    padding: 6,
-                    borderRadius: 10,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(255,255,255,0.06)",
-                    color: "#f8fafc",
-                  }}
-                />
-              </label>
-              <label style={{ display: "grid", gap: 4 }}>
-                V0
-                <input
-                  type="number"
-                  step={0.01}
-                  min={0}
-                  max={1}
-                  value={Number((overlay as any)?.cropV0 ?? 0)}
-                  onChange={(e) =>
-                    setOverlay((p: any) => ({
-                      ...(p ?? {}),
-                      cropV0: Number(e.target.value),
-                    }))
-                  }
-                  style={{
-                    padding: 6,
-                    borderRadius: 10,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(255,255,255,0.06)",
-                    color: "#f8fafc",
-                  }}
-                />
-              </label>
-              <label style={{ display: "grid", gap: 4 }}>
-                U1
-                <input
-                  type="number"
-                  step={0.01}
-                  min={0}
-                  max={1}
-                  value={Number((overlay as any)?.cropU1 ?? 1)}
-                  onChange={(e) =>
-                    setOverlay((p: any) => ({
-                      ...(p ?? {}),
-                      cropU1: Number(e.target.value),
-                    }))
-                  }
-                  style={{
-                    padding: 6,
-                    borderRadius: 10,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(255,255,255,0.06)",
-                    color: "#f8fafc",
-                  }}
-                />
-              </label>
-              <label style={{ display: "grid", gap: 4 }}>
-                V1
-                <input
-                  type="number"
-                  step={0.01}
-                  min={0}
-                  max={1}
-                  value={Number((overlay as any)?.cropV1 ?? 1)}
-                  onChange={(e) =>
-                    setOverlay((p: any) => ({
-                      ...(p ?? {}),
-                      cropV1: Number(e.target.value),
-                    }))
-                  }
-                  style={{
-                    padding: 6,
-                    borderRadius: 10,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(255,255,255,0.06)",
-                    color: "#f8fafc",
-                  }}
-                />
-              </label>
-            </div>
-
-            <button
-              type="button"
-              onClick={transferOverlayToRings}
-              disabled={
-                !(
-                  (overlay as any)?.dataUrl ??
-                  (overlay as any)?.src ??
-                  (overlay as any)?.url
-                ) ||
-                (overlayScope === "selection" && overlayMaskKeys.size === 0)
-              }
-              style={{
-                width: "100%",
-                padding: "10px 12px",
-                borderRadius: 12,
-                border: "1px solid rgba(255,255,255,0.14)",
-                background: "#22c55e",
-                color: "#052e16",
-                cursor: "pointer",
-                fontSize: 12,
-                fontWeight: 900,
-                opacity:
-                  !(
-                    (overlay as any)?.dataUrl ??
-                    (overlay as any)?.src ??
-                    (overlay as any)?.url
-                  ) ||
-                  (overlayScope === "selection" && overlayMaskKeys.size === 0)
-                    ? 0.6
-                    : 1,
-              }}
-              title="Apply overlay colors to placed rings"
-            >
-              Transfer to Rings
-            </button>
+            >Transfer to Rings</button>
           </div>
         </DraggablePill>
       )}
@@ -5218,8 +5337,19 @@ const scales3D = useMemo(() => {
           initialAssignment={assignment}
           onAssignmentChange={(p) => setAssignment(p)}
           getRendererCanvas={getRendererCanvas}
+          getExportGroups={getExportGroups}
           onClose={() => setFinalizeOpen(false)}
           mapMode="freeform"
+        />
+      )}
+
+      {libraryOpen && (
+        <ProjectLibraryPanel
+          onLoad={(data, mode) => {
+            setLibraryOpen(false);
+            handleLibraryLoad(data, mode);
+          }}
+          onClose={() => setLibraryOpen(false)}
         />
       )}
 
@@ -5234,13 +5364,32 @@ const scales3D = useMemo(() => {
         />
       )}
 
+      {/* Preview banner for Crafter tier */}
+      {isPreviewOnly && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999,
+          background: "linear-gradient(90deg, #7c3aed, #2563eb)",
+          color: "white", textAlign: "center",
+          padding: "8px 16px", fontSize: 13, fontWeight: 600,
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 12,
+        }}>
+          <span>👁 Preview mode — default design from Woven Rainbows by Erin</span>
+          <a href="/auth?mode=upgrade" style={{
+            background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)",
+            borderRadius: 6, padding: "3px 10px", color: "white",
+            textDecoration: "none", fontSize: 12, fontWeight: 700,
+          }}>Upgrade to Studio →</a>
+        </div>
+      )}
+
       {/* MAIN WORK AREA */}
       <div
         ref={wrapRef}
         style={{
           flex: 1,
           position: "relative",
-          background: "#020617",
+          background: canvasBg,
+          marginTop: isPreviewOnly ? 36 : 0,
         }}
       >
         {/* 3D VIEW */}
@@ -5261,6 +5410,23 @@ const scales3D = useMemo(() => {
             scalesBehindRings={activeScaleSettings.behindRings}
           />
         </div>
+
+        {/* Preview mode — block all canvas interaction */}
+        {isPreviewOnly && (
+          <div
+            style={{
+              position: "absolute", inset: 0, zIndex: 10,
+              cursor: "not-allowed",
+              background: "transparent",
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onMouseMove={(e) => e.stopPropagation()}
+            onClick={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            title="Upgrade to Studio to edit"
+          />
+        )}
 
         {/* INTERACTION CANVAS (also draws selection overlay) */}
         <canvas
@@ -5316,6 +5482,7 @@ const scales3D = useMemo(() => {
             pointerEvents: "none",
             background: "transparent",
             zIndex: 2,
+            opacity: hideCircles ? 0 : 1,
           }}
         />
 
@@ -5373,6 +5540,7 @@ const scales3D = useMemo(() => {
                 boxShadow: "0 12px 40px rgba(0,0,0,.45)",
                 overflow: "hidden",
               }}
+              onPointerDown={(e) => e.stopPropagation()}
               onMouseDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
             >
@@ -5394,51 +5562,6 @@ const scales3D = useMemo(() => {
             </div>
           </DraggablePill>
         )}
-
-        {/* HIT CIRCLES CANVAS */}
-        <canvas
-          ref={hitCanvasRef}
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            background: "transparent",
-            zIndex: 2,
-          }}
-        />
-
-        {/* DEBUG CLICK MARKERS (ONLY WHEN DIAGNOSTICS ON, and circles visible) */}
-        {showDiagnostics &&
-          !hideCircles &&
-          debugClicks.map((marker) => {
-            const { wx, wy } = logicalToWorld(marker.lx, marker.ly);
-            const { sx, sy } = worldToScreen(wx, wy);
-
-            return (
-              <div
-                key={marker.id}
-                style={{
-                  position: "absolute",
-                  left: sx - 10,
-                  top: sy - 10,
-                  width: 20,
-                  height: 20,
-                  backgroundColor: "rgba(0,255,0,0.85)",
-                  color: "black",
-                  fontSize: "14px",
-                  fontWeight: "bold",
-                  borderRadius: "2px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  pointerEvents: "none",
-                  zIndex: 4,
-                }}
-              >
-                {marker.id}
-              </div>
-            );
-          })}
 
         {/* RIGHT CONTROL PANEL */}
         {showControls && (
@@ -5593,7 +5716,7 @@ const scales3D = useMemo(() => {
                 <span>Auto-follow latest tuner set</span>
               </label>
 
-              <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
                   type="button"
                   style={smallBtn}
@@ -5611,7 +5734,7 @@ const scales3D = useMemo(() => {
                     cursor: "pointer",
                     textAlign: "center",
                   }}
-                  title="Load a ring set JSON file from disk"
+                  title="Load ring + scale settings from a JSON file"
                 >
                   Load JSON…
                   <input
@@ -5621,6 +5744,15 @@ const scales3D = useMemo(() => {
                     style={{ display: "none" }}
                   />
                 </label>
+
+                <button
+                  type="button"
+                  style={smallBtn}
+                  onClick={handleSaveJSON}
+                  title="Save current ring + scale settings to a JSON file"
+                >
+                  Save JSON
+                </button>
               </div>
 
               <select
@@ -5872,8 +6004,8 @@ const scales3D = useMemo(() => {
                     scaleRowClearanceZ: v,
                   }));
                 }}
-                min={0}
-                max={3}
+                min={-5}
+                max={5}
                 step={0.01}
                 unit="mm"
               />

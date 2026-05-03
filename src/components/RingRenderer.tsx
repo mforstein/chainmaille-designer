@@ -154,6 +154,7 @@ type Props = {
   scales3D?: ScaleRenderItem[];
   showScales?: boolean;
   scalesBehindRings?: boolean;
+  onGridAspectChange?: (aspect: number) => void;
 };
 
 export type RingRendererHandle = {
@@ -185,6 +186,9 @@ export type RingRendererHandle = {
 
   // ✅ For export / screenshot
   getCanvas?: () => HTMLCanvasElement | null;
+
+  // ✅ For 3D model export (GLB / STL)
+  getExportGroups?: () => { rings: THREE.Group | null; scales: THREE.Group | null };
 };
 
 // ============================================================
@@ -464,6 +468,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       scales3D,
       showScales,
       scalesBehindRings,
+      onGridAspectChange,
     },
     ref,
   ) {
@@ -519,6 +524,9 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
     const meshesRef = useRef<THREE.Mesh[]>([]);
     const groupRef = useRef<THREE.Group | null>(null);
     const scaleGroupRef = useRef<THREE.Group | null>(null);
+    // Geometry cache: reuse identical ShapeGeometry across rebuilds (key = shape+dims)
+    const scaleGeoCacheRef = useRef<Map<string, THREE.ShapeGeometry>>(new Map());
+    const lastScaleShapeKeyRef = useRef<string>("");
     const showScalesRef = useRef(showScales ?? false);
     const scalesBehindRingsRef = useRef(scalesBehindRings ?? false);
 
@@ -1224,6 +1232,8 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         cameraRef.current = null;
         sceneRef.current = null;
         scaleGroupRef.current = null;
+        scaleGeoCacheRef.current.forEach((g) => g.dispose());
+        scaleGeoCacheRef.current.clear();
       };
     }, [safeParams.bgColor, glEpoch]);
 
@@ -1378,6 +1388,20 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       meshesRef.current = meshes;
       meshByKeyRef.current = meshByKey;
 
+      // Notify parent of grid aspect ratio so the overlay preview can match it
+      if (onGridAspectChange && meshes.length > 0) {
+        let mx = -Infinity, mnx = Infinity, my = -Infinity, mny = Infinity;
+        for (const m of meshes) {
+          if (m.position.x > mx) mx = m.position.x;
+          if (m.position.x < mnx) mnx = m.position.x;
+          if (m.position.y > my) my = m.position.y;
+          if (m.position.y < mny) mny = m.position.y;
+        }
+        const gw = Math.max(1e-6, mx - mnx);
+        const gh = Math.max(1e-6, my - mny);
+        onGridAspectChange(gw / gh);
+      }
+
       // Build spatial index for picking
       rebuildSpatialIndexFromMeshes();
 
@@ -1413,13 +1437,18 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       const scene = sceneRef.current;
       if (!scene) return;
 
-      // Clean up previous scale group
+      // Clean up previous scale group.
+      // Geometries are CACHED — do not dispose them here; only dispose materials and line objects.
       if (scaleGroupRef.current) {
         try {
           scaleGroupRef.current.traverse((o: any) => {
-            o.geometry?.dispose?.();
-            if (Array.isArray(o.material)) o.material.forEach((m: any) => m?.dispose?.());
-            else o.material?.dispose?.();
+            if (o.isMesh) {
+              if (Array.isArray(o.material)) o.material.forEach((m: any) => m?.dispose?.());
+              else o.material?.dispose?.();
+            } else if (o.isLine) {
+              o.geometry?.dispose?.();
+              o.material?.dispose?.();
+            }
           });
         } catch {}
         try { scene.remove(scaleGroupRef.current); } catch {}
@@ -1428,22 +1457,35 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
 
       if (!showScales || !Array.isArray(scales3D) || scales3D.length === 0) return;
 
+      // Clear geo cache if scale shape params changed (slider adjustment, new snapshot)
+      if (scales3D.length > 0) {
+        const s0 = scales3D[0];
+        const shapeKey = `${s0.shape}|${s0.width.toFixed(2)}|${s0.height.toFixed(2)}|${s0.holeDiameter.toFixed(2)}|${s0.dropMm.toFixed(2)}`;
+        if (shapeKey !== lastScaleShapeKeyRef.current) {
+          scaleGeoCacheRef.current.forEach((g) => g.dispose());
+          scaleGeoCacheRef.current.clear();
+          lastScaleShapeKeyRef.current = shapeKey;
+        }
+      }
+
       const sg = new THREE.Group();
       const maxRow = scales3D.reduce((m, s) => Math.max(m, s.row), 0);
+      const showEdges = scales3D.length <= 120; // skip edges for large counts (perf)
 
       scales3D.forEach((s, i) => {
         const hsi = Math.max(s.holeDiameter * 0.54, s.height * 0.15);
         const bodyOffY = -hsi + s.dropMm;
 
+        // Flat ShapeGeometry (no extrusion) eliminates inner hole-wall triangles
+        // that would bleed scale color into the hole area from the tilted camera.
+        const geoKey = `${s.shape}|${s.width.toFixed(2)}|${s.height.toFixed(2)}|${s.holeDiameter.toFixed(2)}|${bodyOffY.toFixed(2)}`;
+        let geo = scaleGeoCacheRef.current.get(geoKey);
         const shape = makeScaleShapeRR(s.shape, s.width, s.height, s.holeDiameter, bodyOffY);
-        const geo = new THREE.ExtrudeGeometry(shape, {
-          depth: SCALE_THICKNESS_RR,
-          bevelEnabled: false,
-          curveSegments: 72,
-          steps: 1,
-        });
-        geo.translate(0, 0, -SCALE_THICKNESS_RR / 2);
-        geo.computeVertexNormals();
+        if (!geo) {
+          geo = new THREE.ShapeGeometry(shape, 20);
+          geo.computeVertexNormals();
+          scaleGeoCacheRef.current.set(geoKey, geo);
+        }
 
         const mat = new THREE.MeshStandardMaterial({
           color: new THREE.Color(s.color),
@@ -1467,18 +1509,33 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
 
         const mesh = new THREE.Mesh(geo, mat);
         mesh.renderOrder = 20 + (maxRow - s.row);
+        // Store params for 3D export (ExtrudeGeometry generation in export3dModel.ts)
+        mesh.userData.scaleExportParams = {
+          shape: s.shape,
+          width: s.width,
+          height: s.height,
+          holeDia: s.holeDiameter,
+          bodyOffY,
+        };
         pivot.add(mesh);
 
-        const edgeMat = new THREE.LineBasicMaterial({ color: 0x234050, transparent: true, opacity: 0.98 });
-        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat);
-        edges.renderOrder = mesh.renderOrder + 1;
-        pivot.add(edges);
+        if (showEdges) {
+          const edgeMat = new THREE.LineBasicMaterial({ color: 0x234050, transparent: true, opacity: 0.98 });
+          // ShapeGeometry has no hard edges between coplanar faces, so draw the outer
+          // perimeter explicitly as a LineLoop instead of using EdgesGeometry.
+          const outlinePts = shape.getPoints(20).map((p) => new THREE.Vector3(p.x, p.y, 0.008));
+          if (outlinePts.length > 1) outlinePts.push(outlinePts[0].clone());
+          const outlineGeo = new THREE.BufferGeometry().setFromPoints(outlinePts);
+          const outline = new THREE.Line(outlineGeo, edgeMat);
+          outline.renderOrder = mesh.renderOrder + 1;
+          pivot.add(outline);
+        }
 
-        const rimF = makeHoleRimRR(s.holeDiameter / 2, SCALE_THICKNESS_RR / 2 + 0.004, 0x1f4755);
+        const rimF = makeHoleRimRR(s.holeDiameter / 2, 0.008, 0x1f4755);
         rimF.renderOrder = mesh.renderOrder + 2;
         pivot.add(rimF);
 
-        const rimB = makeHoleRimRR(s.holeDiameter / 2, -SCALE_THICKNESS_RR / 2 - 0.004, 0x1f4755);
+        const rimB = makeHoleRimRR(s.holeDiameter / 2, -0.008, 0x1f4755);
         rimB.renderOrder = mesh.renderOrder + 2;
         pivot.add(rimB);
 
@@ -1569,31 +1626,10 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       const offsetY = overlayGetNumeric(ov as any, ["offsetY", "y", "panY"], 0);
       const scale = overlayGetNumeric(ov as any, ["scale"], 1);
       const opacity = clamp01(overlayGetNumeric(ov as any, ["opacity"], 1));
-
-      // --- tiling flags (robust) ---
-      const tileAny =
-        overlayGetBool(
-          ov as any,
-          ["tile", "tiled", "repeat", "tilingEnabled"],
-          false,
-        ) ||
-        (overlayGetString(ov as any, ["tileMode", "tiling"], "") || "")
-          .toLowerCase()
-          .includes("repeat");
-
-      const tileX = overlayGetBool(ov as any, ["tileX", "repeatX"], tileAny);
-      const tileY = overlayGetBool(ov as any, ["tileY", "repeatY"], tileAny);
-
-      // --- optional explicit world size ---
-      const explicitW = overlayGetNumeric(ov as any, ["worldWidth", "widthWorld"], NaN);
-      const explicitH = overlayGetNumeric(
-        ov as any,
-        ["worldHeight", "heightWorld"],
-        NaN,
-      );
-
-      // --- crop rect in normalized UV ---
-      const crop = getOverlayCropUV(ov as any);
+      const rotation = overlayGetNumeric(ov as any, ["rotation"], 0);
+      const isTiled =
+        (overlayGetString(ov as any, ["repeat"], "none") ?? "none") === "tile";
+      const patternScale = overlayGetNumeric(ov as any, ["patternScale"], 100);
 
       // Compute ring bounds in world space
       let minX = Infinity,
@@ -1608,108 +1644,133 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         maxY = Math.max(maxY, m.position.y);
       }
 
-      const worldW =
-        Number.isFinite(explicitW) && explicitW > 0
-          ? explicitW
-          : Math.max(1e-6, maxX - minX);
-      const worldH =
-        Number.isFinite(explicitH) && explicitH > 0
-          ? explicitH
-          : Math.max(1e-6, maxY - minY);
+      const worldW = Math.max(1e-6, maxX - minX);
+      const worldH = Math.max(1e-6, maxY - minY);
+      const worldCenterX = (minX + maxX) * 0.5;
+      const worldCenterY = (minY + maxY) * 0.5;
 
-      const cx = (minX + maxX) * 0.5 + offsetX;
-      const cy = (minY + maxY) * 0.5 + offsetY;
+      // Preview panel pixel dimensions — width is fixed (380px panel, 14px padding each side).
+      // Height is derived from the ring grid's aspect ratio so the preview and transfer match.
+      const PREVIEW_W = 352;
+      const gridAspect = worldW / worldH;
+      const PREVIEW_H = Math.round(PREVIEW_W / gridAspect);
 
-      const invScale = 1 / Math.max(1e-6, scale);
-
-      // Cache key includes everything that affects mapping
+      // Cache key includes everything that affects the rendered preview
       const baseHex = normalizeColor6(paramsRef.current.ringColor || "#FFFFFF");
       const key = JSON.stringify({
-        src,
-        offsetX,
-        offsetY,
-        scale,
-        opacity,
-        explicitW: Number.isFinite(explicitW) ? explicitW : null,
-        explicitH: Number.isFinite(explicitH) ? explicitH : null,
-        tileX,
-        tileY,
-        crop,
+        src, offsetX, offsetY, scale, rotation, opacity,
+        isTiled, patternScale,
         bounds: [minX, maxX, minY, maxY],
         baseHex,
       });
 
       if (overlaySamplerRef.current?.key === key) return overlaySamplerRef.current;
 
-      // Decode image once
       const img = await loadImage(src);
+      const iW = img.naturalWidth || img.width;
+      const iH = img.naturalHeight || img.height;
+      // Height the image occupies in the preview at scale=1 (fills PREVIEW_W, height auto)
+      const imageDisplayH = (PREVIEW_W * iH) / iW;
+      const imgCanvasH = Math.max(1, Math.ceil(imageDisplayH));
 
-      const canvas = document.createElement("canvas");
-      canvas.width = img.naturalWidth || img.width;
-      canvas.height = img.naturalHeight || img.height;
-      const ctx = canvas.getContext(
-        "2d",
-        { willReadFrequently: true } as CanvasRenderingContext2DSettings,
-      ) as CanvasRenderingContext2D | null;
-      if (!ctx) return null;
+      // Draw image at its natural display size (no zoom/pan/rotation).
+      // We apply the inverse transform per-ring to find the correct image pixel.
+      // This avoids transparent-pixel gaps that occur when the zoomed image
+      // doesn't fill every part of a fixed preview canvas.
+      const offCanvas = document.createElement("canvas");
+      const offCtx = offCanvas.getContext("2d", {
+        willReadFrequently: true,
+      } as CanvasRenderingContext2DSettings) as CanvasRenderingContext2D | null;
+      if (!offCtx) return null;
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0);
+      let offData: Uint8ClampedArray;
+      let offW: number;
+      let offH: number;
 
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-      const w = canvas.width;
-      const h = canvas.height;
+      if (isTiled) {
+        // Tile mode: render a tiled canvas matching the preview dimensions.
+        // Tiles always cover the full canvas so no edge gaps are possible.
+        offCanvas.width = PREVIEW_W;
+        offCanvas.height = PREVIEW_H;
+        offW = PREVIEW_W;
+        offH = PREVIEW_H;
+        const tilePx = Math.max(1, PREVIEW_W * (patternScale / 100));
+        const tilePy = Math.max(1, tilePx * iH / iW);
+        const tileCanvas = document.createElement("canvas");
+        tileCanvas.width = Math.ceil(tilePx);
+        tileCanvas.height = Math.ceil(tilePy);
+        const tileCtx = tileCanvas.getContext("2d") as CanvasRenderingContext2D | null;
+        if (tileCtx) {
+          tileCtx.drawImage(img, 0, 0, tileCanvas.width, tileCanvas.height);
+        }
+        const pattern = offCtx.createPattern(tileCanvas, "repeat");
+        if (pattern) {
+          pattern.setTransform(new DOMMatrix().translate(offsetX, offsetY));
+          offCtx.fillStyle = pattern;
+        }
+        offCtx.save();
+        offCtx.translate(PREVIEW_W / 2, PREVIEW_H / 2);
+        offCtx.rotate(rotation * (Math.PI / 180));
+        offCtx.translate(-PREVIEW_W / 2, -PREVIEW_H / 2);
+        offCtx.fillRect(0, 0, PREVIEW_W, PREVIEW_H);
+        offCtx.restore();
+        offData = offCtx.getImageData(0, 0, offW, offH).data;
+      } else {
+        // Non-tiled: the incoming image is a pre-baked preview snapshot (from ImageOverlayPanel).
+        // scale=1, offset=0 by the time we get here; just draw it centered and sample linearly.
+        offCanvas.width = PREVIEW_W;
+        offCanvas.height = PREVIEW_H;
+        offW = PREVIEW_W;
+        offH = PREVIEW_H;
 
-      // Precompute base blend color
+        offCtx.fillStyle = baseHex;
+        offCtx.fillRect(0, 0, PREVIEW_W, PREVIEW_H);
+
+        offCtx.save();
+        offCtx.translate(PREVIEW_W / 2 + offsetX, PREVIEW_H / 2 + offsetY);
+        offCtx.scale(scale, scale);
+        offCtx.rotate(rotation * (Math.PI / 180));
+        offCtx.drawImage(img, -PREVIEW_W / 2, -imageDisplayH / 2, PREVIEW_W, imageDisplayH);
+        offCtx.restore();
+
+        offData = offCtx.getImageData(0, 0, offW, offH).data;
+      }
+
+      // Precompute base blend colour
       const base = new THREE.Color(baseHex);
       const baseR = Math.round(base.r * 255);
       const baseG = Math.round(base.g * 255);
       const baseB = Math.round(base.b * 255);
 
       const sampleWorld = (wx: number, wy: number): OverlaySample | null => {
-        // world -> normalized in [0..1] (before crop)
-        let nx = ((wx - cx) / worldW) * invScale + 0.5;
-        let ny = ((wy - cy) / worldH) * invScale + 0.5;
+        const nxWorld = (wx - worldCenterX) / worldW;
+        const nyWorld = (wy - worldCenterY) / worldH;
 
-        // ✅ tiling: wrap first (if enabled), otherwise reject
-        if (tileX) nx = wrap01(nx);
-        if (tileY) ny = wrap01(ny);
+        let sx: number;
+        let sy: number;
 
-        if (!tileX && (nx < 0 || nx > 1)) return null;
-        if (!tileY && (ny < 0 || ny > 1)) return null;
+        if (isTiled) {
+          // Tiled: canvas is PREVIEW_W × PREVIEW_H with full coverage
+          sx = Math.floor(PREVIEW_W * (0.5 + nxWorld));
+          sy = Math.floor(PREVIEW_H * (0.5 - nyWorld));
+          sx = Math.max(0, Math.min(offW - 1, sx));
+          sy = Math.max(0, Math.min(offH - 1, sy));
+        } else {
+          // Non-tiled WYSIWYG: offscreen canvas is PREVIEW_W × PREVIEW_H with the
+          // same transform as the visual preview. Direct linear ring → canvas mapping.
+          sx = Math.max(0, Math.min(offW - 1, Math.round(PREVIEW_W * (0.5 + nxWorld))));
+          sy = Math.max(0, Math.min(offH - 1, Math.round(PREVIEW_H * (0.5 - nyWorld))));
+        }
 
-        // map into crop window (repeat happens within the crop window)
-        let u = crop.u0 + nx * crop.uW;
-        let v = crop.v0 + ny * crop.vH;
+        const idx = (sy * offW + sx) * 4;
+        const r = offData[idx];
+        const g = offData[idx + 1];
+        const b = offData[idx + 2];
+        const a255 = offData[idx + 3];
 
-        // If tiled, allow wrapping inside crop via wrap01 around crop span:
-        if (tileX) u = crop.u0 + wrap01((u - crop.u0) / crop.uW) * crop.uW;
-        if (tileY) v = crop.v0 + wrap01((v - crop.v0) / crop.vH) * crop.vH;
-
-        // Non-tiled: clamp to crop window bounds
-        if (!tileX) u = crop.u0 + clamp01((u - crop.u0) / crop.uW) * crop.uW;
-        if (!tileY) v = crop.v0 + clamp01((v - crop.v0) / crop.vH) * crop.vH;
-
-        // UV -> pixel
-        let px = Math.floor(u * w);
-        let py = Math.floor((1 - v) * h);
-
-        // clamp edge case (u==1 or v==1)
-        if (px === w) px = w - 1;
-        if (py === h) py = h - 1;
-        if (px < 0 || px >= w || py < 0 || py >= h) return null;
-
-        const idx = (py * w + px) * 4;
-        const r = data[idx + 0];
-        const g = data[idx + 1];
-        const b = data[idx + 2];
-        const a255 = data[idx + 3];
-
-        if (a255 <= 2) return null; // transparent
+        if (a255 <= 2) return null;
 
         const t = clamp01((a255 / 255) * opacity);
-
         const outR = Math.round(baseR * (1 - t) + r * t);
         const outG = Math.round(baseG * (1 - t) + g * t);
         const outB = Math.round(baseB * (1 - t) + b * t);
@@ -1729,6 +1790,8 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       const meshes = meshesRef.current;
       if (!meshes || meshes.length === 0) return;
 
+      // Always rebuild the sampler on an explicit transfer — never use a cached one.
+      overlaySamplerRef.current = null;
       const sampler = await buildOverlaySampler(ov);
       if (!sampler) return;
 
@@ -1880,6 +1943,12 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
 
       // ✅ Used by Freeform export thumbnail capture
       getCanvas: () => rendererRef.current?.domElement ?? null,
+
+      // ✅ Used by 3D model export (GLB / STL)
+      getExportGroups: () => ({
+        rings: groupRef.current,
+        scales: scaleGroupRef.current,
+      }),
 
       applyOverlayToRings,
     }));

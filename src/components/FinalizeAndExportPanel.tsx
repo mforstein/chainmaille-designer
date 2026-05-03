@@ -7,6 +7,8 @@
 import React, { useMemo, useState } from "react";
 import type { ExportRing, PaletteAssignment } from "../types/project";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { exportAsGLB, exportAsColorSTLs, estimateGLBSizeMB } from "../lib/export3dModel";
+import type { ExportGroups } from "../lib/export3dModel";
 
 /* ---------------------- palette (24 fixed) ---------------------- */
 const PALETTE24 = [
@@ -300,10 +302,11 @@ function drawScaleGlyph(args: {
 
   ctx.restore();
 
+  // White fill for hole — never use destination-out; it punches through scales drawn below
   ctx.save();
-  ctx.globalCompositeOperation = "destination-out";
   ctx.beginPath();
   ctx.arc(x, y, holePx, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffffff";
   ctx.fill();
   ctx.restore();
 
@@ -601,26 +604,28 @@ function drawOverviewCanvas(args: {
   const ox = usableX + (usableW - wL * scale) / 2 - minX * scale;
   const oy = usableY + (usableH - hL * scale) / 2 - minY * scale;
 
-  for (const s of scales) {
-    drawScaleGlyph({
-      ctx: g,
-      x: s.x * scale + ox,
-      y: s.y * scale + oy,
-      widthPx: s.width * scale,
-      heightPx: s.height * scale,
-      holePx: Math.max(2, s.holeId * 0.5 * scale),
-      colorHex: s.colorHex,
-      shape: s.shape,
-      opacity: 0.72,
-    });
-  }
-
   const dot = Math.max(1.6, Math.min(4.0, scale * 0.2));
+
+  // Draw scales as colored dots on the overview (same style as rings)
+  for (const s of scales) {
+    const lum = hexLuminance(s.colorHex);
+    g.beginPath();
+    g.arc(s.x * scale + ox, s.y * scale + oy, dot, 0, Math.PI * 2);
+    g.fillStyle = lum > 0.88 ? "#d4d4d4" : s.colorHex;
+    g.fill();
+    g.strokeStyle = lum > 0.75 ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.2)";
+    g.lineWidth = Math.max(0.5, dot * 0.3);
+    g.stroke();
+  }
   for (const ring of rings) {
+    const lum = hexLuminance(ring.colorHex);
     g.beginPath();
     g.arc(ring.x * scale + ox, ring.y * scale + oy, dot, 0, Math.PI * 2);
-    g.fillStyle = ring.colorHex;
+    g.fillStyle = lum > 0.88 ? "#d4d4d4" : ring.colorHex;
     g.fill();
+    g.strokeStyle = lum > 0.75 ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.2)";
+    g.lineWidth = Math.max(0.5, dot * 0.3);
+    g.stroke();
   }
 
   g.strokeStyle = "rgba(15,23,42,0.18)";
@@ -696,17 +701,20 @@ function drawRingTileCanvas(args: {
   const ox = usableX + (usableW - wL * scale) / 2 - tileBounds.minX * scale;
   const oy = usableY + (usableH - hL * scale) / 2 - tileBounds.minY * scale;
 
-  const spacingPx = Math.max(10, spacing * scale);
+  const spacingPx = spacing * scale;
   const dotR = clamp(spacingPx * 0.42, 4, 16);
   const fontPx = clamp(spacingPx * 0.55, 10, 22);
+  const showLabel = dotR >= 8;
 
   g.strokeStyle = "rgba(15,23,42,0.12)";
   g.lineWidth = 3;
   g.strokeRect(usableX, usableY, usableW, usableH);
 
-  g.textAlign = "center";
-  g.textBaseline = "middle";
-  g.font = `900 ${fontPx}px ui-sans-serif, system-ui, -apple-system`;
+  if (showLabel) {
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.font = `900 ${fontPx}px ui-sans-serif, system-ui, -apple-system`;
+  }
 
   for (const ring of rings) {
     if (
@@ -719,25 +727,28 @@ function drawRingTileCanvas(args: {
     const px = ring.x * scale + ox;
     const py = ring.y * scale + oy;
     const hex = ring.colorHex;
+    const lum = hexLuminance(hex);
+    const displayHex = lum > 0.88 ? "#d4d4d4" : hex;
 
     g.beginPath();
     g.arc(px, py, dotR, 0, Math.PI * 2);
-    g.fillStyle = hex;
+    g.fillStyle = displayHex;
     g.fill();
-    g.lineWidth = Math.max(1, dotR * 0.18);
-    g.strokeStyle = "rgba(0,0,0,0.18)";
+    g.lineWidth = Math.max(1.5, dotR * 0.22);
+    g.strokeStyle = lum > 0.75 ? "rgba(0,0,0,0.65)" : "rgba(0,0,0,0.18)";
     g.stroke();
 
-    const label = String(ring.paletteIndex);
-    const lum = hexLuminance(hex);
-    const fill = lum < 0.55 ? "#ffffff" : "#0f172a";
-    const stroke =
-      lum < 0.55 ? "rgba(15,23,42,0.55)" : "rgba(255,255,255,0.75)";
-    g.lineWidth = Math.max(2, fontPx * 0.18);
-    g.strokeStyle = stroke;
-    g.strokeText(label, px, py);
-    g.fillStyle = fill;
-    g.fillText(label, px, py);
+    if (showLabel) {
+      const label = String(ring.paletteIndex);
+      const labelFill = lum < 0.55 ? "#ffffff" : "#0f172a";
+      const labelStroke =
+        lum < 0.55 ? "rgba(15,23,42,0.55)" : "rgba(255,255,255,0.75)";
+      g.lineWidth = Math.max(2, fontPx * 0.18);
+      g.strokeStyle = labelStroke;
+      g.strokeText(label, px, py);
+      g.fillStyle = labelFill;
+      g.fillText(label, px, py);
+    }
   }
 
   return cvs;
@@ -795,6 +806,17 @@ function drawScaleTileCanvas(args: {
   g.lineWidth = 3;
   g.strokeRect(usableX, usableY, usableW, usableH);
 
+  const spacingPx = spacing * scale;
+  const dotR = clamp(spacingPx * 0.42, 4, 16);
+  const fontPx = clamp(spacingPx * 0.55, 10, 22);
+  const showLabel = dotR >= 8;
+
+  if (showLabel) {
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.font = `900 ${fontPx}px ui-sans-serif, system-ui, -apple-system`;
+  }
+
   for (const item of scales) {
     if (
       item.x < tileBounds.minX ||
@@ -803,18 +825,30 @@ function drawScaleTileCanvas(args: {
       item.y > tileBounds.maxY
     )
       continue;
-    drawScaleGlyph({
-      ctx: g,
-      x: item.x * scale + ox,
-      y: item.y * scale + oy,
-      widthPx: item.width * scale,
-      heightPx: item.height * scale,
-      holePx: Math.max(2, item.holeId * 0.5 * scale),
-      colorHex: item.colorHex,
-      shape: item.shape,
-      drawLabel: String(item.paletteIndex),
-      opacity: 0.92,
-    });
+    const px = item.x * scale + ox;
+    const py = item.y * scale + oy;
+    const hex = item.colorHex;
+    const lum = hexLuminance(hex);
+    const displayHex = lum > 0.88 ? "#d4d4d4" : hex;
+
+    g.beginPath();
+    g.arc(px, py, dotR, 0, Math.PI * 2);
+    g.fillStyle = displayHex;
+    g.fill();
+    g.lineWidth = Math.max(1.5, dotR * 0.22);
+    g.strokeStyle = lum > 0.75 ? "rgba(0,0,0,0.65)" : "rgba(0,0,0,0.18)";
+    g.stroke();
+
+    if (showLabel) {
+      const label = String(item.paletteIndex);
+      const labelFill = lum < 0.55 ? "#ffffff" : "#0f172a";
+      const labelStroke = lum < 0.55 ? "rgba(15,23,42,0.55)" : "rgba(255,255,255,0.75)";
+      g.lineWidth = Math.max(2, fontPx * 0.18);
+      g.strokeStyle = labelStroke;
+      g.strokeText(label, px, py);
+      g.fillStyle = labelFill;
+      g.fillText(label, px, py);
+    }
   }
 
   return cvs;
@@ -873,6 +907,18 @@ function drawCombinedTileCanvas(args: {
   g.lineWidth = 3;
   g.strokeRect(usableX, usableY, usableW, usableH);
 
+  const spacingPx = spacing * scale;
+  const dotR = clamp(spacingPx * 0.42, 4, 16);
+  const fontPx = clamp(spacingPx * 0.55, 10, 22);
+  const showLabel = dotR >= 8;
+
+  if (showLabel) {
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.font = `900 ${fontPx}px ui-sans-serif, system-ui, -apple-system`;
+  }
+
+  // Draw scales as circles with palette numbers (same style as rings)
   for (const item of scales) {
     if (
       item.x < tileBounds.minX ||
@@ -881,26 +927,31 @@ function drawCombinedTileCanvas(args: {
       item.y > tileBounds.maxY
     )
       continue;
-    drawScaleGlyph({
-      ctx: g,
-      x: item.x * scale + ox,
-      y: item.y * scale + oy,
-      widthPx: item.width * scale,
-      heightPx: item.height * scale,
-      holePx: Math.max(2, item.holeId * 0.5 * scale),
-      colorHex: item.colorHex,
-      shape: item.shape,
-      opacity: 0.72,
-    });
+    const px = item.x * scale + ox;
+    const py = item.y * scale + oy;
+    const hex = item.colorHex;
+    const lum = hexLuminance(hex);
+    const displayHex = lum > 0.88 ? "#d4d4d4" : hex;
+
+    g.beginPath();
+    g.arc(px, py, dotR, 0, Math.PI * 2);
+    g.fillStyle = displayHex;
+    g.fill();
+    g.lineWidth = Math.max(1.5, dotR * 0.22);
+    g.strokeStyle = lum > 0.75 ? "rgba(0,0,0,0.65)" : "rgba(0,0,0,0.18)";
+    g.stroke();
+
+    if (showLabel) {
+      const label = String(item.paletteIndex);
+      const labelFill = lum < 0.55 ? "#ffffff" : "#0f172a";
+      const labelStroke = lum < 0.55 ? "rgba(15,23,42,0.55)" : "rgba(255,255,255,0.75)";
+      g.lineWidth = Math.max(2, fontPx * 0.18);
+      g.strokeStyle = labelStroke;
+      g.strokeText(label, px, py);
+      g.fillStyle = labelFill;
+      g.fillText(label, px, py);
+    }
   }
-
-  const spacingPx = Math.max(10, spacing * scale);
-  const dotR = clamp(spacingPx * 0.42, 4, 16);
-  const fontPx = clamp(spacingPx * 0.55, 10, 22);
-
-  g.textAlign = "center";
-  g.textBaseline = "middle";
-  g.font = `900 ${fontPx}px ui-sans-serif, system-ui, -apple-system`;
 
   for (const ring of rings) {
     if (
@@ -913,25 +964,28 @@ function drawCombinedTileCanvas(args: {
     const px = ring.x * scale + ox;
     const py = ring.y * scale + oy;
     const hex = ring.colorHex;
+    const lum = hexLuminance(hex);
+    const displayHex = lum > 0.88 ? "#d4d4d4" : hex;
 
     g.beginPath();
     g.arc(px, py, dotR, 0, Math.PI * 2);
-    g.fillStyle = hex;
+    g.fillStyle = displayHex;
     g.fill();
-    g.lineWidth = Math.max(1, dotR * 0.18);
-    g.strokeStyle = "rgba(0,0,0,0.18)";
+    g.lineWidth = Math.max(1.5, dotR * 0.22);
+    g.strokeStyle = lum > 0.75 ? "rgba(0,0,0,0.65)" : "rgba(0,0,0,0.18)";
     g.stroke();
 
-    const label = String(ring.paletteIndex);
-    const lum = hexLuminance(hex);
-    const fill = lum < 0.55 ? "#ffffff" : "#0f172a";
-    const stroke =
-      lum < 0.55 ? "rgba(15,23,42,0.55)" : "rgba(255,255,255,0.75)";
-    g.lineWidth = Math.max(2, fontPx * 0.18);
-    g.strokeStyle = stroke;
-    g.strokeText(label, px, py);
-    g.fillStyle = fill;
-    g.fillText(label, px, py);
+    if (showLabel) {
+      const label = String(ring.paletteIndex);
+      const labelFill = lum < 0.55 ? "#ffffff" : "#0f172a";
+      const labelStroke =
+        lum < 0.55 ? "rgba(15,23,42,0.55)" : "rgba(255,255,255,0.75)";
+      g.lineWidth = Math.max(2, fontPx * 0.18);
+      g.strokeStyle = labelStroke;
+      g.strokeText(label, px, py);
+      g.fillStyle = labelFill;
+      g.fillText(label, px, py);
+    }
   }
 
   return cvs;
@@ -960,18 +1014,19 @@ function buildPreviewFallback(rings: NormRing[], scales: NormScale[]) {
   const ox = (cvs.width - wL * scale) / 2 - bounds.minX * scale;
   const oy = (cvs.height - hL * scale) / 2 - bounds.minY * scale;
 
+  // Preview shows scales as colored dots — same dot size as ring wire cross-section
+  const scaleDot = Math.max(1.6, Math.min(5.0, scale * 0.25));
   for (const item of scales) {
-    drawScaleGlyph({
-      ctx,
-      x: item.x * scale + ox,
-      y: item.y * scale + oy,
-      widthPx: item.width * scale,
-      heightPx: item.height * scale,
-      holePx: Math.max(2, item.holeId * 0.5 * scale),
-      colorHex: item.colorHex,
-      shape: item.shape,
-      opacity: 0.78,
-    });
+    const x = item.x * scale + ox;
+    const y = item.y * scale + oy;
+    const lum = hexLuminance(item.colorHex);
+    ctx.beginPath();
+    ctx.arc(x, y, scaleDot, 0, Math.PI * 2);
+    ctx.fillStyle = lum > 0.88 ? "#d4d4d4" : item.colorHex;
+    ctx.fill();
+    ctx.strokeStyle = lum > 0.75 ? "rgba(0,0,0,0.6)" : "rgba(0,0,0,0.2)";
+    ctx.lineWidth = Math.max(0.5, scaleDot * 0.3);
+    ctx.stroke();
   }
 
   for (const ring of rings) {
@@ -1004,6 +1059,7 @@ type Props = {
   initialAssignment?: PaletteAssignment | null;
   onAssignmentChange?: (p: PaletteAssignment | null) => void;
   getRendererCanvas?: () => HTMLCanvasElement | null;
+  getExportGroups?: () => ExportGroups | null;
   onClose?: () => void;
   mapMode?: "auto" | "grid" | "freeform";
 };
@@ -1015,10 +1071,12 @@ const FinalizeAndExportPanel: React.FC<Props> = ({
   initialAssignment,
   onAssignmentChange,
   getRendererCanvas,
+  getExportGroups,
   onClose,
   mapMode = "auto",
 }) => {
   const [busy, setBusy] = useState(false);
+  const [busy3D, setBusy3D] = useState(false);
 
   const normalizedRings = useMemo(() => normalizeRings(rings), [rings]);
   const normalizedScales = useMemo(
@@ -1454,37 +1512,20 @@ const FinalizeAndExportPanel: React.FC<Props> = ({
           }
         }
       } else if (isGrid && rows > 0 && cols > 0) {
-        const page = pdf.addPage([W, H]);
-        page.drawRectangle({
-          x: 0,
-          y: 0,
-          width: W,
-          height: H,
-          color: rgb(1, 1, 1),
-        });
-
-        const titleY = H - margin - 24;
-        page.drawText("Map (Grid)", {
-          x: margin,
-          y: titleY,
-          size: 18,
-          font: fontBold,
-          color: rgb(0.07, 0.09, 0.16),
-        });
-
         const pad = 24;
         const leftAxis = margin + 28;
         const topAxis = H - margin - 50;
         const usableW = W - leftAxis - margin - pad;
         const usableH = topAxis - margin - pad;
-        const cellSize = Math.max(
-          8,
-          Math.min(Math.floor(usableW / cols), Math.floor(usableH / rows)),
-        );
-        const gridW = cellSize * cols;
-        const gridH = cellSize * rows;
-        const originX = leftAxis + Math.floor((usableW - gridW) / 2);
-        const originY = margin + Math.floor((usableH - gridH) / 2);
+
+        // Minimum cell size that lets a 2-digit palette number sit inside the dot
+        // without overflowing into the adjacent cell.
+        const MIN_CELL = 20;
+        const maxColsPerPage = Math.max(1, Math.floor(usableW / MIN_CELL));
+        const maxRowsPerPage = Math.max(1, Math.floor(usableH / MIN_CELL));
+        const tilesX = Math.max(1, Math.ceil(cols / maxColsPerPage));
+        const tilesY = Math.max(1, Math.ceil(rows / maxRowsPerPage));
+        const totalTilePages = tilesX * tilesY;
 
         const ringByCell = new Map<string, PreparedRing>();
         for (const ring of prepareRingsForMap(normalizedRings)) {
@@ -1500,59 +1541,103 @@ const FinalizeAndExportPanel: React.FC<Props> = ({
           }
         }
 
-        const outline = rgb(0.75, 0.8, 0.87);
-        for (let rr = 0; rr < rows; rr++) {
-          for (let cc = 0; cc < cols; cc++) {
-            const x = originX + cc * cellSize;
-            const y = originY + (rows - 1 - rr) * cellSize;
-            const ring = ringByCell.get(`${rr},${cc}`);
-            const scale = scaleByCell.get(`${rr},${cc}`);
+        let gridPageNo = 1;
+        for (let ty = 0; ty < tilesY; ty++) {
+          for (let tx = 0; tx < tilesX; tx++) {
+            const startCol = tx * maxColsPerPage;
+            const endCol = Math.min(startCol + maxColsPerPage, cols);
+            const startRow = ty * maxRowsPerPage;
+            const endRow = Math.min(startRow + maxRowsPerPage, rows);
+            const tileCols = endCol - startCol;
+            const tileRows = endRow - startRow;
 
-            page.drawRectangle({
-              x: x + 0.5,
-              y: y + 0.5,
-              width: cellSize - 1,
-              height: cellSize - 1,
-              color: rgb(0.98, 0.99, 1),
-              borderColor: outline,
-              borderWidth: Math.max(1.2, Math.floor(cellSize / 11)),
+            // Scale up to fill the page, but don't go beyond double the minimum
+            const cellSize = Math.min(
+              MIN_CELL * 2,
+              Math.max(MIN_CELL, Math.min(Math.floor(usableW / tileCols), Math.floor(usableH / tileRows))),
+            );
+
+            const gridW = cellSize * tileCols;
+            const gridH = cellSize * tileRows;
+            const originX = leftAxis + Math.floor((usableW - gridW) / 2);
+            const originY = margin + Math.floor((usableH - gridH) / 2);
+
+            const page = pdf.addPage([W, H]);
+            page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: rgb(1, 1, 1) });
+
+            const titleY = H - margin - 24;
+            const tileLabel = totalTilePages > 1
+              ? ` • Tile ${tx + 1},${ty + 1} of ${tilesX}×${tilesY} (Page ${gridPageNo}/${totalTilePages})`
+              : "";
+            page.drawText(`Map (Grid)${tileLabel}`, {
+              x: margin, y: titleY, size: 14, font: fontBold,
+              color: rgb(0.07, 0.09, 0.16),
             });
 
-            if (scale) {
-              const c = hexToRgbUnit(scale.colorHex);
-              page.drawEllipse({
-                x: x + cellSize * 0.5,
-                y: y + cellSize * 0.44,
-                xScale: cellSize * 0.25,
-                yScale: cellSize * 0.32,
-                color: rgb(c.r, c.g, c.b),
-                borderColor: rgb(0.1, 0.12, 0.2),
-                borderWidth: 0.5,
-                opacity: 0.8,
+            if (totalTilePages > 1) {
+              page.drawText(`Cols ${startCol + 1}–${endCol}  ·  Rows ${startRow + 1}–${endRow}`, {
+                x: margin, y: titleY - 18, size: 9, font: fontRegular,
+                color: rgb(0.35, 0.42, 0.5),
               });
             }
 
-            if (ring) {
-              const c = hexToRgbUnit(ring.colorHex);
-              page.drawCircle({
-                x: x + cellSize * 0.5,
-                y: y + cellSize * 0.5,
-                size: cellSize * 0.24,
-                color: rgb(c.r, c.g, c.b),
-                borderColor: rgb(0.1, 0.12, 0.2),
-                borderWidth: 0.6,
-              });
+            const outline = rgb(0.75, 0.8, 0.87);
+            for (let rr = startRow; rr < endRow; rr++) {
+              for (let cc = startCol; cc < endCol; cc++) {
+                const x = originX + (cc - startCol) * cellSize;
+                const y = originY + (tileRows - 1 - (rr - startRow)) * cellSize;
+                const ring = ringByCell.get(`${rr},${cc}`);
+                const scale = scaleByCell.get(`${rr},${cc}`);
 
-              const label = String(ring.paletteIndex);
-              const size = Math.max(8, Math.floor(cellSize * 0.42));
-              page.drawText(label, {
-                x: x + cellSize / 2 - size * 0.35,
-                y: y + cellSize / 2 - size * 0.4,
-                size,
-                font: fontBold,
-                color: rgb(0.08, 0.1, 0.14),
-              });
+                page.drawRectangle({
+                  x: x + 0.5,
+                  y: y + 0.5,
+                  width: cellSize - 1,
+                  height: cellSize - 1,
+                  color: rgb(0.98, 0.99, 1),
+                  borderColor: outline,
+                  borderWidth: Math.max(1.2, Math.floor(cellSize / 11)),
+                });
+
+                if (scale) {
+                  const c = hexToRgbUnit(scale.colorHex);
+                  page.drawEllipse({
+                    x: x + cellSize * 0.5,
+                    y: y + cellSize * 0.44,
+                    xScale: cellSize * 0.25,
+                    yScale: cellSize * 0.32,
+                    color: rgb(c.r, c.g, c.b),
+                    borderColor: rgb(0.1, 0.12, 0.2),
+                    borderWidth: 0.5,
+                    opacity: 0.8,
+                  });
+                }
+
+                if (ring) {
+                  const c = hexToRgbUnit(ring.colorHex);
+                  page.drawCircle({
+                    x: x + cellSize * 0.5,
+                    y: y + cellSize * 0.5,
+                    size: cellSize * 0.24,
+                    color: rgb(c.r, c.g, c.b),
+                    borderColor: rgb(0.1, 0.12, 0.2),
+                    borderWidth: 0.6,
+                  });
+
+                  const label = String(ring.paletteIndex);
+                  const size = Math.max(7, Math.floor(cellSize * 0.42));
+                  const lum = hexLuminance(ring.colorHex);
+                  page.drawText(label, {
+                    x: x + cellSize / 2 - size * 0.35,
+                    y: y + cellSize / 2 - size * 0.4,
+                    size,
+                    font: fontBold,
+                    color: lum < 0.45 ? rgb(1, 1, 1) : rgb(0.08, 0.1, 0.14),
+                  });
+                }
+              }
             }
+            gridPageNo++;
           }
         }
       }
@@ -1617,6 +1702,317 @@ const FinalizeAndExportPanel: React.FC<Props> = ({
     }
   };
 
+  // ============================================================
+  // PRINT PATTERN (1:1) — physical-size per-color PDF
+  // ============================================================
+  const buildPatternPdf = async () => {
+    setBusy(true);
+    try {
+      const MM_TO_PT = 72 / 25.4;
+      const PX_PER_MM = 10; // canvas resolution
+
+      // A4 Portrait
+      const PAGE_W_MM = 210;
+      const PAGE_H_MM = 297;
+      const PAGE_W_PT = PAGE_W_MM * MM_TO_PT;
+      const PAGE_H_PT = PAGE_H_MM * MM_TO_PT;
+
+      const MARGIN_MM = 8;
+      const HEADER_MM = 14; // space at top of each page for label
+      const USABLE_W_MM = PAGE_W_MM - 2 * MARGIN_MM;   // 194 mm
+      const USABLE_H_MM = PAGE_H_MM - 2 * MARGIN_MM - HEADER_MM; // 267 mm
+      const OVERLAP_MM = 6; // tile overlap for alignment
+      const STEP_W_MM = USABLE_W_MM - OVERLAP_MM;
+      const STEP_H_MM = USABLE_H_MM - OVERLAP_MM;
+
+      const pdf = await PDFDocument.create();
+      const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+      const fontReg  = await pdf.embedFont(StandardFonts.Helvetica);
+
+      const preparedRings  = prepareRingsForMap(normalizedRings);
+      const preparedScales = prepareScalesForMap(normalizedScales);
+      const bounds = boundsOfPrepared(preparedRings, preparedScales);
+
+      const designW = Math.max(1, bounds.maxX - bounds.minX);
+      const designH = Math.max(1, bounds.maxY - bounds.minY);
+
+      const tilesX = Math.max(1, Math.ceil(designW / STEP_W_MM));
+      const tilesY = Math.max(1, Math.ceil(designH / STEP_H_MM));
+
+      // Collect used colors sorted by count (most used first)
+      const colorCount = new Map<string, number>();
+      for (const r of preparedRings)  colorCount.set(r.colorHex, (colorCount.get(r.colorHex) ?? 0) + 1);
+      for (const s of preparedScales) colorCount.set(s.colorHex, (colorCount.get(s.colorHex) ?? 0) + 1);
+      const sortedColors = [...colorCount.entries()].sort((a, b) => b[1] - a[1]).map(([h]) => h);
+
+      // ── Helper: draw one physical tile canvas ──────────────────────────
+      const drawPatternTile = (
+        tileMinX: number, tileMinY: number,
+        targetColor: string | null, // null = all colors (combined)
+      ): HTMLCanvasElement => {
+        const tileMaxX = tileMinX + USABLE_W_MM;
+        const tileMaxY = tileMinY + USABLE_H_MM;
+        const CW = Math.round(USABLE_W_MM * PX_PER_MM);
+        const CH = Math.round(USABLE_H_MM * PX_PER_MM);
+
+        const cvs = document.createElement("canvas");
+        cvs.width = CW;
+        cvs.height = CH;
+        const ctx = cvs.getContext("2d")!;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, CW, CH);
+
+        // World → canvas: Y increases downward in both spaces
+        const toX = (wx: number) => (wx - tileMinX) * PX_PER_MM;
+        const toY = (wy: number) => (wy - tileMinY) * PX_PER_MM;
+
+        // Draw scales (ghost first, then target on top)
+        for (const s of preparedScales) {
+          if (s.x < tileMinX - s.width || s.x > tileMaxX + s.width) continue;
+          if (s.y < tileMinY - s.height || s.y > tileMaxY + s.height) continue;
+          const isTarget = targetColor === null || s.colorHex === targetColor;
+          drawScaleGlyph({
+            ctx,
+            x: toX(s.x), y: toY(s.y),
+            widthPx: s.width * PX_PER_MM,
+            heightPx: s.height * PX_PER_MM,
+            holePx: s.holeId * 0.5 * PX_PER_MM,
+            colorHex: isTarget ? s.colorHex : "#cccccc",
+            shape: s.shape,
+            opacity: isTarget ? 0.92 : 0.22,
+            drawLabel: isTarget ? String(s.paletteIndex) : undefined,
+          });
+        }
+
+        // Draw rings
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        for (const ring of preparedRings) {
+          if (ring.x < tileMinX - ring.innerDiameter || ring.x > tileMaxX + ring.innerDiameter) continue;
+          if (ring.y < tileMinY - ring.innerDiameter || ring.y > tileMaxY + ring.innerDiameter) continue;
+          const isTarget = targetColor === null || ring.colorHex === targetColor;
+          const px = toX(ring.x);
+          const py = toY(ring.y);
+          const outerR = (ring.innerDiameter * 0.5 + ring.wireDiameter) * PX_PER_MM;
+          const innerR = ring.innerDiameter * 0.5 * PX_PER_MM;
+
+          if (isTarget) {
+            const lum = hexLuminance(ring.colorHex);
+            // For near-white rings use light gray so they're visible on white paper
+            const fillColor = lum > 0.88 ? "#d8d8d8" : ring.colorHex;
+            ctx.save();
+            // Outer ring fill
+            ctx.beginPath();
+            ctx.arc(px, py, outerR, 0, Math.PI * 2);
+            ctx.fillStyle = fillColor;
+            ctx.globalAlpha = 0.92;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            // Inner hole — white fill (not destination-out) to preserve any scale art beneath
+            ctx.beginPath();
+            ctx.arc(px, py, innerR, 0, Math.PI * 2);
+            ctx.fillStyle = "#ffffff";
+            ctx.fill();
+            // Outer stroke
+            ctx.beginPath();
+            ctx.arc(px, py, outerR, 0, Math.PI * 2);
+            ctx.strokeStyle = lum > 0.75 ? "rgba(0,0,0,0.65)" : "rgba(0,0,0,0.45)";
+            ctx.lineWidth = Math.max(0.8, outerR * 0.07);
+            ctx.stroke();
+            // Inner hole stroke (edge of opening)
+            ctx.beginPath();
+            ctx.arc(px, py, innerR, 0, Math.PI * 2);
+            ctx.strokeStyle = "rgba(0,0,0,0.3)";
+            ctx.lineWidth = Math.max(0.5, outerR * 0.04);
+            ctx.stroke();
+            // Palette number
+            const fs = Math.max(5, outerR * 0.85);
+            ctx.font = `900 ${fs}px sans-serif`;
+            ctx.fillStyle = lum < 0.5 ? "#ffffff" : "#0f172a";
+            ctx.fillText(String(ring.paletteIndex), px, py);
+            ctx.restore();
+          } else {
+            // Ghost outline only
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(px, py, outerR, 0, Math.PI * 2);
+            ctx.strokeStyle = "rgba(0,0,0,0.18)";
+            ctx.lineWidth = Math.max(0.5, outerR * 0.05);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+
+        // Crop/alignment dashed guide lines for overlap zones
+        ctx.save();
+        ctx.strokeStyle = "rgba(80,80,200,0.35)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4 * PX_PER_MM / 10, 2 * PX_PER_MM / 10]);
+        // Left overlap guide (for tiles that are not the leftmost)
+        const overlapPx = (OVERLAP_MM / 2) * PX_PER_MM;
+        ctx.beginPath(); ctx.moveTo(overlapPx, 0); ctx.lineTo(overlapPx, CH); ctx.stroke();
+        // Top overlap guide
+        ctx.beginPath(); ctx.moveTo(0, overlapPx); ctx.lineTo(CW, overlapPx); ctx.stroke();
+        // Right overlap guide
+        ctx.beginPath(); ctx.moveTo(CW - overlapPx, 0); ctx.lineTo(CW - overlapPx, CH); ctx.stroke();
+        // Bottom overlap guide
+        ctx.beginPath(); ctx.moveTo(0, CH - overlapPx); ctx.lineTo(CW, CH - overlapPx); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // Corner crop marks (L-shapes at each corner for trimming/alignment)
+        const markPx = 5 * PX_PER_MM;
+        ctx.save();
+        ctx.strokeStyle = "rgba(0,0,0,0.6)";
+        ctx.lineWidth = 1.2;
+        [[0, 0, 1, 1], [CW, 0, -1, 1], [0, CH, 1, -1], [CW, CH, -1, -1]].forEach(([cx, cy, dx, dy]) => {
+          ctx.beginPath(); ctx.moveTo(cx + dx * markPx, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + dy * markPx); ctx.stroke();
+        });
+        ctx.restore();
+
+        return cvs;
+      };
+
+      // ── Helper: embed tile canvas as a PDF page ─────────────────────────
+      const addTilePage = async (
+        tileCvs: HTMLCanvasElement,
+        label: string,
+        colorSwatchHex: string | null,
+      ) => {
+        const png = await canvasToPng(tileCvs);
+        const img = await pdf.embedPng(png);
+
+        const page = pdf.addPage([PAGE_W_PT, PAGE_H_PT]);
+        page.drawRectangle({ x: 0, y: 0, width: PAGE_W_PT, height: PAGE_H_PT, color: rgb(1, 1, 1) });
+
+        // Header bar
+        const headerPt = HEADER_MM * MM_TO_PT;
+        const marginPt  = MARGIN_MM * MM_TO_PT;
+        const contentTop = PAGE_H_PT - marginPt - headerPt;
+
+        if (colorSwatchHex) {
+          const { r, g, b } = hexToRgbUnit(colorSwatchHex);
+          page.drawCircle({
+            x: marginPt + 5 * MM_TO_PT,
+            y: contentTop + 6 * MM_TO_PT,
+            size: 4 * MM_TO_PT,
+            color: rgb(r, g, b),
+            borderColor: rgb(0, 0, 0),
+            borderWidth: 0.5,
+          });
+        }
+
+        page.drawText(label, {
+          x: marginPt + (colorSwatchHex ? 12 * MM_TO_PT : 0),
+          y: contentTop + 4.5 * MM_TO_PT,
+          size: 9,
+          font: fontBold,
+          color: rgb(0.07, 0.09, 0.16),
+        });
+        page.drawText("Print at 100% scale — do not scale to fit page",  {
+          x: marginPt + (colorSwatchHex ? 12 * MM_TO_PT : 0),
+          y: contentTop + 1 * MM_TO_PT,
+          size: 7,
+          font: fontReg,
+          color: rgb(0.45, 0.5, 0.6),
+        });
+
+        // Tile image
+        const imgX  = marginPt;
+        const imgY  = marginPt;
+        const imgW  = USABLE_W_MM * MM_TO_PT;
+        const imgH  = USABLE_H_MM * MM_TO_PT;
+        page.drawImage(img, { x: imgX, y: imgY, width: imgW, height: imgH });
+
+        // Ruler tick marks along bottom edge (every 10 mm)
+        const rulerY = imgY - 1 * MM_TO_PT;
+        for (let mm = 0; mm <= USABLE_W_MM; mm += 10) {
+          const rx = imgX + mm * MM_TO_PT;
+          const tickH = (mm % 50 === 0 ? 3 : 1.5) * MM_TO_PT;
+          page.drawLine({ start: { x: rx, y: rulerY }, end: { x: rx, y: rulerY - tickH }, thickness: 0.5, color: rgb(0.4, 0.45, 0.55) });
+          if (mm % 50 === 0) {
+            page.drawText(`${mm}`, { x: rx - 4, y: rulerY - tickH - 7, size: 5.5, font: fontReg, color: rgb(0.5, 0.55, 0.65) });
+          }
+        }
+      };
+
+      // ── Overview page (existing scaled-to-fit map) ──────────────────────
+      {
+        const plan = buildTilePlan(bounds, STEP_W_MM, STEP_H_MM);
+        const ovCvs = drawOverviewCanvas({ rings: preparedRings, scales: preparedScales, plan });
+        const ovPng = await canvasToPng(ovCvs);
+        const ovImg = await pdf.embedPng(ovPng);
+        const page = pdf.addPage([PAGE_W_PT, PAGE_H_PT]);
+        page.drawRectangle({ x: 0, y: 0, width: PAGE_W_PT, height: PAGE_H_PT, color: rgb(1, 1, 1) });
+        const pad = 24;
+        const s = Math.min((PAGE_W_PT - pad * 2) / ovImg.width, (PAGE_H_PT - pad * 2) / ovImg.height);
+        const dw = ovImg.width * s, dh = ovImg.height * s;
+        page.drawImage(ovImg, { x: (PAGE_W_PT - dw) / 2, y: (PAGE_H_PT - dh) / 2 + 20, width: dw, height: dh });
+
+        page.drawText("Print Pattern — Overview", {
+          x: pad, y: PAGE_H_PT - pad, size: 14, font: fontBold, color: rgb(0.07, 0.09, 0.16),
+        });
+        page.drawText(`${tilesX}×${tilesY} tiles • ${sortedColors.length} color(s) • Align dashed overlap guides when assembling tiles`, {
+          x: pad, y: PAGE_H_PT - pad - 16, size: 8, font: fontReg, color: rgb(0.4, 0.5, 0.6),
+        });
+
+        // Color legend
+        let legX = pad;
+        let legY = pad + 4;
+        for (const hex of sortedColors) {
+          const { r, g, b } = hexToRgbUnit(hex);
+          const idx = PALETTE_INDEX_BY_HEX.get(hex.toUpperCase()) ?? 0;
+          const cnt = colorCount.get(hex) ?? 0;
+          page.drawCircle({ x: legX + 5, y: legY + 4, size: 5, color: rgb(r, g, b), borderColor: rgb(0, 0, 0), borderWidth: 0.4 });
+          page.drawText(`#${idx} ${hex.toUpperCase()} (${cnt})`, { x: legX + 13, y: legY, size: 7, font: fontReg, color: rgb(0.2, 0.25, 0.35) });
+          legX += 90;
+          if (legX > PAGE_W_PT - 100) { legX = pad; legY += 12; }
+        }
+      }
+
+      // ── Per-color tile pages ────────────────────────────────────────────
+      for (const targetColor of sortedColors) {
+        const colorIdx = PALETTE_INDEX_BY_HEX.get(targetColor.toUpperCase()) ?? 0;
+        const cnt = colorCount.get(targetColor) ?? 0;
+
+        for (let ty = 0; ty < tilesY; ty++) {
+          for (let tx = 0; tx < tilesX; tx++) {
+            const tileMinX = bounds.minX + tx * STEP_W_MM;
+            const tileMinY = bounds.minY + ty * STEP_H_MM;
+            const tileCvs = drawPatternTile(tileMinX, tileMinY, targetColor);
+            const label = `Color #${colorIdx} ${targetColor.toUpperCase()} (${cnt} items) — Tile ${tx + 1},${ty + 1} of ${tilesX}×${tilesY}`;
+            await addTilePage(tileCvs, label, targetColor);
+          }
+        }
+      }
+
+      // ── Combined (all colors) tile pages ───────────────────────────────
+      if (sortedColors.length > 1) {
+        for (let ty = 0; ty < tilesY; ty++) {
+          for (let tx = 0; tx < tilesX; tx++) {
+            const tileMinX = bounds.minX + tx * STEP_W_MM;
+            const tileMinY = bounds.minY + ty * STEP_H_MM;
+            const tileCvs = drawPatternTile(tileMinX, tileMinY, null);
+            const label = `Full Pattern — Tile ${tx + 1},${ty + 1} of ${tilesX}×${tilesY}`;
+            await addTilePage(tileCvs, label, null);
+          }
+        }
+      }
+
+      const bytes = await pdf.save();
+      const ab: ArrayBuffer =
+        bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
+          ? (bytes.buffer as ArrayBuffer)
+          : bytes.slice().buffer;
+      downloadBlob("chainmail-pattern-1to1.pdf", new Blob([ab], { type: "application/pdf" }));
+    } catch (err) {
+      console.error("Pattern PDF failed:", err);
+      alert("Pattern PDF export failed. See console for details.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const exportCsv = () => {
     const header = [
       "entity",
@@ -1639,15 +2035,19 @@ const FinalizeAndExportPanel: React.FC<Props> = ({
 
     const lines = [header.join(",")];
 
-    for (const ring of normalizedRings) {
+    // Sort by colorHex so all same-color items group together
+    const sortedRings = [...normalizedRings].sort((a, b) => a.colorHex.localeCompare(b.colorHex));
+    const sortedScales = [...normalizedScales].sort((a, b) => a.colorHex.localeCompare(b.colorHex));
+
+    for (const ring of sortedRings) {
       lines.push(
         [
           "ring",
           `${ring.row ?? ""},${ring.col ?? ""}`,
           ring.row ?? "",
           ring.col ?? "",
-          ring.x,
-          ring.y,
+          ring.x.toFixed(4),
+          ring.y.toFixed(4),
           ring.colorHex,
           PALETTE_INDEX_BY_HEX.get(ring.colorHex) ?? "",
           ring.innerDiameter,
@@ -1662,15 +2062,15 @@ const FinalizeAndExportPanel: React.FC<Props> = ({
       );
     }
 
-    for (const scale of normalizedScales) {
+    for (const scale of sortedScales) {
       lines.push(
         [
           "scale",
           `${scale.row ?? ""},${scale.col ?? ""}`,
           scale.row ?? "",
           scale.col ?? "",
-          scale.x,
-          scale.y,
+          scale.x.toFixed(4),
+          scale.y.toFixed(4),
           scale.colorHex,
           PALETTE_INDEX_BY_HEX.get(scale.colorHex) ?? "",
           "",
@@ -1759,57 +2159,131 @@ const FinalizeAndExportPanel: React.FC<Props> = ({
           )}
         </div>
 
-        <div
-          style={{
-            marginTop: 10,
-            fontSize: 12,
-            color: "#94a3b8",
-            lineHeight: 1.5,
-          }}
-        >
-          The PDF includes:
-          <br />• a paginated ring BOM
-          {scaleTotal > 0 && (
-            <>
-              <br />• a paginated scale BOM
-            </>
-          )}
-          <br />• a tiled ring map
-          {scaleTotal > 0 && (
-            <>
-              <br />• a tiled scale map
-              <br />• a combined ring + scale map
-            </>
-          )}
-          <br />• a preview page
+        {/* Export PDF row */}
+        <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div>
+            <button
+              onClick={buildPdf}
+              disabled={busy}
+              style={btnPrimary}
+              title="PDF with BOM pages, tiled overview maps, and preview."
+            >
+              {busy ? "Building…" : "Export PDF (BOM + Map)"}
+            </button>
+            <div style={{ marginTop: 4, fontSize: 10, color: "#64748b", maxWidth: 200 }}>
+              BOM · tiled map · preview
+            </div>
+          </div>
+
+          <div>
+            <button
+              onClick={buildPatternPdf}
+              disabled={busy}
+              style={btnPattern}
+              title="1:1 physical pattern PDF — print at 100% and use as a placement template."
+            >
+              {busy ? "Building…" : "Print Pattern (1:1)"}
+            </button>
+            <div style={{ marginTop: 4, fontSize: 10, color: "#64748b", maxWidth: 220 }}>
+              A4 pages · actual ring/scale size · per-color layers · crop marks
+            </div>
+          </div>
+
+          <div>
+            <button onClick={exportCsv} style={btnGhost}>
+              Export CSV
+            </button>
+            <div style={{ marginTop: 4, fontSize: 10, color: "#64748b", maxWidth: 160 }}>
+              Sorted by color · x/y in mm
+            </div>
+          </div>
         </div>
 
-        <div style={{ marginTop: 14, display: "flex", gap: 10 }}>
-          <button
-            onClick={buildPdf}
-            disabled={busy}
-            style={btnPrimary}
-            title="PDF with BOM pages, tiled maps, and preview."
+        {/* 3D Model Export */}
+        {getExportGroups && (
+          <div
+            style={{
+              marginTop: 14,
+              borderTop: "1px solid rgba(255,255,255,0.08)",
+              paddingTop: 12,
+            }}
           >
-            {busy ? "Building PDF…" : "Export PDF"}
-          </button>
-          <button onClick={exportCsv} style={btnGhost}>
-            Export CSV
-          </button>
-        </div>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#94a3b8", marginBottom: 8, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+              3D Model Export
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
+              <div>
+                <button
+                  disabled={busy3D}
+                  style={{ ...btnPrimary, background: "#7c3aed" }}
+                  title="GLB (binary GLTF) — each color is a named mesh group. Compatible with VR engines (Unity, Meta Quest, WebXR) and modern slicers (Bambu Studio, PrusaSlicer)."
+                  onClick={async () => {
+                    const groups = getExportGroups();
+                    if (!groups?.rings && !groups?.scales) {
+                      alert("Nothing to export — render the design first.");
+                      return;
+                    }
+                    const sizeMB = estimateGLBSizeMB(groups);
+                    if (sizeMB > 80 && !confirm(`Estimated file size ~${sizeMB} MB. Continue?`)) return;
+                    setBusy3D(true);
+                    try {
+                      await exportAsGLB(groups, "chainmail-design");
+                    } catch (err) {
+                      console.error("GLB export failed:", err);
+                      alert("3D export failed — see console for details.");
+                    } finally {
+                      setBusy3D(false);
+                    }
+                  }}
+                >
+                  {busy3D ? "Building…" : "Export GLB (VR / Universal)"}
+                </button>
+                <div style={{ marginTop: 4, fontSize: 10, color: "#64748b", maxWidth: 220 }}>
+                  Multi-color groups · VR · Bambu Studio · PrusaSlicer
+                </div>
+              </div>
+
+              <div>
+                <button
+                  disabled={busy3D}
+                  style={btnGhost}
+                  title="One STL file per unique color — assign each STL to a different extruder in your slicer."
+                  onClick={() => {
+                    const groups = getExportGroups();
+                    if (!groups?.rings && !groups?.scales) {
+                      alert("Nothing to export — render the design first.");
+                      return;
+                    }
+                    exportAsColorSTLs(groups, "chainmail-design");
+                  }}
+                >
+                  Per-Color STLs
+                </button>
+                <div style={{ marginTop: 4, fontSize: 10, color: "#64748b", maxWidth: 180 }}>
+                  One .stl per color · multi-head printers
+                </div>
+              </div>
+            </div>
+            <div style={{ marginTop: 6, fontSize: 10, color: "#475569", lineHeight: 1.5 }}>
+              Rings are full tori · scales are 0.4 mm extruded plates · color groups map to extruder/material slots
+            </div>
+          </div>
+        )}
 
         <div
           style={{
-            marginTop: 14,
-            fontSize: 12,
-            color: "#93a3b8",
-            lineHeight: 1.45,
+            marginTop: 12,
+            fontSize: 11,
+            color: "#64748b",
+            lineHeight: 1.55,
+            borderTop: "1px solid rgba(255,255,255,0.06)",
+            paddingTop: 10,
           }}
         >
-          Quantization is limited to the <b>24-color palette</b>. The BOM index
-          is stable 1–24. Freeform exports include separate ring and scale pages
-          plus a combined location map so scale positions remain readable
-          relative to the rings.
+          <b style={{ color: "#94a3b8" }}>Print Pattern</b> — rings and scales drawn at true physical size on A4
+          pages. One set of pages per color: your color's items are filled, all others shown as outlines so you
+          can see context. Includes a combined full-pattern set. Print at <b>100% / no scaling</b> and tape
+          adjacent tiles using the dashed overlap guides. Ruler ticks along the bottom edge every 10 mm.
         </div>
       </div>
     </div>
@@ -1821,6 +2295,16 @@ const btnPrimary: React.CSSProperties = {
   borderRadius: 10,
   border: "1px solid #1f2937",
   background: "#2563eb",
+  color: "white",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const btnPattern: React.CSSProperties = {
+  padding: "8px 12px",
+  borderRadius: 10,
+  border: "1px solid #064e3b",
+  background: "#059669",
   color: "white",
   cursor: "pointer",
   fontWeight: 700,
