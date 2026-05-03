@@ -14,6 +14,7 @@ export interface OverlayState {
 
 interface Props {
   onApply: (overlay: OverlayState) => void;
+  gridAspect?: number; // width/height ratio of the ring grid — preview matches this
 }
 
 /* ----------------------- defaults ----------------------- */
@@ -29,11 +30,61 @@ const defaultOverlay: OverlayState = {
 };
 
 /* ------------------- component ------------------- */
-export const ImageOverlayPanel: React.FC<Props> = ({ onApply }) => {
+export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect }) => {
+  // Preview height matches the ring grid's aspect ratio (width ÷ aspect).
+  // Panel content width is 352px (380px - 14px padding × 2).
+  const PREVIEW_W = 352;
+  const previewH = gridAspect ? Math.round(PREVIEW_W / gridAspect) : 220;
   const [overlay, setOverlay] = useState<OverlayState>(defaultOverlay);
   const [dragging, setDragging] = useState(false);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  /* ---------------- snapshot: capture visible preview as a new flat image ---------------- */
+  const createSnapshot = useCallback((): Promise<OverlayState | null> => {
+    if (!overlay.dataUrl) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const iW = img.naturalWidth || img.width;
+        const iH = img.naturalHeight || img.height;
+        if (!iW || !iH) { resolve(null); return; }
+        const dispH = PREVIEW_W * iH / iW;
+
+        const canvas = document.createElement("canvas");
+        canvas.width = PREVIEW_W;
+        canvas.height = previewH;
+        const ctx = canvas.getContext("2d") as CanvasRenderingContext2D | null;
+        if (!ctx) { resolve(null); return; }
+
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, PREVIEW_W, previewH);
+
+        // Replicate the CSS preview transform:
+        // img is flex-centered → transform-origin = (PREVIEW_W/2, previewH/2) in viewport
+        // CSS: translate(offsetX,offsetY) scale(scale) rotate(rotation)
+        ctx.save();
+        ctx.translate(PREVIEW_W / 2 + overlay.offsetX, previewH / 2 + overlay.offsetY);
+        ctx.scale(overlay.scale, overlay.scale);
+        ctx.rotate(overlay.rotation * (Math.PI / 180));
+        ctx.drawImage(img, -PREVIEW_W / 2, -dispH / 2, PREVIEW_W, dispH);
+        ctx.restore();
+
+        resolve({
+          dataUrl: canvas.toDataURL("image/jpeg", 0.95),
+          scale: 1,
+          rotation: 0,
+          offsetX: 0,
+          offsetY: 0,
+          opacity: overlay.opacity,
+          repeat: "none",
+          patternScale: 100,
+        });
+      };
+      img.onerror = () => resolve(null);
+      img.src = overlay.dataUrl!;
+    });
+  }, [overlay, previewH]);
 
   /* ---------------- handlers ---------------- */
   const loadFile = useCallback((file: File) => {
@@ -160,7 +211,7 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply }) => {
           style={{
             position: "relative",
             width: "100%",
-            height: 220,
+            height: previewH,
             borderRadius: 8,
             overflow: "hidden",
             background: "#000",
@@ -220,14 +271,43 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply }) => {
                 opacity: overlay.opacity,
                 backgroundImage: `url(${overlay.dataUrl})`,
                 backgroundRepeat: "repeat",
-                // patternScale is percentage; keep aspect by scaling width and letting height auto
                 backgroundSize: `${overlay.patternScale ?? 100}% auto`,
-                // offsetX/offsetY pan the pattern
                 backgroundPosition: `${overlay.offsetX}px ${overlay.offsetY}px`,
                 pointerEvents: "none",
               }}
             />
           )}
+
+          {/* Transfer zone indicator — always the full preview area */}
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              border: "2px dashed rgba(255,255,255,0.75)",
+              borderRadius: 6,
+              pointerEvents: "none",
+              boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.4)",
+            }}
+          >
+            {/* Corner label */}
+            <div
+              style={{
+                position: "absolute",
+                top: 5,
+                left: 7,
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: "0.06em",
+                color: "rgba(255,255,255,0.85)",
+                textShadow: "0 1px 3px rgba(0,0,0,0.9)",
+                textTransform: "uppercase",
+                pointerEvents: "none",
+                userSelect: "none",
+              }}
+            >
+              Transfer area
+            </div>
+          </div>
         </div>
       )}
 
@@ -382,7 +462,10 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply }) => {
             Reset
           </button>
           <button
-            onClick={() => onApply(overlay)}
+            onClick={async () => {
+              const snapshot = await createSnapshot();
+              if (snapshot) onApply(snapshot);
+            }}
             style={btnPrimary}
             title="Send overlay settings to the main canvas/rings layer"
           >

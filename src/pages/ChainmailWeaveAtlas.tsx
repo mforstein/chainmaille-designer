@@ -3,6 +3,7 @@
 // ==============================
 import React, { useEffect, useState } from "react";
 import { DraggableCompassNav, DraggablePill } from "../App";
+import { IconHamburger } from "../components/icons/ToolIcons";
 
 const ID_ORDER = [
   "7/64",
@@ -181,7 +182,9 @@ Angles: ${entry.angleIn}/${entry.angleOut}°`}
         <button
           onClick={() => setShowCompass((v) => !v)}
           style={{
-            fontSize: 22,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             width: 40,
             height: 40,
             borderRadius: 10,
@@ -192,7 +195,7 @@ Angles: ${entry.angleIn}/${entry.angleOut}°`}
           }}
           title="Open Navigation"
         >
-          🧭
+          <IconHamburger size={18} />
         </button>
       </DraggablePill>
 

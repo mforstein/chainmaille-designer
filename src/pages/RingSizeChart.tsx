@@ -7,6 +7,7 @@ import SpriteText from "three-spritetext";
 import { computeRingVars } from "../utils/computeRingVars";
 import { DraggableCompassNav, DraggablePill } from "../App";
 import RingRenderer from "../components/RingRenderer";
+import { IconHamburger } from "../components/icons/ToolIcons";
 
 // ========================================
 // CONSTANTS
@@ -179,7 +180,9 @@ export default function RingSizeChart() {
         <button
           onClick={() => setShowCompass((v) => !v)}
           style={{
-            fontSize: 22,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
             width: 40,
             height: 40,
             borderRadius: 10,
@@ -190,7 +193,7 @@ export default function RingSizeChart() {
           }}
           title="Open Navigation"
         >
-          🧭
+          <IconHamburger size={18} />
         </button>
       </DraggablePill>
 

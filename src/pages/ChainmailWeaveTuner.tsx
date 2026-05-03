@@ -11,6 +11,7 @@ import * as THREE from "three";
 import { Link } from "react-router-dom";
 import { DraggableCompassNav, DraggablePill } from "../App";
 import { computeRingVarsIndependent } from "../utils/ringMath";
+import { IconHamburger } from "../components/icons/ToolIcons";
 
 // ========================================
 // CONSTANTS
@@ -416,6 +417,55 @@ export default function ChainmailWeaveTuner() {
 
   const [status, setStatus] = useState<"valid" | "no_solution">("valid");
   const [showCompass, setShowCompass] = useState(false);
+
+  const pendingSnapshotSaveRef = useRef(false);
+
+  const handleReloadLastSave = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(TUNER_STORAGE_KEY);
+      if (!raw) { alert("No saved ring sets found."); return; }
+      const list = JSON.parse(raw) as any[];
+      if (!list.length) { alert("No saved ring sets found."); return; }
+      const last = [...list].sort((a, b) =>
+        (b.savedAt ?? "").localeCompare(a.savedAt ?? ""),
+      )[0];
+      // Ring geometry — id field is encoded as "5/16_1.2mm"
+      const idParts = (last.id as string ?? "").split("_");
+      const ringId = idParts.slice(0, -1).join("_");
+      const wireVal = parseFloat(idParts[idParts.length - 1] ?? "");
+      if ((ID_OPTIONS as readonly string[]).includes(ringId)) setId(ringId as typeof ID_OPTIONS[number]);
+      if (!isNaN(wireVal) && (WIRE_OPTIONS as readonly number[]).includes(wireVal)) setWire(wireVal as typeof WIRE_OPTIONS[number]);
+      if (typeof last.centerSpacing === "number") setCenterSpacing(last.centerSpacing);
+      if (typeof last.angleIn === "number") setAngleIn(last.angleIn);
+      if (typeof last.angleOut === "number") setAngleOut(last.angleOut);
+      if (last.status === "valid" || last.status === "no_solution") setStatus(last.status);
+      // Scale settings
+      if (typeof last.scaleEnabled === "boolean") setScaleEnabled(last.scaleEnabled);
+      if (typeof last.scaleBehindRings === "boolean") setScaleBehindRings(last.scaleBehindRings);
+      if (typeof last.scaleHoleDiameter === "number") setScaleHoleId(last.scaleHoleDiameter);
+      if (typeof last.scaleWidth === "number") setScaleWidth(last.scaleWidth);
+      if (typeof last.scaleHeight === "number") setScaleHeight(last.scaleHeight);
+      if (last.scaleShape && SCALE_SHAPES.includes(last.scaleShape)) setScaleShape(last.scaleShape);
+      if (typeof last.scaleDrop === "number") setScaleDrop(last.scaleDrop);
+      if (typeof last.scaleColor === "string") setScaleColor(last.scaleColor);
+      if (typeof last.scaleOnEveryCell === "boolean") setScaleOnEveryCell(last.scaleOnEveryCell);
+      if (typeof last.lockScaleHolesToRingCenters === "boolean") setLockScaleHolesToRingCenters(last.lockScaleHolesToRingCenters);
+      if (typeof last.scaleCenterSpacing === "number") setScaleCenterSpacing(last.scaleCenterSpacing);
+      if (typeof last.scaleGridOffsetX === "number") setScaleGridOffsetX(last.scaleGridOffsetX);
+      if (typeof last.scaleGridOffsetY === "number") setScaleGridOffsetY(last.scaleGridOffsetY);
+      if (typeof last.scaleHoleOffsetY === "number") setScaleHoleOffsetY(last.scaleHoleOffsetY);
+      if (last.scaleWeaveMode === "independent" || last.scaleWeaveMode === "interlocked") setScaleWeaveMode(last.scaleWeaveMode);
+      if (typeof last.scaleAngleIn === "number") setScaleAngleIn(last.scaleAngleIn);
+      if (typeof last.scaleAngleOut === "number") setScaleAngleOut(last.scaleAngleOut);
+      if (typeof last.scalePlaneZ === "number") setScalePlaneZ(last.scalePlaneZ);
+      if (typeof last.scaleTipLiftDeg === "number") setScaleTipLiftDeg(last.scaleTipLiftDeg);
+      if (typeof last.scaleRowClearanceZ === "number") setScaleRowClearanceZ(last.scaleRowClearanceZ);
+      pendingSnapshotSaveRef.current = true;
+    } catch (err) {
+      alert("Failed to reload: " + String(err));
+    }
+  }, []);
+
   useEffect(() => {
     try {
       const raw = localStorage.getItem(TUNER_SCALE_PREFS_KEY);
@@ -659,6 +709,11 @@ const saveFreeformTunerSnapshot = useCallback(() => {
   sortedScales,
 ]);
 
+useEffect(() => {
+  if (!pendingSnapshotSaveRef.current) return;
+  pendingSnapshotSaveRef.current = false;
+  saveFreeformTunerSnapshot();
+}, [saveFreeformTunerSnapshot]);
 
 useEffect(() => {
   try {
@@ -1345,17 +1400,22 @@ if (scaleEnabled) {
           </select>
         </div>
 
-        <button onClick={handleSave} style={{ background: "#1e293b", color: "#93c5fd", padding: "8px 12px", borderRadius: 10, border: "1px solid #334155", cursor: "pointer", fontWeight: 800, width: "100%" }}>
-          Save
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={handleReloadLastSave} style={{ flex: 1, background: "#0f172a", color: "#94a3b8", padding: "8px 12px", borderRadius: 10, border: "1px solid #334155", cursor: "pointer", fontWeight: 700 }} title="Restore sliders from the most recently saved ring set">
+            Reload Last Save
+          </button>
+          <button onClick={handleSave} style={{ flex: 1, background: "#1e293b", color: "#93c5fd", padding: "8px 12px", borderRadius: 10, border: "1px solid #334155", cursor: "pointer", fontWeight: 800 }}>
+            Save
+          </button>
+        </div>
       </div>
 
       <DraggablePill id="tuner-compass" defaultPosition={{ x: 20, y: 20 }}>
         <button
           onClick={() => setShowCompass((v) => !v)}
-          style={{ fontSize: 22, width: 40, height: 40, borderRadius: 10, border: "1px solid #111", background: "#1f2937", color: "#d1d5db", cursor: "pointer" }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 40, height: 40, borderRadius: 10, border: "1px solid #111", background: "#1f2937", color: "#d1d5db", cursor: "pointer" }}
         >
-          🧭
+          <IconHamburger size={18} />
         </button>
       </DraggablePill>
 

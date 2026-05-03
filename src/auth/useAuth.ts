@@ -1,3 +1,3 @@
-export function hasAuth(key: string) {
-  return localStorage.getItem(key) === "true";
-}
+// Re-export from AuthContext for ergonomic imports.
+export { useAuth, tierAtLeast } from "./AuthContext";
+export type { Tier } from "./AuthContext";

@@ -1,8 +1,10 @@
 // src/components/ErinPattern2D.tsx
 
-import { DraggableCompassNav } from "../App";
+import { DraggableCompassNav, DraggablePill } from "../App";
 import ProjectSaveLoadButtons from "../components/ProjectSaveLoadButtons";
-import React, { useMemo, useState, useRef, useEffect } from "react";
+import React, { useMemo, useState, useRef, useEffect, useCallback } from "react";
+import { IconHamburger, IconEraser, IconUndo, IconRedo } from "../components/icons/ToolIcons";
+import { ToolBtn } from "../components/ui/ToolBtn";
 import {
   getDeviceLimits,
   SAFE_DEFAULT,
@@ -96,6 +98,55 @@ const ErinPattern2D: React.FC = () => {
   const [isErasing, setIsErasing] = useState(false);
   const [cells, setCells] = useState<Map<string, string>>(new Map());
   const [isPainting, setIsPainting] = useState(false);
+
+  // ↩ Undo / Redo
+  const cellsHistoryRef = useRef<Map<string, string>[]>([new Map()]);
+  const cellsHistoryIdxRef = useRef(0);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  const pushCellsHistory = useCallback((snapshot: Map<string, string>) => {
+    const history = cellsHistoryRef.current;
+    const idx = cellsHistoryIdxRef.current;
+    const newHistory = history.slice(0, idx + 1);
+    newHistory.push(new Map(snapshot));
+    cellsHistoryRef.current = newHistory;
+    cellsHistoryIdxRef.current = newHistory.length - 1;
+    setCanUndo(newHistory.length > 1);
+    setCanRedo(false);
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    const idx = cellsHistoryIdxRef.current;
+    if (idx <= 0) return;
+    const prevIdx = idx - 1;
+    cellsHistoryIdxRef.current = prevIdx;
+    setCells(new Map(cellsHistoryRef.current[prevIdx]));
+    setCanUndo(prevIdx > 0);
+    setCanRedo(true);
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    const idx = cellsHistoryIdxRef.current;
+    const history = cellsHistoryRef.current;
+    if (idx >= history.length - 1) return;
+    const nextIdx = idx + 1;
+    cellsHistoryIdxRef.current = nextIdx;
+    setCells(new Map(history[nextIdx]));
+    setCanUndo(true);
+    setCanRedo(nextIdx < history.length - 1);
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      if (e.key === "z" && !e.shiftKey) { e.preventDefault(); handleUndo(); }
+      if ((e.key === "z" && e.shiftKey) || e.key === "y") { e.preventDefault(); handleRedo(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleUndo, handleRedo]);
 
   // 🎯 Hit detection
   const [showHitGrid, setShowHitGrid] = useState(false);
@@ -211,16 +262,7 @@ const ErinPattern2D: React.FC = () => {
   // ------------------------------
   // LocalStorage save / load
   // ------------------------------
-  useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        setCells(new Map(JSON.parse(saved)));
-      } catch {
-        console.warn("⚠️ Could not parse paint data");
-      }
-    }
-  }, []);
+  // Intentionally not loading cells from localStorage on mount — page starts blank on refresh.
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -234,6 +276,7 @@ const ErinPattern2D: React.FC = () => {
 
   const clearAll = () => {
     if (window.confirm("Clear all painted cells?")) {
+      pushCellsHistory(cells);
       setCells(new Map());
       localStorage.removeItem(STORAGE_KEY);
     }
@@ -544,6 +587,7 @@ const ErinPattern2D: React.FC = () => {
       panStartRef.current = { x: e.clientX, y: e.clientY };
       panOrigRef.current = { x: panX, y: panY };
     } else {
+      pushCellsHistory(cells);
       setIsPainting(true);
     }
   };
@@ -769,95 +813,6 @@ const ErinPattern2D: React.FC = () => {
     panStartRef.current = null;
   };
 
-  // ------------------------------
-  // Draggable helper hook
-  // ------------------------------
-  const useDraggable = (
-    initial: { top: number; left: number },
-    resetKey?: any,
-  ) => {
-    const [pos, setPos] = useState(initial);
-    const offset = useRef<{ x: number; y: number } | null>(null);
-
-    useEffect(() => {
-      setPos(initial);
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [initial.top, initial.left, resetKey]);
-
-    const startDrag = (x: number, y: number) => {
-      offset.current = { x: x - pos.left, y: y - pos.top };
-    };
-
-    const moveDrag = (x: number, y: number) => {
-      if (!offset.current) return;
-      const newTop = y - offset.current.y;
-      const newLeft = x - offset.current.x;
-
-      // prevent dragging completely off-screen
-      const clampedTop = Math.max(0, Math.min(window.innerHeight - 100, newTop));
-      const clampedLeft = Math.max(
-        0,
-        Math.min(window.innerWidth - 100, newLeft),
-      );
-
-      setPos({ top: clampedTop, left: clampedLeft });
-    };
-    const endDrag = () => {
-      offset.current = null;
-    };
-
-    const handleMouseDown = (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
-      startDrag(e.clientX, e.clientY);
-    };
-
-    const handleTouchStart = (e: React.TouchEvent) => {
-      if (e.touches.length === 1) {
-        const t = e.touches[0];
-        startDrag(t.clientX, t.clientY);
-      }
-    };
-
-    useEffect(() => {
-      const onMove = (e: MouseEvent) => moveDrag(e.clientX, e.clientY);
-      const onUp = () => endDrag();
-      const onTouchMove = (e: TouchEvent) => {
-        if (e.touches.length === 1) {
-          const t = e.touches[0];
-          moveDrag(t.clientX, t.clientY);
-        }
-      };
-      const onTouchEnd = () => endDrag();
-      window.addEventListener("mousemove", onMove);
-      window.addEventListener("mouseup", onUp);
-      window.addEventListener("touchmove", onTouchMove, { passive: false });
-      window.addEventListener("touchend", onTouchEnd);
-      return () => {
-        window.removeEventListener("mousemove", onMove);
-        window.removeEventListener("mouseup", onUp);
-        window.removeEventListener("touchmove", onTouchMove);
-        window.removeEventListener("touchend", onTouchEnd);
-      };
-    }, [pos]);
-
-    return { pos, handleMouseDown, handleTouchStart };
-  };
-
-  // 🧰 Panels (mobile-safe positioning)
-  const safeTop = Math.min(window.innerHeight - 180, 80); // prevent bottom overflow
-  const safeLeft = Math.min(window.innerWidth - 100, 16);
-
-  const toolsPanel = useDraggable({
-    top: window.innerWidth < 768 ? safeTop : 16,
-    left: window.innerWidth < 768 ? safeLeft : 16,
-  });
-
-  const colorsPanel = useDraggable({
-    top: window.innerWidth < 768 ? safeTop : 16,
-    left: window.innerWidth < 768 ? safeLeft + 70 : 90,
-  });
-
   const handlePrint = () => {
     document.body.classList.add("printing");
     setTimeout(() => {
@@ -875,146 +830,69 @@ const ErinPattern2D: React.FC = () => {
     <>
       <div style={wrap}>
         {/* 🧰 TOOL PANEL */}
-        <div
-          style={{
-            ...floatingPanel,
-            position: "fixed",
-            top: toolsPanel.pos.top,
-            left: toolsPanel.pos.left,
-            flexDirection: "column",
-            gap: 8,
-            cursor: "move",
-          }}
-          onMouseDown={toolsPanel.handleMouseDown}
-          onTouchStart={toolsPanel.handleTouchStart}
-        >
-          {showCompass && (
-            <DraggableCompassNav onNavigate={() => setShowCompass(false)} />
-          )}
-          <button
-            style={{ ...floatIconBtn, background: "#2563eb" }}
-            onClick={(e) => {
-              e.stopPropagation();
-              window.location.href = "/wovenrainbowsbyerin";
-            }}
-            title="Back to Home"
-          >
-            🏠
-          </button>
-          <button
+        <DraggablePill id="erin-toolbar" defaultPosition={{ x: 16, y: 16 }}>
+          <div
             style={{
-              ...floatIconBtn,
-              background: paintActive ? "#f97316" : "#1f2937",
-            }}
-            onClick={() => setPaintActive((v) => !v)}
-            title="Toggle paint mode"
-          >
-            🎨
-          </button>
-          {paintActive && (
-            <>
-              <button
-                onClick={() => setIsErasing((v) => !v)}
-                style={{
-                  ...floatIconBtn,
-                  background: isErasing ? "#fbbf24" : "#1f2937",
-                }}
-                title="Eraser"
-              >
-                🧽
-              </button>
-
-              <button
-                onClick={clearAll}
-                style={{ ...floatIconBtn, background: "#ef4444" }}
-                title="Clear all painted cells"
-              >
-                🧹
-              </button>
-            </>
-          )}
-          <button
-            onClick={() => setShowImage((v) => !v)}
-            style={{
-              ...floatIconBtn,
-              background: showImage ? "#0ea5e9" : "#1f2937",
-            }}
-            title="Toggle image"
-          >
-            🖼️
-          </button>
-          <button
-            onClick={() => setShowLines((v) => !v)}
-            style={{
-              ...floatIconBtn,
-              background: showLines ? "#22c55e" : "#1f2937",
-            }}
-            title="Toggle outlines"
-          >
-            📏
-          </button>
-          <button
-            onClick={handlePrint}
-            style={{ ...floatIconBtn, background: "#6b21a8" }}
-            title="Print"
-          >
-            🖨️
-          </button>
-          <ProjectSaveLoadButtons
-            onSave={savePatternProject}
-            onLoad={(json) => {
-              if (!window.confirm("Load project and replace current work?"))
-                return;
-              loadPatternProject(json);
-            }}
-          />{" "}
-          <button
-            onClick={() => setShowHitGrid((v) => !v)}
-            style={{
-              ...floatIconBtn,
-              background: showHitGrid ? "#14b8a6" : "#1f2937",
-            }}
-            title="Toggle hit grid"
-          >
-            🎯
-          </button>
-          <button
-            onClick={() => setShowControls((v) => !v)}
-            style={{
-              ...floatIconBtn,
-              background: showControls ? "#f97316" : "#1f2937",
-            }}
-            title="Show controls"
-          >
-            🧰
-          </button>
-          <button
-            style={floatIconBtn}
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowCompass((v) => !v);
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+              alignItems: "center",
+              padding: "10px 8px",
+              background: "#0f172a",
+              border: "1px solid #0b1020",
+              borderRadius: 20,
+              boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+              maxHeight: "calc(100vh - 40px)",
+              overflowY: "auto",
             }}
           >
-            🧭
-          </button>
-        </div>
+            <ToolBtn title="Back to Home" style={{ background: "#2563eb" }}
+              onClick={(e) => { e.stopPropagation(); window.location.href = "/wovenrainbowsbyerin"; }}>
+              🏠
+            </ToolBtn>
+            <ToolBtn title="Toggle paint mode" active={paintActive}
+              onClick={() => setPaintActive((v) => !v)}>
+              🎨
+            </ToolBtn>
+            {paintActive && (
+              <>
+                <ToolBtn title="Eraser" active={isErasing}
+                  onClick={() => setIsErasing((v) => !v)}>
+                  <IconEraser size={18} />
+                </ToolBtn>
+                <ToolBtn title="Clear all painted cells" style={{ background: "#ef4444" }}
+                  onClick={clearAll}>
+                  🧹
+                </ToolBtn>
+              </>
+            )}
+            <div style={{ opacity: canUndo ? 1 : 0.35, pointerEvents: canUndo ? "auto" : "none" }}>
+              <ToolBtn title="Undo (Ctrl+Z)" onClick={handleUndo}>
+                <IconUndo size={18} />
+              </ToolBtn>
+            </div>
+            <div style={{ opacity: canRedo ? 1 : 0.35, pointerEvents: canRedo ? "auto" : "none" }}>
+              <ToolBtn title="Redo (Ctrl+Shift+Z)" onClick={handleRedo}>
+                <IconRedo size={18} />
+              </ToolBtn>
+            </div>
+            <ToolBtn title="Navigation Menu" active={showCompass}
+              onClick={() => setShowCompass((v) => !v)}>
+              <IconHamburger size={18} />
+            </ToolBtn>
+          </div>
+        </DraggablePill>
 
         {/* 🎨 COLOR PANEL */}
-        <div
-          style={{
-            ...floatingPanel,
-            position: "fixed",
-            top: colorsPanel.pos.top,
-            left: colorsPanel.pos.left,
-            flexDirection: "column",
-            width: 70,
-            padding: 6,
-            cursor: "move",
-            zIndex: 60,
-          }}
-          onMouseDown={colorsPanel.handleMouseDown}
-          onTouchStart={colorsPanel.handleTouchStart}
-        >
+        <DraggablePill id="erin-colors" defaultPosition={{ x: 80, y: 16 }}>
+          <div
+            style={{
+              padding: 8,
+              background: "#0f172a",
+              border: "1px solid #0b1020",
+              borderRadius: 20,
+            }}
+          >
           <div
             style={{
               display: "grid",
@@ -1038,7 +916,8 @@ const ErinPattern2D: React.FC = () => {
               />
             ))}
           </div>
-        </div>
+          </div>
+        </DraggablePill>
 
         {/* ⚙️ CONTROL PANEL */}
         {showControls && (
@@ -1147,6 +1026,7 @@ const ErinPattern2D: React.FC = () => {
                   panStartRef.current = { x: t.clientX, y: t.clientY };
                   panOrigRef.current = { x: panX, y: panY };
                 } else {
+                  pushCellsHistory(cells);
                   setIsPainting(true);
                 }
               }}
@@ -1190,6 +1070,10 @@ const ErinPattern2D: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {showCompass && (
+        <DraggableCompassNav onNavigate={() => setShowCompass(false)} />
+      )}
     </>
   );
 };

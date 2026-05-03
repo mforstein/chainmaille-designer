@@ -1,5 +1,6 @@
 // src/components/FloatingPanel.tsx
 import React, { useEffect, useRef, useState } from "react";
+import { IconEraser } from "./icons/ToolIcons";
 
 interface FloatingPanelProps {
   isCameraPanel?: boolean; // true = camera, false = others
@@ -168,7 +169,7 @@ export default function FloatingPanel({
                 background: eraseMode ? "#eab308" : "#222",
               }}
             >
-              🧽
+              <IconEraser size={18} />
             </div>
           )}
 

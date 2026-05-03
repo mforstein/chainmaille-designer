@@ -102,15 +102,22 @@ import RingSizeChart from "./pages/RingSizeChart";
 import ChainmailWeaveTuner from "./pages/ChainmailWeaveTuner";
 import ChainmailWeaveAtlas from "./pages/ChainmailWeaveAtlas";
 import PasswordGate from "./pages/PasswordGate";
+import AuthPage from "./pages/AuthPage";
+import PricingPage from "./pages/PricingPage";
 import FreeformChainmail2D from "./pages/FreeformChainmail2D";
 import ErinPattern2D from "./pages/ErinPattern2D";
 import BOMButtons from "./components/BOMButtons";
+import { IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo } from "./components/icons/ToolIcons";
+import { ToolBtn } from "./components/ui/ToolBtn";
+import RequiresTier from "./auth/RequiresTier";
+import { useAuth, tierAtLeast } from "./auth/AuthContext";
+import SupplierColorPalette from "./components/SupplierColorPalette";
 
 // ==============================
 // BOM-RELATED SHARED TYPES
 // ==============================
 
-export type SupplierId = "cmj" | "trl" | "mdz";
+export type SupplierId = "cmj" | "trl" | "mdz" | "spg";
 export type ColorMode = "solid" | "checker";
 export type Unit = "mm" | "in";
 
@@ -181,18 +188,6 @@ function PasswordGateWrapper({ onUnlock }: { onUnlock: () => void }) {
 }
 const UI_MARGIN = 12;
 
-const splineToggleButtonStyle: React.CSSProperties = {
-  width: 44,
-  height: 44,
-  borderRadius: 14,
-  border: "1px solid rgba(255,255,255,0.12)",
-  background: "rgba(17,24,39,0.92)",
-  color: "#e5e7eb",
-  cursor: "pointer",
-  fontSize: 16,
-  display: "grid",
-  placeItems: "center",
-};
 
 function clampToViewport(
   pos: { x: number; y: number },
@@ -297,7 +292,7 @@ function DraggablePill({
     const el = getTargetElement(t);
     if (!el) return false;
     return !!el.closest(
-      "button, input, select, textarea, label, a, [role='button'], [role='slider']",
+      "button, input, select, textarea, label, a, [role='button'], [role='slider'], [data-nondrag]",
     );
   };
   
@@ -374,37 +369,6 @@ function DraggablePill({
     </div>
   );
 }
-// ---------------- Icon Button ----------------
-const IconBtn: React.FC<
-  React.ButtonHTMLAttributes<HTMLButtonElement> & {
-    active?: boolean;
-    tooltip?: string;
-  }
-> = ({ active, tooltip, children, ...rest }) => (
-  <div style={{ position: "relative", width: 40, height: 40 }}>
-    <button
-      {...rest}
-      style={{
-        width: 36,
-        height: 36,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        borderRadius: 10,
-        background: active ? "#2563eb" : "#1f2937",
-        color: active ? "white" : "#d1d5db",
-        border: "1px solid #111827",
-        boxShadow: "0 2px 10px rgba(0,0,0,.35)",
-        cursor: "pointer",
-        userSelect: "none",
-        padding: 0,
-      }}
-      title={tooltip}
-    >
-      {children}
-    </button>
-  </div>
-);
 function resetAllPills() {
   try {
     Object.keys(localStorage).forEach((k) => {
@@ -418,6 +382,8 @@ function resetAllPills() {
 // === CHAINMAIL DESIGNER COMPONENT STARTS HERE ===
 // ==============================================
 function ChainmailDesigner() {
+  const { tier } = useAuth();
+  const canUseOverlay = tierAtLeast(tier, "crafter");
   // 🧩 All your useState hooks go here — top level
   const [showOverlayPanel, setShowOverlayPanel] = useState(false);
   const [debugVisible, setDebugVisible] = useState(false);
@@ -437,8 +403,61 @@ function ChainmailDesigner() {
 
   const [showMagnet, setShowMagnet] = useState(false);
   const [showMaterialPalette, setShowMaterialPalette] = useState(false);
+  const [showDesignerSupplierColors, setShowDesignerSupplierColors] = useState(false);
   const [showCompass, setShowCompass] = useState(false);
   const [overlayState, setOverlayState] = useState<OverlayState | null>(null);
+  const [gridAspect, setGridAspect] = useState<number>(1.6);
+
+  // ============================================================
+  // ↩ UNDO / REDO (paint map history)
+  // ============================================================
+  const paintHistoryRef = useRef<PaintMap[]>([new Map()]);
+  const paintHistoryIdxRef = useRef(0);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  const pushPaintHistory = useCallback((snapshot: PaintMap) => {
+    const history = paintHistoryRef.current;
+    const idx = paintHistoryIdxRef.current;
+    const newHistory = history.slice(0, idx + 1);
+    newHistory.push(new Map(snapshot));
+    paintHistoryRef.current = newHistory;
+    paintHistoryIdxRef.current = newHistory.length - 1;
+    setCanUndo(newHistory.length > 1);
+    setCanRedo(false);
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    const idx = paintHistoryIdxRef.current;
+    if (idx <= 0) return;
+    const prevIdx = idx - 1;
+    paintHistoryIdxRef.current = prevIdx;
+    setPaint(new Map(paintHistoryRef.current[prevIdx]));
+    setCanUndo(prevIdx > 0);
+    setCanRedo(true);
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    const idx = paintHistoryIdxRef.current;
+    const history = paintHistoryRef.current;
+    if (idx >= history.length - 1) return;
+    const nextIdx = idx + 1;
+    paintHistoryIdxRef.current = nextIdx;
+    setPaint(new Map(history[nextIdx]));
+    setCanUndo(true);
+    setCanRedo(nextIdx < history.length - 1);
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      if (e.key === "z" && !e.shiftKey) { e.preventDefault(); handleUndo(); }
+      if ((e.key === "z" && e.shiftKey) || e.key === "y") { e.preventDefault(); handleRedo(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [handleUndo, handleRedo]);
 
   // ============================================================
   // ✅ SPLINE TOOL (Designer overlay)
@@ -520,10 +539,7 @@ function ChainmailDesigner() {
     return p;
   });
 
-  const [paint, setPaint] = useState<PaintMap>(() => {
-    const saved = localStorage.getItem("cmd.paint");
-    return saved ? new Map(JSON.parse(saved)) : new Map();
-  });
+  const [paint, setPaint] = useState<PaintMap>(() => new Map());
 
   // persist params & paint updates
   useEffect(() => {
@@ -754,6 +770,7 @@ function pointInPoly(x: number, y: number, poly: ScreenPt[]): boolean {
 const applyDesignerFillFromScreenPolygon = useCallback(
   (polygonScreen: ScreenPt[], colorHex: string) => {
     if (!polygonScreen || polygonScreen.length < 3) return;
+    pushPaintHistory(paint);
 
     // Find the best canvas (prefer RingRenderer handle if available)
     const fromHandle =
@@ -827,6 +844,8 @@ const scale = Math.min(
     params.rows,
     params.cols,
     setPaint,
+    paint,
+    pushPaintHistory,
   ],
 );
 // ============================================================
@@ -836,6 +855,7 @@ const scale = Math.min(
 // ============================================================
 const paintRingsInsidePolygon = useCallback(
   (polygonScreen: { x: number; y: number }[], colorHex: string) => {
+    pushPaintHistory(paint);
     // We need screen coords for each ring center.
     // If RingRenderer exposes a conversion, use it. Otherwise we approximate.
     const rr: any = rendererRef.current;
@@ -872,7 +892,7 @@ const paintRingsInsidePolygon = useCallback(
       return next;
     });
   },
-  [exportRings, setPaint],
+  [exportRings, setPaint, paint, pushPaintHistory],
 );
   // ==============================
   // BOM Calculation (Read-Only)
@@ -981,6 +1001,7 @@ const paintRingsInsidePolygon = useCallback(
 const doReset = () => rendererRef.current?.resetView();
 
 const doClearPaint = () => {
+  pushPaintHistory(paint);
   // 1) Clear React state (source of truth)
   setPaint(() => new Map());
 
@@ -1099,6 +1120,7 @@ const doClearPaint = () => {
           initialRotationLocked={rotationLocked}
           activeColor={effectiveColor}
           overlay={overlayState}
+          onGridAspectChange={setGridAspect}
         />
       </div>
 
@@ -1108,60 +1130,54 @@ const doClearPaint = () => {
           style={{
             display: "flex",
             flexDirection: "column",
-            gap: 14,
+            gap: 10,
             alignItems: "center",
-            width: 76,
-            padding: 10,
+            width: 64,
+            padding: "10px 8px",
             background: "#0f172a",
             border: "1px solid #0b1020",
             borderRadius: 20,
             boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
           }}
         >
-          <IconBtn
-            tooltip="Camera Tools"
+          <ToolBtn
+            title="Camera Tools"
             active={activeMenu === "camera"}
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleExclusive("camera");
-            }}
+            onClick={(e) => { e.stopPropagation(); toggleExclusive("camera"); }}
           >
             📷
-          </IconBtn>
+          </ToolBtn>
 
-          <IconBtn
-            tooltip="Finalize & Export (PDF / CSV / Map / Preview)"
+          <ToolBtn
+            title="Finalize & Export"
             onClick={() => setFinalizeOpen(true)}
           >
             📦
-          </IconBtn>
+          </ToolBtn>
 
-          <IconBtn
-            tooltip="Navigation Menu"
+          <ToolBtn
+            title="Navigation Menu"
             active={showCompass}
             onClick={() => setShowCompass((v) => !v)}
           >
-            🧭
-          </IconBtn>
+            <IconHamburger size={18} />
+          </ToolBtn>
 
-<IconBtn
-            tooltip="Controls Menu"
+          <ToolBtn
+            title="Controls Menu"
             active={activeMenu === "controls"}
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleExclusive("controls");
-            }}
+            onClick={(e) => { e.stopPropagation(); toggleExclusive("controls"); }}
           >
             ▶
-          </IconBtn>
-<button
-  type="button"
-  onClick={() => setShowSplineTool((v) => !v)}
-  title={showSplineTool ? "Close spline tool" : "Open spline tool"}
-  style={splineToggleButtonStyle}
->
-  S
-</button>
+          </ToolBtn>
+
+          <ToolBtn
+            title={showSplineTool ? "Close spline tool" : "Open spline tool"}
+            active={showSplineTool}
+            onClick={() => setShowSplineTool((v) => !v)}
+          >
+            <IconSpline size={16} />
+          </ToolBtn>
         </div>
 
         {/* --- Controls (▶) Menu — rows/cols dialog --- */}
@@ -1183,6 +1199,7 @@ const doClearPaint = () => {
               color: "#ddd",
               fontSize: 13,
             }}
+            onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
@@ -1274,16 +1291,16 @@ onChange={(e) => {
       flexDirection: "column",
       gap: 16,
       alignItems: "center",
-      width: 76,
+      width: 64,
       padding: 14,
       background: "#0b1324",
       border: "1px solid #0b1020",
       borderRadius: 20,
       boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
     }}
+    onPointerDown={(e) => e.stopPropagation()}
     onMouseDown={(e) => e.stopPropagation()}
     onTouchStart={(e) => e.stopPropagation()}
-    onPointerDown={(e) => e.stopPropagation()}
   >
     <div
       style={{
@@ -1294,19 +1311,21 @@ onChange={(e) => {
       }}
     />
 
-    <IconBtn
-      tooltip="Image Overlay"
+    <ToolBtn
+      title={canUseOverlay ? "Image Overlay" : "Image Overlay (Crafter+)"}
       onClick={(e) => {
         e.stopPropagation();
         e.preventDefault();
-        setShowOverlayPanel((v) => !v);
+        if (canUseOverlay) setShowOverlayPanel((v) => !v);
+        else window.location.href = "/auth?mode=upgrade";
       }}
+      style={{ opacity: canUseOverlay ? 1 : 0.45, position: "relative" }}
     >
-      🖼️
-    </IconBtn>
+      🖼️{!canUseOverlay && <span style={{ position: "absolute", top: 2, right: 2, fontSize: 8, lineHeight: 1 }}>🔒</span>}
+    </ToolBtn>
 
-    <IconBtn
-      tooltip="Paint Mode"
+    <ToolBtn
+      title="Paint Mode"
       active={paintMode}
       onClick={(e) => {
         e.stopPropagation();
@@ -1321,11 +1340,11 @@ onChange={(e) => {
       }}
     >
       🎨
-    </IconBtn>
+    </ToolBtn>
 
     {paintMode && (
-      <IconBtn
-        tooltip="Erase Mode"
+      <ToolBtn
+        title="Erase Mode"
         active={eraseMode}
         onClick={(e) => {
           e.stopPropagation();
@@ -1334,33 +1353,45 @@ onChange={(e) => {
           rendererRef.current?.setEraseMode?.(next);
         }}
       >
-        🧽
-      </IconBtn>
+        <IconEraser size={18} />
+      </ToolBtn>
     )}
 
-    <IconBtn
-      tooltip="Reset View"
+    <ToolBtn
+      title="Reset View"
       onClick={(e) => {
         e.stopPropagation();
         doReset();
       }}
     >
       ↺
-    </IconBtn>
+    </ToolBtn>
 
-    <IconBtn
-      tooltip="Clear Paint"
+    <div style={{ opacity: canUndo ? 1 : 0.35, pointerEvents: canUndo ? "auto" : "none" }}>
+      <ToolBtn title="Undo (Ctrl+Z)" onClick={(e) => { e.stopPropagation(); handleUndo(); }}>
+        <IconUndo size={18} />
+      </ToolBtn>
+    </div>
+
+    <div style={{ opacity: canRedo ? 1 : 0.35, pointerEvents: canRedo ? "auto" : "none" }}>
+      <ToolBtn title="Redo (Ctrl+Shift+Z)" onClick={(e) => { e.stopPropagation(); handleRedo(); }}>
+        <IconRedo size={18} />
+      </ToolBtn>
+    </div>
+
+    <ToolBtn
+      title="Clear Paint"
       onClick={(e) => {
         e.stopPropagation();
         doClearPaint();
       }}
     >
       🧹
-    </IconBtn>
+    </ToolBtn>
 
     {/* ✅ Gear opens the thin draggable tools subpanel */}
-    <IconBtn
-      tooltip="Tools Menu"
+    <ToolBtn
+      title="Tools Menu"
       active={showGearMenu}
       onClick={(e) => {
         e.stopPropagation();
@@ -1368,7 +1399,7 @@ onChange={(e) => {
       }}
     >
       ⚙️
-    </IconBtn>
+    </ToolBtn>
   </div>
 )}
 
@@ -1381,21 +1412,21 @@ onChange={(e) => {
         flexDirection: "column",
         gap: 12,
         alignItems: "center",
-        width: 76,
+        width: 64,
         padding: 12,
         background: "#0b1324",
         border: "1px solid #0b1020",
         borderRadius: 20,
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
       }}
+      onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
       {/* 🧰 toolbox toggles the existing magnet dialog (leave magnet dialog unchanged) */}
-      <IconBtn
-        tooltip="Supplier & Atlas"
+      <ToolBtn
+        title="Supplier & Atlas"
         active={showMagnet}
         onClick={(e) => {
           e.stopPropagation();
@@ -1403,7 +1434,7 @@ onChange={(e) => {
         }}
       >
         🧰
-      </IconBtn>
+      </ToolBtn>
 
       {/* Save / Open */}
       <ProjectSaveLoadButtons
@@ -1413,8 +1444,8 @@ onChange={(e) => {
       />
 
       {/* BOM */}
-      <IconBtn
-        tooltip="Bill of Materials"
+      <ToolBtn
+        title="Bill of Materials"
         active={showBOM}
         onClick={(e) => {
           e.stopPropagation();
@@ -1422,7 +1453,7 @@ onChange={(e) => {
         }}
       >
         🧾
-      </IconBtn>
+      </ToolBtn>
     </div>
   </DraggablePill>
 )}
@@ -1507,9 +1538,9 @@ onChange={(e) => {
               boxShadow: "0 6px 18px rgba(0,0,0,0.45)",
               userSelect: "none",
             }}
+            onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
           >
             <div
               style={{
@@ -1525,9 +1556,9 @@ onChange={(e) => {
                     e.stopPropagation();
                     setActiveColor(hex);
                   }}
+                  onPointerDown={(e) => e.stopPropagation()}
                   onMouseDown={(e) => e.stopPropagation()}
                   onTouchStart={(e) => e.stopPropagation()}
-                  onPointerDown={(e) => e.stopPropagation()}
                   style={{
                     background: hex,
                     width: 22,
@@ -1568,6 +1599,7 @@ onChange={(e) => {
               userSelect: "none",
               minWidth: 120,
             }}
+            onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
@@ -1611,6 +1643,34 @@ onChange={(e) => {
                 </div>
               ))}
             </div>
+
+            {/* Supplier color browser toggle */}
+            <button
+              type="button"
+              onClick={() => setShowDesignerSupplierColors((v) => !v)}
+              style={{
+                padding: "6px 10px",
+                borderRadius: 8,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: showDesignerSupplierColors ? "rgba(180,83,9,0.5)" : "rgba(255,255,255,0.06)",
+                color: "#ddd",
+                cursor: "pointer",
+                fontSize: 12,
+                fontWeight: 600,
+              }}
+            >
+              🏭 Supplier Colors
+            </button>
+
+            {showDesignerSupplierColors && (
+              <SupplierColorPalette
+                activeColor={params.ringColor}
+                onSelectColor={(hex) => {
+                  setParams((prev) => ({ ...prev, ringColor: hex }));
+                  setShowMaterialPalette(false);
+                }}
+              />
+            )}
           </div>
         </DraggablePill>
       )}
@@ -1788,6 +1848,7 @@ onChange={(e) => {
           }}
         >
           <ImageOverlayPanel
+            gridAspect={gridAspect}
             onApply={async (overlay) => {
               setOverlayState(overlay);
               try {
@@ -2019,7 +2080,7 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
           ✨
         </button>
 
-        <button onClick={() => go("/erin2d")} title="Erin 2D" style={btnStyle}>
+        <button onClick={() => go("/erin2d")} title="Basic" style={btnStyle}>
           🪡
         </button>
 
@@ -2057,37 +2118,40 @@ const btnStyle: React.CSSProperties = {
 };
 
 function WorkspaceGate() {
-  const unlocked =
+  const { user, tier, loading } = useAuth();
+  if (loading) return null;
+  // Allow if Supabase user exists, or legacy localStorage auth is present
+  const legacyOk =
     localStorage.getItem("designerAuth") === "true" &&
     localStorage.getItem("freeformAuth") === "true" &&
     localStorage.getItem("erin2DAuth") === "true";
-
-  if (!unlocked) {
-    return <Navigate to="/wovenrainbowsbyerin" replace />;
-  }
-
+  if (!user && !legacyOk) return <Navigate to="/auth" replace />;
   return <WorkspaceHome />;
 }
+
+const TIER_BADGE_COLOR: Record<string, string> = {
+  free: "#6b7280",
+  maker: "#0369a1",
+  crafter: "#059669",
+  studio: "#7c3aed",
+};
 
 // ==============================================
 // 🏠 Simple Home / Landing (keeps routing hub in App.tsx)
 // ==============================================
 function WorkspaceHome() {
-  const [unlocked, setUnlocked] = React.useState(
-    () =>
-      localStorage.getItem("designerAuth") === "true" &&
-      localStorage.getItem("freeformAuth") === "true" &&
-      localStorage.getItem("erin2DAuth") === "true",
-  );
+  const { user, tier, signOut } = useAuth();
+  const navigate = useNavigate();
 
-  if (!unlocked) {
-    return (
-      <PasswordGateWrapper
-        onUnlock={() => {
-          setUnlocked(true);
-        }}
-      />
-    );
+  // Legacy path: no Supabase user but localStorage unlocked
+  const legacyOk =
+    !user &&
+    localStorage.getItem("designerAuth") === "true" &&
+    localStorage.getItem("freeformAuth") === "true" &&
+    localStorage.getItem("erin2DAuth") === "true";
+
+  if (!user && !legacyOk) {
+    return <Navigate to="/auth" replace />;
   }
 
   return (
@@ -2112,9 +2176,39 @@ function WorkspaceHome() {
           boxShadow: "0 12px 40px rgba(0,0,0,.45)",
         }}
       >
-        <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 10 }}>
-          Woven Rainbows by Erin — Chainmaille Tools
+        {/* Header row */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>
+            Woven Rainbows by Erin — Chainmaille Tools
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{
+              background: TIER_BADGE_COLOR[tier] ?? "#6b7280",
+              color: "white",
+              borderRadius: 6,
+              padding: "3px 10px",
+              fontSize: 12,
+              fontWeight: 700,
+              textTransform: "capitalize",
+            }}>
+              {tier}
+            </span>
+            {user && (
+              <button
+                onClick={async () => { await signOut(); navigate("/wovenrainbowsbyerin", { replace: true }); }}
+                style={{ background: "none", border: "1px solid #374151", borderRadius: 6, color: "#9ca3af", padding: "3px 10px", cursor: "pointer", fontSize: 12 }}
+              >
+                Sign out
+              </button>
+            )}
+          </div>
         </div>
+
+        {user && (
+          <div style={{ color: "#6b7280", fontSize: 12, marginBottom: 14 }}>
+            {user.email}
+          </div>
+        )}
 
         <div style={{ color: "#9ca3af", marginBottom: 16 }}>
           Choose a workspace:
@@ -2134,7 +2228,7 @@ function WorkspaceHome() {
             ✨ Freeform 2D
           </Link>
           <Link to="/erin2d" style={homeLinkStyle}>
-            🪡 Erin 2D Pattern
+            🪡 Basic
           </Link>
           <Link to="/chart" style={homeLinkStyle}>
             📊 Ring Size Chart
@@ -2148,7 +2242,7 @@ function WorkspaceHome() {
         </div>
 
         <div style={{ marginTop: 14, color: "#9ca3af", fontSize: 12 }}>
-          Tip: Use 🧭 inside Designer to jump between pages.
+          Tip: Use the menu button (☰) inside Designer to jump between pages.
         </div>
       </div>
     </div>
@@ -2168,46 +2262,16 @@ const homeLinkStyle: React.CSSProperties = {
   boxShadow: "0 8px 20px rgba(0,0,0,.35)",
 };
 
+// Legacy wrappers replaced by RequiresTier — kept as thin aliases so any
+// remaining references in JSX don't break during the transition period.
 function RequireDesignerAuth({ children }: { children: JSX.Element }) {
-  const authed = localStorage.getItem("designerAuth") === "true";
-  if (!authed) {
-    return (
-      <Navigate
-        to="/wovenrainbowsbyerin/login"
-        state={{ redirect: "/designer" }}
-        replace
-      />
-    );
-  }
-  return children;
+  return <RequiresTier minTier="maker" featureName="3D Designer">{children}</RequiresTier>;
 }
-
 function RequireFreeformAuth({ children }: { children: JSX.Element }) {
-  const authed = localStorage.getItem("freeformAuth") === "true";
-  if (!authed) {
-    return (
-      <Navigate
-        to="/wovenrainbowsbyerin/login"
-        state={{ redirect: "/freeform" }}
-        replace
-      />
-    );
-  }
-  return children;
+  return <RequiresTier minTier="crafter" featureName="Freeform Designer">{children}</RequiresTier>;
 }
-
 function RequireErin2DAuth({ children }: { children: JSX.Element }) {
-  const authed = localStorage.getItem("erin2DAuth") === "true";
-  if (!authed) {
-    return (
-      <Navigate
-        to="/wovenrainbowsbyerin/login"
-        state={{ redirect: "/erin2d" }}
-        replace
-      />
-    );
-  }
-  return children;
+  return <RequiresTier minTier="crafter" featureName="Basic">{children}</RequiresTier>;
 }
 
 // ==============================================
@@ -2271,6 +2335,10 @@ function App() {
         }
       />
 <Route path="/spline" element={<SplineSandbox />} />
+      {/* ✅ AUTH PAGE */}
+      <Route path="/auth" element={<AuthPage />} />
+      <Route path="/pricing" element={<PricingPage />} />
+
       {/* ✅ PUBLIC TOOLS — NO AUTH */}
       <Route path="/chart" element={<RingSizeChart />} />
       <Route path="/tuner" element={<ChainmailWeaveTuner />} />
