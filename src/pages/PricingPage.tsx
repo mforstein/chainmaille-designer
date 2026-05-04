@@ -328,9 +328,13 @@ export default function PricingPage() {
           userEmail: user.email,
         }),
       });
-      const data = await res.json();
+      let data: any = {};
+      try { data = await res.json(); } catch { /* empty body */ }
       if (data.url) {
         window.location.href = data.url;
+      } else if (!res.ok) {
+        setError(res.status === 404 ? "Checkout unavailable — visit the live site to subscribe." : (data.error ?? `Server error (${res.status})`));
+        setBusy(false);
       } else {
         setError(data.error ?? "Something went wrong. Please try again.");
         setBusy(false);
@@ -351,7 +355,8 @@ export default function PricingPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ stripeCustomerId }),
       });
-      const data = await res.json();
+      let data: any = {};
+      try { data = await res.json(); } catch { /* empty body */ }
       if (data.url) {
         window.location.href = data.url;
       } else {
