@@ -37,6 +37,7 @@ import { computeShapeCells } from "../utils/shapeFill";
 import { useAuth, tierAtLeast } from "../auth/AuthContext";
 import defaultFreeformDesign from "../data/defaultFreeformDesign";
 import SupplierColorPalette from "../components/SupplierColorPalette";
+import FreeformCostPanel from "../components/FreeformCostPanel";
 // ⬇️ SAFETY STUB (keeps App.tsx safe if it calls this early; BOM UI removed)
 declare global {
   interface Window {
@@ -780,6 +781,7 @@ const FreeformChainmail2D: React.FC = () => {
   // Finalize & Export (must be inside the component)
   const [finalizeOpen, setFinalizeOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [costPanelOpen, setCostPanelOpen] = useState(false);
 
   // Canvas background color — persisted across sessions
   const [canvasBg, setCanvasBg] = useState<string>(() => {
@@ -4366,6 +4368,19 @@ const scales3D = useMemo(() => {
               📚
             </ToolBtn>
 
+            {/* Cost Estimator — Studio only */}
+            <ToolBtn
+              active={costPanelOpen}
+              onClick={() => {
+                if (canUseOverlay) setCostPanelOpen((v) => !v);
+                else window.location.href = "/pricing";
+              }}
+              title={canUseOverlay ? "Material cost estimator" : "Cost Estimator (Studio)"}
+              style={{ opacity: canUseOverlay ? 1 : 0.45, position: "relative" }}
+            >
+              💰{!canUseOverlay && <span style={{ position: "absolute", top: 2, right: 2, fontSize: 8, lineHeight: 1 }}>🔒</span>}
+            </ToolBtn>
+
             {/* Canvas background colour */}
             <div
               style={{ display: "flex", alignItems: "center", gap: 4, position: "relative" }}
@@ -5350,6 +5365,18 @@ const scales3D = useMemo(() => {
             handleLibraryLoad(data, mode);
           }}
           onClose={() => setLibraryOpen(false)}
+        />
+      )}
+
+      {costPanelOpen && canUseOverlay && (
+        <FreeformCostPanel
+          ringColorCounts={ringStats?.byColor ?? []}
+          innerDiameterMm={innerIDmm}
+          wireDiameterMm={wireMm}
+          scaleColorCounts={scaleStats?.byColor ?? []}
+          scaleWidthMm={activeScaleSettings.widthMm}
+          scaleHeightMm={activeScaleSettings.heightMm}
+          onClose={() => setCostPanelOpen(false)}
         />
       )}
 
