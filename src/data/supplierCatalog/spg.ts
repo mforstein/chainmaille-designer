@@ -104,6 +104,42 @@ const metalRings: SupplierProduct[] = [
   },
 ];
 
+// Anodized aluminum rings 18G 7.94mm (5/16") — freeform default size
+const aaRings18g794: SupplierProduct[] = AA_COLORS.map((c, i) => ({
+  sku: `SPG-AA-18-794-${c.colorName.replace(/\s+/g, "").slice(0, 4).toUpperCase()}`,
+  supplierId: "spg",
+  name: `AA ${c.colorName} 18G 7.94mm`,
+  type: "ring",
+  innerDiameterMm: 7.94,
+  wireDiameterMm: 1.2,
+  material: "anodized_aluminum",
+  colorName: c.colorName,
+  colorHex: c.colorHex,
+  priceUsd: 5.49,
+  unitQty: 100,
+  url: `https://steampunkgarage.com/rings?i=${100 + i}`,
+  inStock: true,
+  lastUpdated: LAST,
+}));
+
+// Anodized aluminum rings 16G 6.0mm
+const aaRings16g6: SupplierProduct[] = AA_COLORS.map((c, i) => ({
+  sku: `SPG-AA-16-60-${c.colorName.replace(/\s+/g, "").slice(0, 4).toUpperCase()}`,
+  supplierId: "spg",
+  name: `AA ${c.colorName} 16G 6.0mm`,
+  type: "ring",
+  innerDiameterMm: 6.0,
+  wireDiameterMm: 1.6,
+  material: "anodized_aluminum",
+  colorName: c.colorName,
+  colorHex: c.colorHex,
+  priceUsd: 5.25,
+  unitQty: 100,
+  url: `https://steampunkgarage.com/rings?i=${200 + i}`,
+  inStock: true,
+  lastUpdated: LAST,
+}));
+
 // Dragon scales — AA colors + metal finishes
 const scales: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   sku: `SPG-SC-MD-${c.colorName.replace(/\s+/g, "").slice(0, 4).toUpperCase()}`,
@@ -177,6 +213,6 @@ const metalScales: Array<SupplierProduct & { material: Material }> = [
   },
 ];
 
-const spg: SupplierProduct[] = [...aaRings, ...metalRings, ...scales, ...metalScales];
+const spg: SupplierProduct[] = [...aaRings, ...aaRings16g6, ...aaRings18g794, ...metalRings, ...scales, ...metalScales];
 
 export default spg;

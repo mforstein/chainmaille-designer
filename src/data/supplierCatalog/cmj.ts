@@ -56,6 +56,40 @@ const rings18g: SupplierProduct[] = AA_COLORS.slice(0, 6).map((c, i) => ({
   lastUpdated: LAST,
 }));
 
+const rings18g794: SupplierProduct[] = AA_COLORS.map((c, i) => ({
+  sku: `CMJ-AA-18-794-${c.colorName.replace(/\s+/g, "").slice(0, 4).toUpperCase()}`,
+  supplierId: "cmj",
+  name: `AA ${c.colorName} 18G 7.94mm`,
+  type: "ring",
+  innerDiameterMm: 7.94,
+  wireDiameterMm: 1.2,
+  material: "anodized_aluminum",
+  colorName: c.colorName,
+  colorHex: c.colorHex,
+  priceUsd: 5.25,
+  unitQty: 100,
+  url: `https://chainmailjoe.com/rings?color=${200 + i}`,
+  inStock: true,
+  lastUpdated: LAST,
+}));
+
+const rings16g6: SupplierProduct[] = AA_COLORS.map((c, i) => ({
+  sku: `CMJ-AA-16-60-${c.colorName.replace(/\s+/g, "").slice(0, 4).toUpperCase()}`,
+  supplierId: "cmj",
+  name: `AA ${c.colorName} 16G 6.0mm`,
+  type: "ring",
+  innerDiameterMm: 6.0,
+  wireDiameterMm: 1.6,
+  material: "anodized_aluminum",
+  colorName: c.colorName,
+  colorHex: c.colorHex,
+  priceUsd: 5.25,
+  unitQty: 100,
+  url: `https://chainmailjoe.com/rings?color=${300 + i}`,
+  inStock: true,
+  lastUpdated: LAST,
+}));
+
 // Stainless steel
 const ssRing: SupplierProduct = {
   sku: "CMJ-SS-16-50",
@@ -93,6 +127,6 @@ const scales: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   lastUpdated: LAST,
 }));
 
-const cmj: SupplierProduct[] = [...rings, ...rings18g, ssRing, ...scales];
+const cmj: SupplierProduct[] = [...rings, ...rings16g6, ...rings18g, ...rings18g794, ssRing, ...scales];
 
 export default cmj;

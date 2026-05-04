@@ -99,9 +99,44 @@ const rings16g = AA_COLORS.map((c, i) =>
   aaRing(i, c, 16, 5.0, 1.6, 4.99, 100)
 );
 
+// 16G 6.0mm
+const rings16g6 = AA_COLORS.map((c, i) =>
+  aaRing(500 + i, c, 16, 6.0, 1.6, 5.49, 100)
+);
+
+// 16G 8.0mm
+const rings16g8 = AA_COLORS.map((c, i) =>
+  aaRing(550 + i, c, 16, 8.0, 1.6, 5.99, 75)
+);
+
 // 18G 3.5mm — small accent rings
 const rings18g = AA_COLORS.slice(0, 8).map((c, i) =>
   aaRing(100 + i, c, 18, 3.5, 1.2, 3.99, 200)
+);
+
+// 18G 4.5mm
+const rings18g45 = AA_COLORS.map((c, i) =>
+  aaRing(400 + i, c, 18, 4.5, 1.2, 4.49, 150)
+);
+
+// 18G 6.0mm
+const rings18g6 = AA_COLORS.map((c, i) =>
+  aaRing(450 + i, c, 18, 6.0, 1.2, 4.99, 100)
+);
+
+// 18G 7.94mm (5/16") — freeform designer default size
+const rings18g794 = AA_COLORS.map((c, i) =>
+  aaRing(600 + i, c, 18, 7.94, 1.2, 5.49, 100)
+);
+
+// 18G 9.0mm
+const rings18g9 = AA_COLORS.map((c, i) =>
+  aaRing(650 + i, c, 18, 9.0, 1.2, 5.99, 75)
+);
+
+// 20G 3.5mm — fine detail
+const rings20g = AA_COLORS.map((c, i) =>
+  aaRing(700 + i, c, 20, 3.5, 0.8, 3.49, 250)
 );
 
 // Niobium rings 20G 4.0mm
@@ -188,7 +223,14 @@ const largeScales = AA_COLORS.slice(0, 12).map((c, i) =>
 
 const trl: SupplierProduct[] = [
   ...rings16g,
+  ...rings16g6,
+  ...rings16g8,
   ...rings18g,
+  ...rings18g45,
+  ...rings18g6,
+  ...rings18g794,
+  ...rings18g9,
+  ...rings20g,
   ...nbRings,
   stainlessRing,
   sterlingRing,

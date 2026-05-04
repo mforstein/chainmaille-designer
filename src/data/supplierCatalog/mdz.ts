@@ -37,6 +37,40 @@ const rings: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   lastUpdated: LAST,
 }));
 
+const rings18g794: SupplierProduct[] = AA_COLORS.map((c, i) => ({
+  sku: `MDZ-AA-18-794-${c.colorName.replace(/\s+/g, "").slice(0, 4).toUpperCase()}`,
+  supplierId: "mdz",
+  name: `AA ${c.colorName} 18G 7.94mm`,
+  type: "ring",
+  innerDiameterMm: 7.94,
+  wireDiameterMm: 1.2,
+  material: "anodized_aluminum",
+  colorName: c.colorName,
+  colorHex: c.colorHex,
+  priceUsd: 5.25,
+  unitQty: 100,
+  url: `https://metaldesignz.com/rings?i=${100 + i}`,
+  inStock: true,
+  lastUpdated: LAST,
+}));
+
+const rings16g6: SupplierProduct[] = AA_COLORS.map((c, i) => ({
+  sku: `MDZ-AA-16-60-${c.colorName.replace(/\s+/g, "").slice(0, 4).toUpperCase()}`,
+  supplierId: "mdz",
+  name: `AA ${c.colorName} 16G 6.0mm`,
+  type: "ring",
+  innerDiameterMm: 6.0,
+  wireDiameterMm: 1.6,
+  material: "anodized_aluminum",
+  colorName: c.colorName,
+  colorHex: c.colorHex,
+  priceUsd: 5.00,
+  unitQty: 100,
+  url: `https://metaldesignz.com/rings?i=${200 + i}`,
+  inStock: true,
+  lastUpdated: LAST,
+}));
+
 // Teardrop scales (MDZ specialty) — full color range
 const teardropScales: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   sku: `MDZ-SC-TRP-${c.colorName.replace(/\s+/g, "").slice(0, 4).toUpperCase()}`,
@@ -75,6 +109,6 @@ const ssScale: SupplierProduct = {
   lastUpdated: LAST,
 };
 
-const mdz: SupplierProduct[] = [...rings, ...teardropScales, ssScale];
+const mdz: SupplierProduct[] = [...rings, ...rings16g6, ...rings18g794, ...teardropScales, ssScale];
 
 export default mdz;
