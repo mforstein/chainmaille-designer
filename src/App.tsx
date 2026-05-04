@@ -2284,7 +2284,7 @@ function RequireFreeformAuth({ children }: { children: JSX.Element }) {
   return <RequiresTier minTier="crafter" featureName="Freeform Designer">{children}</RequiresTier>;
 }
 function RequireErin2DAuth({ children }: { children: JSX.Element }) {
-  return <RequiresTier minTier="crafter" featureName="Basic">{children}</RequiresTier>;
+  return <RequiresTier minTier="free" featureName="Basic">{children}</RequiresTier>;
 }
 
 // ==============================================
