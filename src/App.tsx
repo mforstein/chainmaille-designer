@@ -2182,6 +2182,12 @@ function WorkspaceHome() {
             Woven Rainbows by Erin — Chainmaille Tools
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Link
+              to="/pricing"
+              style={{ fontSize: 12, color: "#a78bfa", textDecoration: "none", fontWeight: 600 }}
+            >
+              Pricing
+            </Link>
             <span style={{
               background: TIER_BADGE_COLOR[tier] ?? "#6b7280",
               color: "white",
@@ -2193,13 +2199,20 @@ function WorkspaceHome() {
             }}>
               {tier}
             </span>
-            {user && (
+            {user ? (
               <button
                 onClick={async () => { await signOut(); navigate("/wovenrainbowsbyerin", { replace: true }); }}
                 style={{ background: "none", border: "1px solid #374151", borderRadius: 6, color: "#9ca3af", padding: "3px 10px", cursor: "pointer", fontSize: 12 }}
               >
                 Sign out
               </button>
+            ) : (
+              <Link
+                to="/auth"
+                style={{ background: "none", border: "1px solid #374151", borderRadius: 6, color: "#9ca3af", padding: "3px 10px", fontSize: 12, textDecoration: "none" }}
+              >
+                Sign in
+              </Link>
             )}
           </div>
         </div>
