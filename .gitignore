@@ -104,3 +104,22 @@ coverage
 # local backups / scratch
 *.BACKUP.*
 src/tempfreeform.txt
+
+# =========================
+# Capacitor — Android build artifacts
+# =========================
+android/.gradle
+android/app/build
+android/build
+android/local.properties
+android/app/release
+*.keystore
+*.jks
+
+# =========================
+# Capacitor — iOS build artifacts
+# =========================
+ios/App/Pods
+ios/App/App.xcworkspace/xcuserdata
+ios/App/.xcode.env.local
+ios/DerivedData

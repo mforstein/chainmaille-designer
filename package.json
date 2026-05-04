@@ -9,9 +9,18 @@
     "preview": "vite preview",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
-    "postinstall": "node scripts/patch-react-router-dom.js"
+    "postinstall": "node scripts/patch-react-router-dom.js",
+    "cap:sync": "npm run build && npx cap sync",
+    "cap:android": "npm run cap:sync && npx cap open android",
+    "cap:ios": "npm run cap:sync && npx cap open ios"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/camera": "^8.2.0",
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
+    "@capacitor/ios": "^8.3.1",
+    "@capacitor/share": "^8.0.1",
     "@supabase/supabase-js": "^2.104.1",
     "axios": "^1.12.2",
     "jsdom": "^27.1.0",
