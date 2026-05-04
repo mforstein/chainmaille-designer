@@ -310,11 +310,7 @@ const HomeWovenRainbows: React.FC = () => {
             your next woven artwork.
           </p>
           <button
-            onClick={() =>
-              navigate("/wovenrainbowsbyerin/login", {
-                state: { redirect: "/workspace" },
-              })
-            }
+            onClick={() => navigate("/workspace")}
             style={{
               background: "#2563eb",
               color: "#fff",

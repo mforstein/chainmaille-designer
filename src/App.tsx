@@ -2153,16 +2153,7 @@ function WorkspaceHome() {
   const { user, tier, signOut } = useAuth();
   const navigate = useNavigate();
 
-  // Legacy path: no Supabase user but localStorage unlocked
-  const legacyOk =
-    !user &&
-    localStorage.getItem("designerAuth") === "true" &&
-    localStorage.getItem("freeformAuth") === "true" &&
-    localStorage.getItem("erin2DAuth") === "true";
-
-  if (!user && !legacyOk) {
-    return <Navigate to="/auth" replace />;
-  }
+  // Free tier is open to all — no account required to reach the workspace
 
   return (
     <div
@@ -2300,7 +2291,34 @@ function RequireErin2DAuth({ children }: { children: JSX.Element }) {
 // ==============================================
 // ✅ APP ROOT — Routing Hub (NO FEATURE REMOVAL)
 // ==============================================
+const IDLE_MS = 5 * 60 * 1000; // 5 minutes
+const HOME = "/wovenrainbowsbyerin";
+
+function useIdleRedirect() {
+  const navigate = useNavigate();
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const reset = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        if (!window.location.pathname.startsWith(HOME)) {
+          navigate(HOME, { replace: true });
+        }
+      }, IDLE_MS);
+    };
+    const events = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"];
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }));
+    reset();
+    return () => {
+      clearTimeout(timer);
+      events.forEach((e) => window.removeEventListener(e, reset));
+    };
+  }, [navigate]);
+}
+
 function App() {
+  useIdleRedirect();
+
   useEffect(() => {
     const onPageShow = (e: PageTransitionEvent) => {
       if (e.persisted) window.location.reload();
