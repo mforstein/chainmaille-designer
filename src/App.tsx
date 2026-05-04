@@ -104,6 +104,8 @@ import ChainmailWeaveAtlas from "./pages/ChainmailWeaveAtlas";
 import PasswordGate from "./pages/PasswordGate";
 import AuthPage from "./pages/AuthPage";
 import PricingPage from "./pages/PricingPage";
+import EulaPage from "./pages/EulaPage";
+import CommercialLicensePage from "./pages/CommercialLicensePage";
 import FreeformChainmail2D from "./pages/FreeformChainmail2D";
 import ErinPattern2D from "./pages/ErinPattern2D";
 import BOMButtons from "./components/BOMButtons";
@@ -2065,6 +2067,14 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
         onMouseDown={(e) => e.stopPropagation()}
       >
         <button
+          onClick={() => go("/workspace")}
+          title="Workspace"
+          style={btnStyle}
+        >
+          🗂️
+        </button>
+
+        <button
           onClick={() => go("/wovenrainbowsbyerin")}
           title="Erin’s Home"
           style={btnStyle}
@@ -2351,6 +2361,8 @@ function App() {
       {/* ✅ AUTH PAGE */}
       <Route path="/auth" element={<AuthPage />} />
       <Route path="/pricing" element={<PricingPage />} />
+      <Route path="/eula" element={<EulaPage />} />
+      <Route path="/commercial-license" element={<CommercialLicensePage />} />
 
       {/* ✅ PUBLIC TOOLS — NO AUTH */}
       <Route path="/chart" element={<RingSizeChart />} />

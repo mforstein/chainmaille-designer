@@ -435,6 +435,21 @@ export default function PricingPage() {
             Contact us
           </a>
         </p>
+        <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 16 }}>
+          <a
+            href="/eula"
+            style={{ color: "#6b7280", textDecoration: "underline", fontSize: 12 }}
+          >
+            End User License Agreement
+          </a>
+          <span style={{ color: "#374151" }}>·</span>
+          <a
+            href="/commercial-license"
+            style={{ color: "#b45309", textDecoration: "underline", fontSize: 12 }}
+          >
+            Commercial Use License (Studio)
+          </a>
+        </div>
       </div>
     </div>
   );
