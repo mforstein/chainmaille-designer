@@ -5376,6 +5376,11 @@ const scales3D = useMemo(() => {
           scaleColorCounts={scaleStats?.byColor ?? []}
           scaleWidthMm={activeScaleSettings.widthMm}
           scaleHeightMm={activeScaleSettings.heightMm}
+          scaleHoleIdMm={activeScaleSettings.holeIdMm}
+          onChangeRingSize={(idMm, wd) => {
+            setInnerIDmm(idMm);
+            setWireMm(wd);
+          }}
           onClose={() => setCostPanelOpen(false)}
         />
       )}

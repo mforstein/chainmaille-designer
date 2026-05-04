@@ -17,7 +17,11 @@ export interface MatchedLineItem {
   packsNeeded: number;
   unitCost: number;
   totalCost: number;
-  colorMatch: boolean;   // true when product colorHex is close to item colorHex
+  colorMatch: boolean;
+  /** Color is in catalog but at a different size — no geometry match */
+  sizeMismatch: boolean;
+  /** Best color match found at a different size (used to suggest a switch) */
+  nearestColorProduct: SupplierProduct | null;
 }
 
 export interface CostSummary {
@@ -28,7 +32,7 @@ export interface CostSummary {
 }
 
 const TOLERANCE_MM = 0.5;
-const COLOR_MATCH_THRESHOLD = 60; // Euclidean RGB distance to count as "same color"
+const COLOR_MATCH_THRESHOLD = 60; // Euclidean RGB distance
 
 function hexToRgb(hex: string): [number, number, number] | null {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
@@ -47,7 +51,6 @@ function colorDistance(a: string | undefined, b: string | undefined): number {
 
 function ringScore(product: SupplierProduct, item: BOMLineItem): number {
   if (product.type !== "ring") return Infinity;
-  // Both geometry fields must be defined on both sides to produce a valid match
   if (
     item.innerDiameterMm == null || item.wireDiameterMm == null ||
     product.innerDiameterMm == null || product.wireDiameterMm == null
@@ -75,8 +78,10 @@ function scaleScore(product: SupplierProduct, item: BOMLineItem): number {
 export function matchItem(
   item: BOMLineItem,
   supplierId: SupplierId,
-): SupplierProduct | null {
+): { product: SupplierProduct | null; sizeMismatch: boolean; nearestColorProduct: SupplierProduct | null } {
   const candidates = ALL_PRODUCTS.filter((p) => p.supplierId === supplierId);
+
+  // Pass 1: geometry match, pick closest color
   let best: SupplierProduct | null = null;
   let bestGeo = Infinity;
   let bestColor = Infinity;
@@ -84,21 +89,37 @@ export function matchItem(
   for (const p of candidates) {
     const geo = item.type === "ring" ? ringScore(p, item) : scaleScore(p, item);
     if (geo === Infinity) continue;
-
     const col = colorDistance(p.colorHex, item.colorHex);
-
-    // Prefer geometry match first, break ties with color distance
-    if (
-      geo < bestGeo ||
-      (geo === bestGeo && col < bestColor)
-    ) {
+    if (geo < bestGeo || (geo === bestGeo && col < bestColor)) {
       bestGeo = geo;
       bestColor = col;
       best = p;
     }
   }
 
-  return best;
+  if (best) {
+    return { product: best, sizeMismatch: false, nearestColorProduct: null };
+  }
+
+  // Pass 2: no geometry match — look for closest color across all sizes
+  let nearestColorProduct: SupplierProduct | null = null;
+  let nearestColorDist = Infinity;
+
+  for (const p of candidates) {
+    if (p.type !== item.type) continue;
+    const col = colorDistance(p.colorHex, item.colorHex);
+    if (col < nearestColorDist) {
+      nearestColorDist = col;
+      nearestColorProduct = p;
+    }
+  }
+
+  const sizeMismatch = nearestColorDist < COLOR_MATCH_THRESHOLD;
+  return {
+    product: null,
+    sizeMismatch,
+    nearestColorProduct: sizeMismatch ? nearestColorProduct : null,
+  };
 }
 
 export function estimateCost(
@@ -106,23 +127,26 @@ export function estimateCost(
   supplierId: SupplierId,
 ): CostSummary {
   const lines: MatchedLineItem[] = lineItems.map((item) => {
-    const product = matchItem(item, supplierId);
+    const { product, sizeMismatch, nearestColorProduct } = matchItem(item, supplierId);
+
     if (!product) {
       return {
         lineItem: item, product: null,
         packsNeeded: 0, unitCost: 0, totalCost: 0,
-        colorMatch: false,
+        colorMatch: false, sizeMismatch, nearestColorProduct,
       };
     }
+
     const packsNeeded = Math.ceil(item.quantity / product.unitQty);
     const unitCost = product.priceUsd / product.unitQty;
     const totalCost = packsNeeded * product.priceUsd;
     const colorMatch = colorDistance(product.colorHex, item.colorHex) < COLOR_MATCH_THRESHOLD;
-    return { lineItem: item, product, packsNeeded, unitCost, totalCost, colorMatch };
+
+    return { lineItem: item, product, packsNeeded, unitCost, totalCost, colorMatch, sizeMismatch: false, nearestColorProduct: null };
   });
 
   const subtotal = lines.reduce((s, l) => s + l.totalCost, 0);
-  const unmatchedCount = lines.filter((l) => !l.product).length;
+  const unmatchedCount = lines.filter((l) => !l.product && !l.sizeMismatch).length;
 
   return { supplierId, lines, subtotal, unmatchedCount };
 }

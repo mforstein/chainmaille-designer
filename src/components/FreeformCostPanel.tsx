@@ -3,6 +3,7 @@
 // estimates shipping and flags possible import tariffs.
 
 import React, { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { estimateCost, type BOMLineItem } from "../lib/supplierMatcher";
 import type { SupplierId } from "../data/supplierCatalog/schema";
 
@@ -62,17 +63,76 @@ const SUPPLIERS: SupplierMeta[] = [
   },
 ];
 
+// ── Validation ────────────────────────────────────────────────────────────────
+
+interface ValidationIssue {
+  id: string;
+  severity: "warn" | "error";
+  message: string;
+  detail?: string;
+  action?: { label: string; fn: () => void };
+}
+
+function getValidationIssues(
+  innerDiameterMm: number,
+  wireDiameterMm: number,
+  scaleHoleIdMm: number,
+  hasScales: boolean,
+  navigate: (path: string) => void,
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const ar = wireDiameterMm > 0 ? innerDiameterMm / wireDiameterMm : 0;
+
+  if (ar > 0 && ar < 3.0) {
+    issues.push({
+      id: "ar-tight",
+      severity: "error",
+      message: `Ring AR ${ar.toFixed(2)} is too tight`,
+      detail: "Rings with AR < 3.0 won't move freely. Most chainmaille weaves need AR ≥ 3.5.",
+      action: { label: "Open Tuner", fn: () => navigate("/tuner") },
+    });
+  } else if (ar >= 3.0 && ar < 3.5) {
+    issues.push({
+      id: "ar-snug",
+      severity: "warn",
+      message: `Ring AR ${ar.toFixed(2)} is snug`,
+      detail: "Works for some tight weaves (Box, Byzantine) but may limit flexibility for others.",
+      action: { label: "Open Tuner", fn: () => navigate("/tuner") },
+    });
+  } else if (ar > 10.0) {
+    issues.push({
+      id: "ar-loose",
+      severity: "warn",
+      message: `Ring AR ${ar.toFixed(2)} is very loose`,
+      detail: "Rings this open tend to sag and are difficult to control in most weaves.",
+      action: { label: "Open Tuner", fn: () => navigate("/tuner") },
+    });
+  }
+
+  if (hasScales && scaleHoleIdMm > 0 && scaleHoleIdMm > innerDiameterMm) {
+    issues.push({
+      id: "scale-hole",
+      severity: "error",
+      message: `Scale hole (${scaleHoleIdMm.toFixed(1)}mm) > ring ID (${innerDiameterMm.toFixed(1)}mm)`,
+      detail: "Rings won't fit through the scale holes at these dimensions. Adjust in the Tuner.",
+      action: { label: "Open Tuner", fn: () => navigate("/tuner") },
+    });
+  }
+
+  return issues;
+}
+
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface Props {
-  // rings: array of [colorHex, count]
   ringColorCounts: [string, number][];
   innerDiameterMm: number;
   wireDiameterMm: number;
-  // scales
   scaleColorCounts: [string, number][];
   scaleWidthMm: number;
   scaleHeightMm: number;
+  scaleHoleIdMm: number;
+  onChangeRingSize: (idMm: number, wireMm: number) => void;
   onClose: () => void;
 }
 
@@ -107,10 +167,14 @@ export default function FreeformCostPanel({
   scaleColorCounts,
   scaleWidthMm,
   scaleHeightMm,
+  scaleHoleIdMm,
+  onChangeRingSize,
   onClose,
 }: Props) {
+  const navigate = useNavigate();
   const [supplierId, setSupplierId] = useState<SupplierId>("trl");
   const [showUnmatched, setShowUnmatched] = useState(false);
+  const [dismissedIssues, setDismissedIssues] = useState<Set<string>>(new Set());
 
   const supplier = SUPPLIERS.find((s) => s.id === supplierId)!;
 
@@ -131,8 +195,9 @@ export default function FreeformCostPanel({
   const totalBeforeTariff = summary.subtotal + shipping;
 
   const matched = summary.lines.filter((l) => l.product !== null);
-  const unmatched = summary.lines.filter((l) => l.product === null);
-  const displayLines = showUnmatched ? summary.lines : matched;
+  const sizeMismatched = summary.lines.filter((l) => l.product === null && l.sizeMismatch);
+  const unmatched = summary.lines.filter((l) => l.product === null && !l.sizeMismatch);
+  const displayLines = showUnmatched ? summary.lines : summary.lines.filter((l) => l.product !== null || l.sizeMismatch);
 
   const ringLines = displayLines.filter((l) => l.lineItem.type === "ring");
   const scaleLines = displayLines.filter((l) => l.lineItem.type === "scale");
@@ -140,13 +205,22 @@ export default function FreeformCostPanel({
   const totalRings = ringColorCounts.reduce((s, [, n]) => s + n, 0);
   const totalScales = scaleColorCounts.reduce((s, [, n]) => s + n, 0);
 
+  const validationIssues = useMemo(
+    () => getValidationIssues(innerDiameterMm, wireDiameterMm, scaleHoleIdMm, scaleColorCounts.length > 0, navigate),
+    [innerDiameterMm, wireDiameterMm, scaleHoleIdMm, scaleColorCounts.length, navigate],
+  );
+
+  const activeIssues = validationIssues.filter((i) => !dismissedIssues.has(i.id));
+
+  const dismissIssue = (id: string) => setDismissedIssues((s) => new Set([...s, id]));
+
   return (
     <div
       style={{
         position: "fixed",
         top: 60,
         right: 16,
-        width: 400,
+        width: 420,
         maxHeight: "calc(100vh - 80px)",
         overflowY: "auto",
         background: "#111827",
@@ -169,6 +243,58 @@ export default function FreeformCostPanel({
         </div>
         <button onClick={onClose} style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 18, lineHeight: 1 }}>×</button>
       </div>
+
+      {/* Validation issues */}
+      {activeIssues.length > 0 && (
+        <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 6, borderBottom: "1px solid #1f2937" }}>
+          {activeIssues.map((issue) => (
+            <div
+              key={issue.id}
+              style={{
+                padding: "8px 10px",
+                background: issue.severity === "error" ? "#450a0a" : "#431407",
+                border: `1px solid ${issue.severity === "error" ? "#dc2626" : "#c2410c"}`,
+                borderRadius: 8,
+                fontSize: 11,
+                lineHeight: 1.5,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <span style={{ color: issue.severity === "error" ? "#fca5a5" : "#fdba74", fontWeight: 700 }}>
+                  {issue.severity === "error" ? "✗" : "⚠"} {issue.message}
+                </span>
+                <button
+                  onClick={() => dismissIssue(issue.id)}
+                  style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 12, padding: 0, flexShrink: 0 }}
+                >
+                  Ignore
+                </button>
+              </div>
+              {issue.detail && (
+                <div style={{ color: "#9ca3af", marginTop: 3 }}>{issue.detail}</div>
+              )}
+              {issue.action && (
+                <button
+                  onClick={issue.action.fn}
+                  style={{
+                    marginTop: 6,
+                    padding: "4px 10px",
+                    background: "rgba(255,255,255,0.1)",
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    borderRadius: 6,
+                    color: "#f9fafb",
+                    cursor: "pointer",
+                    fontSize: 11,
+                    fontWeight: 600,
+                  }}
+                >
+                  {issue.action.label} →
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Supplier tabs */}
       <div style={{ display: "flex", gap: 6, padding: "10px 16px", borderBottom: "1px solid #1f2937", flexWrap: "wrap" }}>
@@ -209,7 +335,7 @@ export default function FreeformCostPanel({
           {ringLines.length > 0 && (
             <Section label={`Rings (ID ${innerDiameterMm.toFixed(1)}mm / WD ${wireDiameterMm.toFixed(1)}mm)`} color="#3b82f6">
               {ringLines.map((l, i) => (
-                <LineRow key={i} line={l} supplierColor={supplier.color} />
+                <LineRow key={i} line={l} supplierColor={supplier.color} onChangeRingSize={onChangeRingSize} />
               ))}
             </Section>
           )}
@@ -218,20 +344,27 @@ export default function FreeformCostPanel({
           {scaleLines.length > 0 && (
             <Section label={`Scales (${scaleWidthMm.toFixed(1)}mm × ${scaleHeightMm.toFixed(1)}mm)`} color="#a78bfa">
               {scaleLines.map((l, i) => (
-                <LineRow key={i} line={l} supplierColor={supplier.color} />
+                <LineRow key={i} line={l} supplierColor={supplier.color} onChangeRingSize={onChangeRingSize} />
               ))}
             </Section>
           )}
 
-          {/* Unmatched toggle */}
+          {/* Unmatched toggle (truly no catalog entry, not size-mismatch) */}
           {unmatched.length > 0 && (
             <div style={{ padding: "6px 16px" }}>
               <button
                 onClick={() => setShowUnmatched((v) => !v)}
                 style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 12, padding: 0 }}
               >
-                {showUnmatched ? "▾" : "▸"} {unmatched.length} unmatched color{unmatched.length > 1 ? "s" : ""} (no catalog entry)
+                {showUnmatched ? "▾" : "▸"} {unmatched.length} color{unmatched.length > 1 ? "s" : ""} not in catalog
               </button>
+            </div>
+          )}
+
+          {/* Size mismatch summary */}
+          {sizeMismatched.length > 0 && (
+            <div style={{ padding: "4px 16px 6px", color: "#fb923c", fontSize: 11 }}>
+              {sizeMismatched.length} color{sizeMismatched.length > 1 ? "s" : ""} matched by color but size differs — see above
             </div>
           )}
 
@@ -257,7 +390,7 @@ export default function FreeformCostPanel({
             </div>
           </div>
 
-          {/* Order summary */}
+          {/* Order links */}
           {matched.length > 0 && (
             <div style={{ borderTop: "1px solid #1f2937", padding: "10px 16px" }}>
               <div style={{ color: "#6b7280", fontSize: 11, marginBottom: 8 }}>SUGGESTED ORDER LINKS</div>
@@ -318,47 +451,130 @@ function Section({ label, color, children }: { label: string; color: string; chi
   );
 }
 
-function LineRow({ line, supplierColor }: { line: ReturnType<typeof estimateCost>["lines"][number]; supplierColor: string }) {
-  const { lineItem, product, packsNeeded, totalCost, colorMatch } = line;
+function LineRow({
+  line,
+  supplierColor,
+  onChangeRingSize,
+}: {
+  line: ReturnType<typeof estimateCost>["lines"][number];
+  supplierColor: string;
+  onChangeRingSize: (idMm: number, wireMm: number) => void;
+}) {
+  const { lineItem, product, packsNeeded, totalCost, colorMatch, sizeMismatch, nearestColorProduct } = line;
   const matched = product !== null;
+  const [dismissed, setDismissed] = useState(false);
+
+  const suggestedId = nearestColorProduct?.type === "ring" ? nearestColorProduct.innerDiameterMm : undefined;
+  const suggestedWd = nearestColorProduct?.type === "ring" ? nearestColorProduct.wireDiameterMm : undefined;
 
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 8,
-        padding: "5px 16px",
-        borderBottom: "1px solid #1f293720",
-      }}
-    >
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
-        <span
-          style={{
-            width: 12,
-            height: 12,
-            borderRadius: "50%",
-            background: lineItem.colorHex,
-            border: "1px solid rgba(255,255,255,0.15)",
-            flexShrink: 0,
-          }}
-        />
+    <div style={{ borderBottom: "1px solid #1f293720" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "5px 16px",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
+          <span
+            style={{
+              width: 12,
+              height: 12,
+              borderRadius: "50%",
+              background: lineItem.colorHex,
+              border: "1px solid rgba(255,255,255,0.15)",
+              flexShrink: 0,
+            }}
+          />
+          {matched ? (
+            <span style={{ color: colorMatch ? "#d1d5db" : "#fbbf24", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={product!.name}>
+              {product!.name}
+              {!colorMatch && <span style={{ color: "#fbbf24", marginLeft: 4 }}>~color</span>}
+            </span>
+          ) : sizeMismatch ? (
+            <span style={{ color: "#fb923c", fontSize: 12 }}>
+              Color matched — wrong size
+            </span>
+          ) : (
+            <span style={{ color: "#f87171", fontSize: 12 }}>No catalog match</span>
+          )}
+        </div>
+        <span style={{ color: "#6b7280", fontSize: 11, flexShrink: 0 }}>×{lineItem.quantity.toLocaleString()}</span>
         {matched ? (
-          <span style={{ color: colorMatch ? "#d1d5db" : "#fbbf24", fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={product!.name}>
-            {product!.name}
-            {!colorMatch && <span style={{ color: "#fbbf24", marginLeft: 4 }}>~color</span>}
+          <span style={{ color: supplierColor, fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
+            {packsNeeded}pk · {totalCost.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 })}
           </span>
         ) : (
-          <span style={{ color: "#f87171", fontSize: 12 }}>No catalog match</span>
+          <span style={{ color: "#4b5563", fontSize: 12 }}>—</span>
         )}
       </div>
-      <span style={{ color: "#6b7280", fontSize: 11, flexShrink: 0 }}>×{lineItem.quantity.toLocaleString()}</span>
-      {matched ? (
-        <span style={{ color: supplierColor, fontWeight: 700, fontSize: 12, flexShrink: 0 }}>
-          {packsNeeded}pk · {totalCost.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 })}
-        </span>
-      ) : (
-        <span style={{ color: "#4b5563", fontSize: 12 }}>—</span>
+
+      {/* Size mismatch inline suggestion */}
+      {sizeMismatch && nearestColorProduct && !dismissed && (
+        <div
+          style={{
+            margin: "0 16px 8px",
+            padding: "7px 10px",
+            background: "#1c1917",
+            border: "1px solid #78350f",
+            borderRadius: 7,
+            fontSize: 11,
+            color: "#fed7aa",
+            lineHeight: 1.5,
+          }}
+        >
+          <div style={{ fontWeight: 600, color: "#fb923c", marginBottom: 4 }}>
+            ⚠ {nearestColorProduct.name}
+          </div>
+          <div style={{ color: "#9ca3af" }}>
+            Available at{" "}
+            {nearestColorProduct.type === "ring"
+              ? `${nearestColorProduct.innerDiameterMm}mm ID / ${nearestColorProduct.wireDiameterMm}mm WD`
+              : `${nearestColorProduct.widthMm}mm × ${nearestColorProduct.heightMm}mm`}
+            {" "}— your canvas uses{" "}
+            {lineItem.type === "ring"
+              ? `${lineItem.innerDiameterMm}mm ID / ${lineItem.wireDiameterMm}mm WD`
+              : `${lineItem.widthMm}mm × ${lineItem.heightMm}mm`}
+          </div>
+          <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+            {lineItem.type === "ring" && suggestedId != null && suggestedWd != null && (
+              <button
+                onClick={() => {
+                  onChangeRingSize(suggestedId, suggestedWd);
+                  setDismissed(true);
+                }}
+                style={{
+                  padding: "4px 10px",
+                  background: "#b45309",
+                  border: "none",
+                  borderRadius: 6,
+                  color: "#fff",
+                  cursor: "pointer",
+                  fontSize: 11,
+                  fontWeight: 700,
+                }}
+              >
+                Change to {suggestedId}mm ID / {suggestedWd}mm WD
+              </button>
+            )}
+            <button
+              onClick={() => setDismissed(true)}
+              style={{
+                padding: "4px 10px",
+                background: "rgba(255,255,255,0.07)",
+                border: "1px solid rgba(255,255,255,0.1)",
+                borderRadius: 6,
+                color: "#9ca3af",
+                cursor: "pointer",
+                fontSize: 11,
+              }}
+            >
+              Ignore
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
