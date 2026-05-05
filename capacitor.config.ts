@@ -2,7 +2,7 @@ import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
   appId: "com.wovenrainbows.chainmailledesigner",
-  appName: "Chainmaille Designer",
+  appName: "Chainmail Studio",
   webDir: "dist",
   server: {
     // In production builds the app serves from the local bundle.

@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Chainmaille Designer</string>
-    <string name="title_activity_main">Chainmaille Designer</string>
+    <string name="app_name">Chainmail Studio</string>
+    <string name="title_activity_main">Chainmail Studio</string>
     <string name="package_name">com.wovenrainbows.chainmailledesigner</string>
     <string name="custom_url_scheme">com.wovenrainbows.chainmailledesigner</string>
 </resources>

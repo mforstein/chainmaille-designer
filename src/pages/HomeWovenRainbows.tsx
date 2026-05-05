@@ -303,7 +303,7 @@ const HomeWovenRainbows: React.FC = () => {
         {/* ======= Designer Button ======= */}
         <div style={{ textAlign: "center", paddingBottom: 40 }}>
           <h2 style={{ fontSize: "1.8rem", marginBottom: 20 }}>
-            💎 Explore the Chainmaille Designer
+            💎 Explore Chainmail Studio
           </h2>
           <p
             style={{
@@ -315,7 +315,7 @@ const HomeWovenRainbows: React.FC = () => {
             }}
           >
             Experiment with patterns, colors, and layouts using the interactive
-            Chainmaille Designer tool — created to help you visualize and plan
+            Chainmail Studio — created to help you visualize and plan
             your next woven artwork.
           </p>
           <button

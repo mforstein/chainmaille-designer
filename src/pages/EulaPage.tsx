@@ -12,12 +12,12 @@ export default function EulaPage() {
         <Link to="/pricing" style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}>← Back to Pricing</Link>
 
         <h1 style={{ fontSize: 28, fontWeight: 900, color: "#f9fafb", margin: "24px 0 4px" }}>End User License Agreement</h1>
-        <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 36 }}>Effective Date: May 4, 2026 · Chainmaille Designer by Woven Rainbows by Erin</p>
+        <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 36 }}>Effective Date: May 4, 2026 · Chainmail Studio by Woven Rainbows by Erin</p>
 
         <div style={section}>
           <p style={p}>
             This End User License Agreement ("Agreement") is a legal agreement between you ("User") and
-            Woven Rainbows by Erin / Chainmaille Designer ("Developer"). By creating an account or using the
+            Woven Rainbows by Erin / Chainmail Studio ("Developer"). By creating an account or using the
             application, you agree to be bound by this Agreement.
           </p>
         </div>
@@ -27,7 +27,7 @@ export default function EulaPage() {
           <p style={p}>
             Subject to your compliance with this Agreement and payment of any applicable subscription fees,
             Developer grants you a limited, non-exclusive, non-transferable, revocable license to access and
-            use the Chainmaille Designer application for your personal or business purposes as permitted by
+            use the Chainmail Studio application for your personal or business purposes as permitted by
             your subscription tier.
           </p>
         </div>

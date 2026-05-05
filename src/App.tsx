@@ -1,6 +1,6 @@
 // ==============================
 // src/App.tsx
-// Chainmaille Designer – BOM-Ready Root
+// Chainmail Studio – BOM-Ready Root
 // ==============================
 //
 // PURPOSE

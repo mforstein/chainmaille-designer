@@ -54,7 +54,7 @@ export default function CommercialLicensePage() {
         <div style={section}>
           <h3 style={h3}>Attribution</h3>
           <p style={p}>
-            Attribution to Chainmaille Designer / Woven Rainbows by Erin is appreciated but not required
+            Attribution to Chainmail Studio / Woven Rainbows by Erin is appreciated but not required
             when selling items or patterns made using this application.
           </p>
         </div>
