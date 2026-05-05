@@ -64,7 +64,6 @@ const PLANS: Plan[] = [
     features: [
       "Everything in Maker",
       "3D Designer — spline fill & flood fill",
-      "Freeform 2D Designer (view & export)",
       "Export PDF bill of materials",
       "Physical pattern PDF (1:1 print tiles)",
       "Affiliate supplier buy buttons",
@@ -81,11 +80,10 @@ const PLANS: Plan[] = [
     priceEnvKey: import.meta.env.VITE_STRIPE_PRICE_STUDIO ?? "",
     features: [
       "Everything in Crafter",
-      "Freeform 2D — full ring & scale placement",
+      "Freeform 2D Designer — full ring & scale placement",
       "Reference image overlay & color transfer",
       "Shape fill & spline drawing tools",
-      "Supplier cost estimator",
-      "Supplier catalog sync (TRL, CMJ, MDZ, SPG)",
+      "Supplier cost estimator & catalog sync",
       "Commercial use license",
     ],
     cta: "Start Studio",
