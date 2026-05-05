@@ -47,13 +47,6 @@ const HomeWovenRainbows: React.FC = () => {
     return localStorage.getItem("authUser") === "erin";
   });
 
-  // Secret feather fade-in control
-  const [showFeather, setShowFeather] = useState(false);
-  useEffect(() => {
-    const timer = setTimeout(() => setShowFeather(true), 3000);
-    return () => clearTimeout(timer);
-  }, []);
-
   // Load Etsy items
   useEffect(() => {
     fetch("/wovenrainbows_listings_featured.json")
@@ -230,18 +223,6 @@ const HomeWovenRainbows: React.FC = () => {
             }}
           >
             <h2 style={{ fontSize: "1.6rem", marginBottom: 10 }}>
-              <span
-                role="img"
-                aria-label="feather"
-                style={{
-                  fontSize: "1.6rem",
-                  marginRight: 8,
-                  verticalAlign: "middle",
-                  filter: "drop-shadow(0 0 2px rgba(255,255,255,0.3))",
-                }}
-              >
-                🪶
-              </span>
               Latest Release Notes
             </h2>
             <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
@@ -337,40 +318,6 @@ const HomeWovenRainbows: React.FC = () => {
           })}
         </div>
       </div>
-      {/* ======= Hidden Feather (Easter Egg Blog Access) ======= */}
-      {showFeather && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: 20,
-            right: 20,
-            zIndex: 1000,
-            cursor: "pointer",
-            opacity: 0.8,
-            transform: "translateY(0)",
-            transition: "opacity 0.4s ease, transform 0.4s ease",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.8")}
-          onClick={() =>
-            navigate("/wovenrainbowsbyerin/login", {
-              state: { redirect: "/wovenrainbowsbyerin/blog" },
-            })
-          }
-        >
-          <span
-            role="img"
-            aria-label="feather"
-            style={{
-              fontSize: "2rem",
-              filter: "drop-shadow(0 0 6px rgba(255,255,255,0.4))",
-              animation: "floatFeather 3s ease-in-out infinite",
-            }}
-          >
-            🪶
-          </span>
-        </div>
-      )}
       {/* ======= Footer Band (removes white line) ======= */}
       <div
         style={{
@@ -382,23 +329,5 @@ const HomeWovenRainbows: React.FC = () => {
     </div>
   );
 };
-// Floating feather animation
-const styleSheet = document.styleSheets[0];
-if (
-  styleSheet &&
-  !Array.from(styleSheet.cssRules).some(
-    (rule) => (rule as CSSKeyframesRule).name === "floatFeather",
-  )
-) {
-  styleSheet.insertRule(
-    `
-    @keyframes floatFeather {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(-6px); }
-    }
-  `,
-    styleSheet.cssRules.length,
-  );
-}
 
 export default HomeWovenRainbows;

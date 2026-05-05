@@ -623,7 +623,7 @@ export default function ColorCalibrationTest() {
       <div
         style={{
           position: "fixed",
-          top: 14,
+          top: 56,
           left: 14,
           zIndex: 100000,
           display: "flex",
@@ -653,6 +653,7 @@ export default function ColorCalibrationTest() {
       <div
         style={{
           padding: 16,
+          paddingTop: 104,
           display: "flex",
           gap: 16,
           alignItems: "center",

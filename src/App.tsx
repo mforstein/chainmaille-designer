@@ -2111,7 +2111,7 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
           title="Blog"
           style={btnStyle}
         >
-          🪶
+          📝
         </button>
       </div>
     </DraggablePill>
