@@ -2240,7 +2240,7 @@ function WorkspaceHome() {
             🧩 Designer (3D)
           </Link>
           <Link to="/freeform" style={homeLinkStyle}>
-            ✨ Freeform 2D
+            ✨ Studio
           </Link>
           <Link to="/erin2d" style={homeLinkStyle}>
             🪡 Basic
