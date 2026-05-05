@@ -2181,7 +2181,7 @@ function WorkspaceHome() {
         {/* Header row */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
           <div style={{ fontSize: 22, fontWeight: 800 }}>
-            Woven Rainbows by Erin — Chainmaille Tools
+            Workspace Navigator
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Link
@@ -2236,6 +2236,12 @@ function WorkspaceHome() {
             gap: 12,
           }}
         >
+          <a href="https://www.etsy.com/shop/WovenRainbowsByErin" target="_blank" rel="noopener noreferrer" style={homeLinkStyle}>
+            🌈 Woven Rainbows by Erin Etsy Site
+          </a>
+          <Link to="/wovenrainbowsbyerin" style={homeLinkStyle}>
+            🏠 Homepage
+          </Link>
           <Link to="/designer" style={homeLinkStyle}>
             🧩 Designer (3D)
           </Link>
