@@ -2162,9 +2162,10 @@ function WorkspaceHome() {
         background: "#0E0F12",
         color: "#e5e7eb",
         display: "flex",
-        alignItems: "center",
+        alignItems: "flex-start",
         justifyContent: "center",
-        padding: 24,
+        padding: "env(safe-area-inset-top, 24px) 24px 24px",
+        paddingTop: "max(24px, env(safe-area-inset-top))",
       }}
     >
       <div

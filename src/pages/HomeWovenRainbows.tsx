@@ -25,6 +25,15 @@ interface BlogEntry {
   timestamp: string;
 }
 
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
 const HomeWovenRainbows: React.FC = () => {
   const [items, setItems] = useState<EtsyItem[]>([]);
   const [features, setFeatures] = useState<DesignerFeature[]>([]);
@@ -281,7 +290,7 @@ const HomeWovenRainbows: React.FC = () => {
                       lineHeight: 1.3,
                     }}
                   >
-                    {item.title}
+                    {decodeHtmlEntities(item.title || "")}
                   </div>
                   <div style={{ color: "#93c5fd" }}>
                     {item.price} {item.currency}
