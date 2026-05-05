@@ -213,7 +213,7 @@ const HomeWovenRainbows: React.FC = () => {
               boxShadow: "0 4px 14px rgba(37,99,235,0.4)",
             }}
           >
-            🧩 Access Designer
+            🧩 Access Studio
           </button>
         </div>
 
