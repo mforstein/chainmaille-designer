@@ -181,6 +181,42 @@ const HomeWovenRainbows: React.FC = () => {
           </p>
         </div>
 
+        {/* ======= Designer Button ======= */}
+        <div style={{ textAlign: "center", paddingBottom: 40 }}>
+          <h2 style={{ fontSize: "1.8rem", marginBottom: 20 }}>
+            💎 Explore Chainmail Studio
+          </h2>
+          <p
+            style={{
+              color: "#cbd5e1",
+              fontSize: "1rem",
+              maxWidth: 600,
+              margin: "0 auto 30px",
+              lineHeight: 1.6,
+            }}
+          >
+            Experiment with patterns, colors, and layouts using the interactive
+            Chainmail Studio — created to help you visualize and plan
+            your next woven artwork.
+          </p>
+          <button
+            onClick={() => navigate("/workspace")}
+            style={{
+              background: "#2563eb",
+              color: "#fff",
+              border: "none",
+              padding: "12px 24px",
+              borderRadius: 10,
+              cursor: "pointer",
+              fontSize: "1.1rem",
+              fontWeight: 600,
+              boxShadow: "0 4px 14px rgba(37,99,235,0.4)",
+            }}
+          >
+            🧩 Access Designer
+          </button>
+        </div>
+
         {/* ======= Blog Section ======= */}
         {latestPost && (
           <div
@@ -299,41 +335,6 @@ const HomeWovenRainbows: React.FC = () => {
               </a>
             );
           })}
-        </div>
-        {/* ======= Designer Button ======= */}
-        <div style={{ textAlign: "center", paddingBottom: 40 }}>
-          <h2 style={{ fontSize: "1.8rem", marginBottom: 20 }}>
-            💎 Explore Chainmail Studio
-          </h2>
-          <p
-            style={{
-              color: "#cbd5e1",
-              fontSize: "1rem",
-              maxWidth: 600,
-              margin: "0 auto 30px",
-              lineHeight: 1.6,
-            }}
-          >
-            Experiment with patterns, colors, and layouts using the interactive
-            Chainmail Studio — created to help you visualize and plan
-            your next woven artwork.
-          </p>
-          <button
-            onClick={() => navigate("/workspace")}
-            style={{
-              background: "#2563eb",
-              color: "#fff",
-              border: "none",
-              padding: "12px 24px",
-              borderRadius: 10,
-              cursor: "pointer",
-              fontSize: "1.1rem",
-              fontWeight: 600,
-              boxShadow: "0 4px 14px rgba(37,99,235,0.4)",
-            }}
-          >
-            🧩 Access Designer
-          </button>
         </div>
       </div>
       {/* ======= Hidden Feather (Easter Egg Blog Access) ======= */}
