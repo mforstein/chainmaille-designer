@@ -2236,11 +2236,8 @@ function WorkspaceHome() {
             gap: 12,
           }}
         >
-          <a href="https://www.etsy.com/shop/WovenRainbowsByErin" target="_blank" rel="noopener noreferrer" style={homeLinkStyle}>
-            🌈 Woven Rainbows by Erin Etsy Site
-          </a>
-          <Link to="/wovenrainbowsbyerin" style={homeLinkStyle}>
-            🏠 Homepage
+          <Link to="/erin2d" style={homeLinkStyle}>
+            🪡 Basic
           </Link>
           <Link to="/designer" style={homeLinkStyle}>
             🧩 Designer (3D)
@@ -2248,9 +2245,19 @@ function WorkspaceHome() {
           <Link to="/freeform" style={homeLinkStyle}>
             ✨ Studio
           </Link>
-          <Link to="/erin2d" style={homeLinkStyle}>
-            🪡 Basic
-          </Link>
+        </div>
+
+        <div style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, margin: "16px 0 8px" }}>
+          Utilities
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 12,
+          }}
+        >
           <Link to="/chart" style={homeLinkStyle}>
             📊 Ring Size Chart
           </Link>
@@ -2262,8 +2269,24 @@ function WorkspaceHome() {
           </Link>
         </div>
 
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 12,
+            marginTop: 12,
+          }}
+        >
+          <a href="https://www.etsy.com/shop/WovenRainbowsByErin" target="_blank" rel="noopener noreferrer" style={homeLinkStyle}>
+            🌈 Woven Rainbows by Erin Etsy Site
+          </a>
+          <Link to="/wovenrainbowsbyerin" style={homeLinkStyle}>
+            🏠 Homepage
+          </Link>
+        </div>
+
         <div style={{ marginTop: 14, color: "#9ca3af", fontSize: 12 }}>
-          Tip: Use the menu button (☰) inside Designer to jump between pages.
+          Tip: Use the menu button (☰) inside Studio to jump between pages.
         </div>
       </div>
     </div>
