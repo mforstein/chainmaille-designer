@@ -2283,7 +2283,7 @@ function RequireDesignerAuth({ children }: { children: JSX.Element }) {
   return <RequiresTier minTier="maker" featureName="3D Designer">{children}</RequiresTier>;
 }
 function RequireFreeformAuth({ children }: { children: JSX.Element }) {
-  return <RequiresTier minTier="crafter" featureName="Freeform Designer">{children}</RequiresTier>;
+  return <RequiresTier minTier="studio" featureName="Freeform Designer">{children}</RequiresTier>;
 }
 function RequireErin2DAuth({ children }: { children: JSX.Element }) {
   return <RequiresTier minTier="free" featureName="Basic">{children}</RequiresTier>;
