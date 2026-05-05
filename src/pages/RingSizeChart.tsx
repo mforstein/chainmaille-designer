@@ -342,14 +342,16 @@ export default function RingSizeChart() {
   const [tf, setTf] = useState<Tf>({ x: 0, y: 0, scale: 1 });
   const tfRef = useRef<Tf>(tf);
   const [selected, setSelected] = useState<RingData | null>(null);
+  const selectedRef = useRef<RingData | null>(null);
   const [showCompass, setShowCompass] = useState(false);
   const homeRef = useRef<Tf>({ x: 0, y: 0, scale: 1 });
   const rafRef = useRef(0);
 
   const rings = useMemo(buildRings, []);
 
-  // Keep ref in sync for event handlers that capture
+  // Keep refs in sync for event handlers that capture
   useEffect(() => { tfRef.current = tf; }, [tf]);
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
 
   // Compute fit-to-screen
   const fitView = useCallback((): Tf => {
@@ -488,23 +490,7 @@ export default function RingSizeChart() {
     }
   }, [hitTest, selected, deselect, zoomToRing]);
 
-  const onWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault();
-    cancelAnimationFrame(rafRef.current);
-    const factor = e.deltaY < 0 ? 1.13 : 1 / 1.13;
-    const cur = tfRef.current;
-    const newScale = Math.max(0.08, Math.min(30, cur.scale * factor));
-    // Keep world point under cursor fixed
-    const next: Tf = {
-      scale: newScale,
-      x: e.clientX - (e.clientX - cur.x) * (newScale / cur.scale),
-      y: e.clientY - (e.clientY - cur.y) * (newScale / cur.scale),
-    };
-    tfRef.current = next;
-    setTf(next);
-  }, []);
-
-  // ── Touch pan / pinch-zoom ──────────────────────────────────────────────────
+  // ── Wheel + touch: registered imperatively so { passive: false } works ────────
   const touchRef = useRef<{
     sx: number; sy: number; px: number; py: number;
     startDist: number; startScale: number;
@@ -512,84 +498,126 @@ export default function RingSizeChart() {
     moved: boolean; t0: number;
   } | null>(null);
 
-  const onTouchStart = useCallback((e: React.TouchEvent) => {
-    e.preventDefault();
-    cancelAnimationFrame(rafRef.current);
-    const cur = tfRef.current;
-    if (e.touches.length === 1) {
-      touchRef.current = {
-        sx: e.touches[0].clientX, sy: e.touches[0].clientY,
-        px: cur.x, py: cur.y,
-        startDist: 0, startScale: cur.scale,
-        startMidX: 0, startMidY: 0,
-        moved: false, t0: Date.now(),
-      };
-    } else if (e.touches.length >= 2) {
-      const dx = e.touches[1].clientX - e.touches[0].clientX;
-      const dy = e.touches[1].clientY - e.touches[0].clientY;
-      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      touchRef.current = {
-        sx: 0, sy: 0, px: cur.x, py: cur.y,
-        startDist: Math.hypot(dx, dy),
-        startScale: cur.scale,
-        startMidX: midX, startMidY: midY,
-        moved: true, t0: Date.now(),
-      };
-    }
-  }, []);
+  // Store latest callbacks in refs so the one-time addEventListener closure stays fresh
+  const hitTestRef = useRef(hitTest);
+  const deselectRef = useRef(deselect);
+  const zoomToRingRef = useRef(zoomToRing);
+  useEffect(() => { hitTestRef.current = hitTest; }, [hitTest]);
+  useEffect(() => { deselectRef.current = deselect; }, [deselect]);
+  useEffect(() => { zoomToRingRef.current = zoomToRing; }, [zoomToRing]);
 
-  const onTouchMove = useCallback((e: React.TouchEvent) => {
-    e.preventDefault();
-    if (!touchRef.current) return;
-    const tc = touchRef.current;
-    if (e.touches.length === 1) {
-      const dx = e.touches[0].clientX - tc.sx;
-      const dy = e.touches[0].clientY - tc.sy;
-      if (Math.abs(dx) > 4 || Math.abs(dy) > 4) tc.moved = true;
-      const next: Tf = { ...tfRef.current, x: tc.px + dx, y: tc.py + dy };
-      tfRef.current = next;
-      setTf(next);
-    } else if (e.touches.length >= 2) {
-      const dx = e.touches[1].clientX - e.touches[0].clientX;
-      const dy = e.touches[1].clientY - e.touches[0].clientY;
-      const dist = Math.hypot(dx, dy);
-      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-      const newScale = Math.max(0.08, Math.min(30, tc.startScale * (dist / tc.startDist)));
-      // Pivot around initial midpoint, allow translation with mid movement
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      cancelAnimationFrame(rafRef.current);
+      const factor = e.deltaY < 0 ? 1.13 : 1 / 1.13;
+      const cur = tfRef.current;
+      const newScale = Math.max(0.08, Math.min(30, cur.scale * factor));
       const next: Tf = {
         scale: newScale,
-        x: midX - (tc.startMidX - tc.px) * (newScale / tc.startScale),
-        y: midY - (tc.startMidY - tc.py) * (newScale / tc.startScale),
+        x: e.clientX - (e.clientX - cur.x) * (newScale / cur.scale),
+        y: e.clientY - (e.clientY - cur.y) * (newScale / cur.scale),
       };
       tfRef.current = next;
-      setTf(next);
-    }
-  }, []);
+      setTf({ ...next });
+    };
 
-  const onTouchEnd = useCallback((e: React.TouchEvent) => {
-    e.preventDefault();
-    if (!touchRef.current) return;
-    const tc = touchRef.current;
-    const elapsed = Date.now() - tc.t0;
-    if (!tc.moved && elapsed < 280 && e.changedTouches.length === 1) {
-      const tx = e.changedTouches[0].clientX;
-      const ty = e.changedTouches[0].clientY;
-      const hit = hitTest(tx, ty);
-      if (hit) {
-        if (selected?.row === hit.row && selected?.col === hit.col) {
-          deselect();
-        } else {
-          setSelected(hit);
-          zoomToRing(hit);
-        }
-      } else {
-        deselect();
+    const handleTouchStart = (e: TouchEvent) => {
+      e.preventDefault();
+      cancelAnimationFrame(rafRef.current);
+      const cur = tfRef.current;
+      if (e.touches.length === 1) {
+        touchRef.current = {
+          sx: e.touches[0].clientX, sy: e.touches[0].clientY,
+          px: cur.x, py: cur.y,
+          startDist: 0, startScale: cur.scale,
+          startMidX: 0, startMidY: 0,
+          moved: false, t0: Date.now(),
+        };
+      } else if (e.touches.length >= 2) {
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        touchRef.current = {
+          sx: 0, sy: 0, px: cur.x, py: cur.y,
+          startDist: Math.hypot(
+            e.touches[1].clientX - e.touches[0].clientX,
+            e.touches[1].clientY - e.touches[0].clientY,
+          ),
+          startScale: cur.scale,
+          startMidX: midX, startMidY: midY,
+          moved: true, t0: Date.now(),
+        };
       }
-    }
-    touchRef.current = null;
-  }, [hitTest, selected, deselect, zoomToRing]);
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      e.preventDefault();
+      if (!touchRef.current) return;
+      const tc = touchRef.current;
+      if (e.touches.length === 1) {
+        const dx = e.touches[0].clientX - tc.sx;
+        const dy = e.touches[0].clientY - tc.sy;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) tc.moved = true;
+        const next: Tf = { ...tfRef.current, x: tc.px + dx, y: tc.py + dy };
+        tfRef.current = next;
+        setTf({ ...next });
+      } else if (e.touches.length >= 2) {
+        const dist = Math.hypot(
+          e.touches[1].clientX - e.touches[0].clientX,
+          e.touches[1].clientY - e.touches[0].clientY,
+        );
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const newScale = Math.max(0.08, Math.min(30, tc.startScale * (dist / tc.startDist)));
+        const next: Tf = {
+          scale: newScale,
+          x: midX - (tc.startMidX - tc.px) * (newScale / tc.startScale),
+          y: midY - (tc.startMidY - tc.py) * (newScale / tc.startScale),
+        };
+        tfRef.current = next;
+        setTf({ ...next });
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      e.preventDefault();
+      if (!touchRef.current) return;
+      const tc = touchRef.current;
+      const elapsed = Date.now() - tc.t0;
+      if (!tc.moved && elapsed < 280 && e.changedTouches.length === 1) {
+        const tx = e.changedTouches[0].clientX;
+        const ty = e.changedTouches[0].clientY;
+        const hit = hitTestRef.current(tx, ty);
+        const sel = selectedRef.current;
+        if (hit) {
+          if (sel?.row === hit.row && sel?.col === hit.col) {
+            deselectRef.current();
+          } else {
+            setSelected(hit);
+            zoomToRingRef.current(hit);
+          }
+        } else {
+          deselectRef.current();
+        }
+      }
+      touchRef.current = null;
+    };
+
+    canvas.addEventListener("wheel", handleWheel, { passive: false });
+    canvas.addEventListener("touchstart", handleTouchStart, { passive: false });
+    canvas.addEventListener("touchmove", handleTouchMove, { passive: false });
+    canvas.addEventListener("touchend", handleTouchEnd, { passive: false });
+
+    return () => {
+      canvas.removeEventListener("wheel", handleWheel);
+      canvas.removeEventListener("touchstart", handleTouchStart);
+      canvas.removeEventListener("touchmove", handleTouchMove);
+      canvas.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, []); // register once — reads live state via refs
 
   return (
     <div style={{ position: "fixed", inset: 0, width: "100vw", height: "100dvh", background: "#0E0F12", overflow: "hidden" }}>
@@ -600,10 +628,6 @@ export default function RingSizeChart() {
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseUp}
-        onWheel={onWheel}
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
       />
 
       {/* Title + hint */}
