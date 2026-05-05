@@ -242,7 +242,7 @@ const HomeWovenRainbows: React.FC = () => {
               >
                 🪶
               </span>
-              Erin’s Latest Studio Note
+              Latest Release Notes
             </h2>
             <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
               {latestPost.content}
