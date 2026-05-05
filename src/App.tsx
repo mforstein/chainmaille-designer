@@ -2106,13 +2106,6 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
           🌐
         </button>
 
-        <button
-          onClick={() => go("/blog-editor")}
-          title="Blog"
-          style={btnStyle}
-        >
-          📝
-        </button>
       </div>
     </DraggablePill>
   );
