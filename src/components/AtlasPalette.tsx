@@ -34,9 +34,6 @@ export default function AtlasPalette({
         borderRadius: 12,
         padding: 10,
         width: "100%",
-        maxWidth: 420,
-        maxHeight: 420,
-        overflow: "auto",
       }}
     >
       <div style={{ marginBottom: 8, color: "#9ca3af", fontSize: 12 }}>

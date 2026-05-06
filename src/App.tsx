@@ -1692,9 +1692,9 @@ onChange={(e) => {
           style={{
             position: "fixed",
             left: 90,
-            right: 8,
             top: 60,
             bottom: 8,
+            width: 480,
             zIndex: 70,
             background: "rgba(10,15,20,.98)",
             border: "1px solid rgba(0,0,0,.6)",
@@ -1704,8 +1704,7 @@ onChange={(e) => {
             display: "flex",
             flexDirection: "column",
             gap: 10,
-            overflowY: "auto",
-            maxWidth: 780,
+            overflow: "hidden",
           }}
         >
           {/* header row with close button */}
@@ -1841,7 +1840,9 @@ onChange={(e) => {
               borderRadius: 10,
               padding: 10,
               border: "1px solid #1f2937",
-              flexShrink: 0,
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
             }}
           >
             <AtlasPalette onApply={(e) => applyAtlas(e)} />

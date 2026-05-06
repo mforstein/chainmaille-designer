@@ -380,6 +380,51 @@ const BOMMock = () => (
   </Mock>
 );
 
+const DesignLibraryMock = () => {
+  const starters: Array<{ title: string; size: string; colors: string[][] }> = [
+    { title: "Blank Canvas",     size: "—",     colors: [["#374151","#374151","#374151"],["#374151","#374151"],["#374151","#374151","#374151"]] },
+    { title: "Small Patch",      size: "6×8",   colors: [["#60a5fa","#60a5fa","#60a5fa"],["#60a5fa","#60a5fa"],["#60a5fa","#60a5fa","#60a5fa"]] },
+    { title: "Bracelet Strip",   size: "4×24",  colors: [["#f472b6","#f472b6","#f472b6"],["#f472b6","#f472b6"],["#f472b6","#f472b6","#f472b6"]] },
+    { title: "Wide Fill",        size: "10×14", colors: [["#a78bfa","#60a5fa","#a78bfa"],["#60a5fa","#a78bfa"],["#a78bfa","#60a5fa","#a78bfa"]] },
+    { title: "Diamond r=5",      size: "11×11", colors: [["#374151","#fbbf24","#374151"],["#fbbf24","#f59e0b"],["#374151","#fbbf24","#374151"]] },
+    { title: "Two-Tone Stripe",  size: "8×16",  colors: [["#60a5fa","#60a5fa","#60a5fa"],["#f472b6","#f472b6"],["#60a5fa","#60a5fa","#60a5fa"]] },
+    { title: "Rainbow Rows",     size: "7×12",  colors: [["#f87171","#f87171","#f87171"],["#fbbf24","#fbbf24"],["#34d399","#34d399","#34d399"]] },
+    { title: "Chevron Pattern",  size: "10×16", colors: [["#60a5fa","#f472b6","#60a5fa"],["#f472b6","#60a5fa"],["#60a5fa","#f472b6","#60a5fa"]] },
+  ];
+  return (
+    <Mock label="Design Library — Starters tab with built-in template designs">
+      <div style={{ background: "#0b1020" }}>
+        <div style={{ background: "#0f172a", borderBottom: "1px solid #1e293b", padding: "9px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 13, fontWeight: 700, color: "#f1f5f9" }}>📚 Design Library</span>
+          <div style={{ width: 20, height: 20, borderRadius: 5, background: "#1e293b", display: "grid", placeItems: "center", fontSize: 13, color: "#64748b" }}>×</div>
+        </div>
+        <div style={{ display: "flex", background: "#0f172a", borderBottom: "1px solid #1e293b" }}>
+          {["My Designs", "Starters"].map((tab, i) => (
+            <div key={tab} style={{ padding: "6px 16px", fontSize: 11, fontWeight: 700, color: i === 1 ? "#60a5fa" : "#64748b", borderBottom: i === 1 ? "2px solid #60a5fa" : "2px solid transparent" }}>{tab}</div>
+          ))}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, padding: 12 }}>
+          {starters.map((s) => (
+            <div key={s.title} style={{ background: "#111827", border: "1px solid #1e293b", borderRadius: 8, overflow: "hidden" }}>
+              <div style={{ height: 52, overflow: "hidden" }}>
+                <HexRings rows={3} cols={3} colors={s.colors} spacing={17} r={6} ringW={2.2} bg="#111827" />
+              </div>
+              <div style={{ padding: "5px 7px 7px" }}>
+                <div style={{ fontSize: 9, fontWeight: 700, color: "#e2e8f0", marginBottom: 1 }}>{s.title}</div>
+                {s.size !== "—" && <div style={{ fontSize: 8, color: "#64748b", marginBottom: 3 }}>{s.size} rings</div>}
+                <div style={{ display: "flex", gap: 3, marginTop: 4 }}>
+                  <div style={{ flex: 1, background: "#1d4ed8", borderRadius: 4, fontSize: 8, color: "#bfdbfe", textAlign: "center", padding: "2px 0", fontWeight: 700 }}>Load</div>
+                  <div style={{ flex: 1, background: "#1e293b", borderRadius: 4, fontSize: 8, color: "#94a3b8", textAlign: "center", padding: "2px 0" }}>Append</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Mock>
+  );
+};
+
 const DesignerMock = () => (
   <Mock label="3D Ring Grid Designer — metallic rendered rings with paint tools">
     <div style={{ background: "#1a1f2e", padding: 14 }}>
@@ -814,6 +859,7 @@ export default function UserManual() {
             <br /><strong>My Designs</strong> — previously saved canvases. Each entry can be <em>Loaded</em> (replace canvas) or <em>Appended</em> (merge rings alongside existing work).
             <br /><strong>Starters</strong> — built-in template designs to get started quickly. Can also be loaded or appended.
           </Feat>
+          <DesignLibraryMock />
           <Feat title="💰 Cost Estimator">
             Opens the Material Cost Estimator (Studio tier). Matches your BOM ring/scale counts against the supplier catalog, shows per-color pack counts, estimated totals per supplier, and flags potential import tariff scenarios. Estimates only — verify on the supplier site before ordering.
           </Feat>
