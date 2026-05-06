@@ -120,9 +120,19 @@ export function getScaleColorHexList(): string[] {
   return [...new Set(cached.scaleColors.map((c) => c.hex))];
 }
 
+function getFunctionBase(): string {
+  try {
+    const o = window.location.origin;
+    if (o.startsWith("capacitor://") || o.includes("localhost")) {
+      return "https://chainmaildesigner.com";
+    }
+  } catch {}
+  return "";
+}
+
 /** Calls the Netlify fetchSuppliers function and caches the result. */
 export async function refreshSupplierColors(forceFresh = false): Promise<SupplierColorData> {
-  const url = `/.netlify/functions/fetchSuppliers${forceFresh ? "?fresh=1" : ""}`;
+  const url = `${getFunctionBase()}/.netlify/functions/fetchSuppliers${forceFresh ? "?fresh=1" : ""}`;
   const res = await fetch(url, { signal: AbortSignal.timeout(45_000) });
   if (!res.ok) throw new Error(`Supplier fetch failed: HTTP ${res.status}`);
   const raw = await res.json();

@@ -397,7 +397,6 @@ export default function ColorCalibrationTest() {
   useEffect(() => {
     const buildGeom = () => {
       if (calibMode === "scale") {
-        // Flat teardrop-ish scale: extruded rounded rectangle simulating a scale face
         const shape = new THREE.Shape();
         shape.moveTo(0, -1.2);
         shape.bezierCurveTo(0.9, -1.2, 1.0, -0.3, 1.0, 0.2);
@@ -415,6 +414,29 @@ export default function ColorCalibrationTest() {
       const g = buildGeom();
       ensureWhiteVertexColors(g);
       mesh.geometry = g;
+
+      // Scale shape lies in XY plane facing camera — no rotation needed.
+      // Ring (torus) needs π/2 Z-rotation to face forward.
+      const dummy = new THREE.Object3D();
+      dummy.position.set(0, 0, 0);
+      if (calibMode === "ring") dummy.rotation.set(0, 0, Math.PI / 2);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(0, dummy.matrix);
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+    // Material tweak: scales are flatter/less metallic than metal rings
+    for (const meshRef of [leftMeshRef, rightMeshRef]) {
+      const mesh = meshRef.current;
+      if (!mesh) continue;
+      const mat = mesh.material as THREE.MeshStandardMaterial;
+      if (calibMode === "scale") {
+        mat.metalness = 0.45;
+        mat.roughness = 0.55;
+      } else {
+        mat.metalness = 0.85;
+        mat.roughness = 0.25;
+      }
+      mat.needsUpdate = true;
     }
   }, [calibMode]);
 
@@ -478,7 +500,7 @@ export default function ColorCalibrationTest() {
     setRightColorManual(corrected);
     sampleCenter("right");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedColor, gain, gamma]);
+  }, [selectedColor, gain, gamma, calibMode]);
 
   // --------------------
   // Calibration routine

@@ -690,8 +690,8 @@ export default function RingSizeChart() {
 
       {showCompass && <DraggableCompassNav onNavigate={() => setShowCompass(false)} />}
 
-      {/* Supplier color refresh button — bottom right */}
-      <div style={{ position: "fixed", bottom: 16, right: 12, zIndex: 50 }}>
+      {/* Supplier color refresh button — top right, clears the info panel which starts at top:68 */}
+      <div style={{ position: "fixed", top: 16, right: 12, zIndex: 50 }}>
         <SupplierColorRefreshButton compact />
       </div>
     </div>
