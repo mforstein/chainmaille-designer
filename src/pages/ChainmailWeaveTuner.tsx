@@ -473,6 +473,7 @@ export default function ChainmailWeaveTuner() {
   const [status, setStatus] = useState<"valid" | "no_solution">("valid");
   const [showCompass, setShowCompass] = useState(false);
   const [tunerMode, setTunerMode] = useState<TunerMode>("tune_rings");
+  const [panelOpen, setPanelOpen] = useState(true);
 
   const pendingSnapshotSaveRef = useRef(false);
 
@@ -1173,15 +1174,30 @@ if (scaleEnabled) {
 
       {/* ── Mode selector strip (vertical) ── */}
       <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 52, zIndex: 20, background: "rgba(13,18,28,0.97)", borderRight: "1px solid #1e293b", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "60px 6px 10px" }}>
-        {TUNER_MODES.map((m) => (
-          <button key={m.id} onClick={() => setTunerMode(m.id)} title={m.label} style={{ width: 40, height: 40, borderRadius: 9, border: tunerMode === m.id ? "1px solid #3b82f6" : "1px solid #1e293b", background: tunerMode === m.id ? "#1e40af" : "#0f172a", color: tunerMode === m.id ? "#fff" : "#94a3b8", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-            {m.icon}
-          </button>
-        ))}
+        {TUNER_MODES.map((m) => {
+          const isActive = tunerMode === m.id && panelOpen;
+          return (
+            <button
+              key={m.id}
+              onClick={() => {
+                if (tunerMode === m.id) {
+                  setPanelOpen((v) => !v);
+                } else {
+                  setTunerMode(m.id);
+                  setPanelOpen(true);
+                }
+              }}
+              title={isActive ? `Close ${m.label}` : m.label}
+              style={{ width: 40, height: 40, borderRadius: 9, border: isActive ? "1px solid #3b82f6" : "1px solid #1e293b", background: isActive ? "#1e40af" : "#0f172a", color: isActive ? "#fff" : "#94a3b8", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+            >
+              {m.icon}
+            </button>
+          );
+        })}
       </div>
 
       {/* ── Controls panel (bottom sheet) ── */}
-      <div
+      {panelOpen && <div
         style={{
           position: "absolute",
           bottom: 0,
@@ -1223,6 +1239,7 @@ if (scaleEnabled) {
                     setGuidanceStep(1);
                     setScaleEnabled(true);
                     setTunerMode("calibrate_scales");
+                    setPanelOpen(true);
                   }}
                   style={{ padding: "6px 14px", borderRadius: 8, background: "#1d4ed8", color: "#fff", border: "none", cursor: "pointer", fontWeight: 700, fontSize: 12 }}
                 >
@@ -1516,7 +1533,7 @@ if (scaleEnabled) {
             </div>
           </>
         )}
-      </div>
+      </div>}
 
       <DraggablePill id="tuner-compass" defaultPosition={{ x: 20, y: 70 }}>
         <button
