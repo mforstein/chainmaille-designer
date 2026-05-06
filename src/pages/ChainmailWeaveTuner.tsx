@@ -58,16 +58,19 @@ interface ScalePreset {
   dropMm: number;      // body drop from hole shoulder
 }
 
+// All presets keep width/holeDia ratio ≥ 1.5 so the teardrop bezier curves
+// have enough room to produce a well-formed shape (narrower ratios cause the
+// shoulder to degenerate into a flat arch).
 const SCALE_PRESETS: readonly ScalePreset[] = [
-  { id: "baby",    label: "Baby Dragon",  holeDiaMm: 3.97,  widthMm: 5.0,  heightMm: 8.5,  dropMm: 5.5  }, // TRL 5/32" hole
-  { id: "xs",      label: "XS Dragon",   holeDiaMm: 4.76,  widthMm: 7.0,  heightMm: 11.5, dropMm: 7.5  }, // TRL 3/16" hole
-  { id: "sm",      label: "Sm Dragon",   holeDiaMm: 6.35,  widthMm: 9.0,  heightMm: 15.5, dropMm: 9.5  }, // TRL 1/4" hole
-  { id: "md",      label: "Md Dragon",   holeDiaMm: 7.94,  widthMm: 10.5, heightMm: 18.5, dropMm: 12.0 }, // TRL 5/16" hole, standard
-  { id: "lg",      label: "Lg Dragon",   holeDiaMm: 7.94,  widthMm: 9.1,  heightMm: 22.2, dropMm: 9.2  }, // TRL 5/16" hole, tall narrow
-  { id: "xl",      label: "XL Dragon",   holeDiaMm: 9.53,  widthMm: 13.5, heightMm: 25.5, dropMm: 16.0 }, // TRL 3/8" hole
-  { id: "jumbo",   label: "Jumbo",       holeDiaMm: 11.11, widthMm: 17.0, heightMm: 32.0, dropMm: 21.0 }, // TRL 7/16" hole
-  { id: "wide_sm", label: "Wide Sm",     holeDiaMm: 6.35,  widthMm: 12.5, heightMm: 15.0, dropMm: 9.5  }, // wide-body small
-  { id: "wide_lg", label: "Wide Lg",     holeDiaMm: 9.53,  widthMm: 16.0, heightMm: 22.0, dropMm: 14.0 }, // wide-body large
+  { id: "baby",    label: "Baby Dragon",  holeDiaMm: 3.97,  widthMm: 6.5,  heightMm: 8.5,  dropMm: 4.5  }, // TRL 5/32" hole
+  { id: "xs",      label: "XS Dragon",   holeDiaMm: 4.76,  widthMm: 8.0,  heightMm: 11.5, dropMm: 6.0  }, // TRL 3/16" hole
+  { id: "sm",      label: "Sm Dragon",   holeDiaMm: 6.35,  widthMm: 10.5, heightMm: 15.5, dropMm: 8.0  }, // TRL 1/4" hole
+  { id: "md",      label: "Md Dragon",   holeDiaMm: 7.94,  widthMm: 12.5, heightMm: 18.5, dropMm: 9.5  }, // TRL 5/16" hole, standard
+  { id: "lg",      label: "Lg Dragon",   holeDiaMm: 7.94,  widthMm: 13.0, heightMm: 22.2, dropMm: 7.5  }, // TRL 5/16" hole, tall
+  { id: "xl",      label: "XL Dragon",   holeDiaMm: 9.53,  widthMm: 15.5, heightMm: 25.5, dropMm: 11.0 }, // TRL 3/8" hole
+  { id: "jumbo",   label: "Jumbo",       holeDiaMm: 11.11, widthMm: 18.5, heightMm: 32.0, dropMm: 14.0 }, // TRL 7/16" hole
+  { id: "wide_sm", label: "Wide Sm",     holeDiaMm: 6.35,  widthMm: 13.5, heightMm: 15.0, dropMm: 8.0  }, // wide-body small
+  { id: "wide_lg", label: "Wide Lg",     holeDiaMm: 9.53,  widthMm: 17.5, heightMm: 22.0, dropMm: 10.5 }, // wide-body large
 ] as const;
 
 function nearestPreset(widthMm: number, heightMm: number): string | null {
