@@ -37,6 +37,7 @@ import { computeShapeCells } from "../utils/shapeFill";
 import { useAuth, tierAtLeast } from "../auth/AuthContext";
 import defaultFreeformDesign from "../data/defaultFreeformDesign";
 import SupplierColorPalette from "../components/SupplierColorPalette";
+import SupplierColorRefreshButton from "../components/SupplierColorRefreshButton";
 import FreeformCostPanel from "../components/FreeformCostPanel";
 // ⬇️ SAFETY STUB (keeps App.tsx safe if it calls this early; BOM UI removed)
 declare global {
@@ -4754,6 +4755,9 @@ const scales3D = useMemo(() => {
               />
             ))}
           </div>
+
+          {/* Refresh supplier colors */}
+          <SupplierColorRefreshButton compact style={{ marginTop: 6 }} />
 
           {/* Supplier color browser */}
           {showSupplierColors && (

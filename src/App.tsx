@@ -55,6 +55,7 @@
 
 import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
 import { useViewport } from "./hooks/useViewport";
+import SupplierColorRefreshButton from "./components/SupplierColorRefreshButton";
 import { Routes, Route, Navigate, useNavigate, Link } from "react-router-dom";
 import { calculateBOM } from "./BOM/bomCalculator";
 import "./index.css";
@@ -1585,6 +1586,7 @@ onChange={(e) => {
                 />
               ))}
             </div>
+            <SupplierColorRefreshButton compact style={{ alignSelf: "stretch", justifyContent: "center" }} />
           </div>
         </DraggablePill>
       )}

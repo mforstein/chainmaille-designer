@@ -5,6 +5,7 @@ import { ALL_PRODUCTS, SUPPLIER_INFO } from "../data/supplierCatalog";
 import type { SupplierProduct } from "../data/supplierCatalog";
 import { DraggableCompassNav, DraggablePill } from "../App";
 import { IconHamburger } from "../components/icons/ToolIcons";
+import SupplierColorRefreshButton from "../components/SupplierColorRefreshButton";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 const ID_OPTIONS = [
@@ -688,6 +689,11 @@ export default function RingSizeChart() {
       </DraggablePill>
 
       {showCompass && <DraggableCompassNav onNavigate={() => setShowCompass(false)} />}
+
+      {/* Supplier color refresh button — bottom right */}
+      <div style={{ position: "fixed", bottom: 16, right: 12, zIndex: 50 }}>
+        <SupplierColorRefreshButton compact />
+      </div>
     </div>
   );
 }

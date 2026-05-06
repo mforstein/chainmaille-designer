@@ -25,7 +25,7 @@ import { join } from "path";
 // Types
 // -----------------------------------------------------------------------------
 
-type SupplierKey = "Chainmail Joe" | "The Ring Lord" | "MetalDesignz";
+type SupplierKey = "Chainmail Joe" | "The Ring Lord" | "MetalDesignz" | "Scales";
 
 type RingVariant = {
   wireGauge?: string;
@@ -114,6 +114,27 @@ const SITES = {
     host: "www.metaldesignz.com",
   },
 } as const;
+
+// Scale product roots — separate from ring roots
+const SCALE_ROOTS = [
+  // The Ring Lord scales
+  "https://theringlord.com/scales/",
+  "https://theringlord.com/scales/anodized-aluminum/",
+  "https://theringlord.com/scales/stainless-steel/",
+  "https://theringlord.com/scales/bright-aluminum/",
+  "https://theringlord.com/scales/copper/",
+  "https://theringlord.com/scales/brass/",
+  "https://theringlord.com/scales/niobium/",
+  "https://theringlord.com/scales/titanium/",
+  "https://theringlord.com/shop-now/specials/scales/",
+  // Chainmail Joe scales
+  "https://chainmailjoe.com/collections/scales",
+  "https://chainmailjoe.com/collections/anodized-aluminum-scales",
+  "https://chainmailjoe.com/collections/bright-aluminum-scales",
+  // Metal Designz scales
+  "https://www.metaldesignz.com/scales/",
+  "https://www.metaldesignz.com/shop/scales",
+];
 
 // Known color words we’ll match in titles/options
 const KNOWN_COLORS = [
@@ -640,6 +661,75 @@ async function scrapeMetalDesignz(): Promise<SupplierResult> {
   return sup;
 }
 
+// -------- Scales (all suppliers) --------
+async function scrapeScales(): Promise<SupplierResult> {
+  const sup: SupplierResult = { supplier: "Scales", materials: [] };
+  const limit = pLimit(CONCURRENCY);
+  const productLinks = new Set<string>();
+
+  for (const url of SCALE_ROOTS) {
+    try {
+      const html = await fetchHTML(url);
+      const $ = cheerio.load(html);
+      $("a[href]").each((_, el) => {
+        const href = $(el).attr("href") || "";
+        if (
+          /product|scale/i.test(href) &&
+          !href.endsWith("/scales/") &&
+          !href.match(/^https?:\/\/[^/]+\/scales\/?$/)
+        ) {
+          const host = url.includes("theringlord") ? "https://theringlord.com"
+            : url.includes("chainmailjoe") ? "https://chainmailjoe.com"
+            : "https://www.metaldesignz.com";
+          const full = href.startsWith("http") ? href : `${host}${href}`;
+          productLinks.add(full.split("?")[0]);
+        }
+      });
+    } catch (e) {
+      console.warn("[Scales] root fail:", url, e);
+    }
+  }
+
+  const tasks = Array.from(productLinks).map((plink) =>
+    limit(async () => {
+      try {
+        const html = await fetchHTML(plink);
+        const $ = cheerio.load(html);
+        const title = ($("h1").first().text() || $("title").text() || "").trim();
+
+        let materialGuess =
+          (title.match(/(anodized aluminum|bright aluminum|stainless steel|niobium|titanium|copper|brass|bronze)/i)?.[1]) ?? "Scales";
+        materialGuess = materialGuess.replace(/scales?/i, "").trim() || "Scales";
+
+        const allText = $("body").text();
+        const available = !/out\s*of\s*stock|sold\s*out/i.test(allText);
+
+        let colorGuess = pickColorFrom(title);
+        if (!colorGuess) {
+          $("option, [class*=swatch], [class*=color]").each((_, el) => {
+            const c = pickColorFrom($(el).text());
+            if (c && !colorGuess) colorGuess = c;
+          });
+        }
+        colorGuess = colorGuess || "Natural";
+
+        const material = ensureMaterial(sup, materialGuess);
+        const colorEntry = ensureColor(material, colorGuess);
+
+        // Scales are typically sold by size (mm width × height) and colour
+        const specs = extractSpecs(allText.slice(0, 2000));
+        colorEntry.rings.push({ ...specs, available, url: plink });
+        colorEntry.rings = dedupeRings(colorEntry.rings);
+      } catch (e) {
+        console.warn("[Scales] product fail:", plink, e);
+      }
+    })
+  );
+
+  await Promise.all(tasks);
+  return sup;
+}
+
 // -----------------------------------------------------------------------------
 // Main handler
 // -----------------------------------------------------------------------------
@@ -665,14 +755,15 @@ export const handler = async (event: any) => {
     }
 
     // Scrape in parallel (lightly)
-    const [joe, trl, mdz] = await Promise.all([
+    const [joe, trl, mdz, scales] = await Promise.all([
       scrapeChainmailJoe(),
       scrapeTheRingLord(),
       scrapeMetalDesignz(),
+      scrapeScales(),
     ]);
 
     // Clean up/normalize: dedupe colors/rings per material
-    for (const sup of [joe, trl, mdz]) {
+    for (const sup of [joe, trl, mdz, scales]) {
       for (const mat of sup.materials) {
         // merge duplicate color buckets with same name
         const byColor = new Map<string, ColorEntry>();
@@ -696,7 +787,7 @@ export const handler = async (event: any) => {
     const out: Output = {
       cached: false,
       timestamp: Date.now(),
-      suppliers: [joe, trl, mdz],
+      suppliers: [joe, trl, mdz, scales],
     };
 
     writeCache(cacheKey, out);

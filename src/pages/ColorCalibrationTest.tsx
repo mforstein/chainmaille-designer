@@ -8,6 +8,7 @@ import {
   loadActiveCalibration,
   saveAndApplyCalibration,
 } from "../utils/colorCalibration";
+import SupplierColorRefreshButton from "../components/SupplierColorRefreshButton";
 
 /**
  * Builds a per-color Gain/Gamma table by comparing:
@@ -240,6 +241,7 @@ export default function ColorCalibrationTest() {
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<ResultRow[]>([]);
   const [statusMsg, setStatusMsg] = useState<string>("");
+  const [calibMode, setCalibMode] = useState<"ring" | "scale">("ring");
 
   // --------------------
   // Renderer setup
@@ -388,6 +390,33 @@ export default function ColorCalibrationTest() {
       cleanR();
     };
   }, []);
+
+  // --------------------
+  // Swap geometry when calibMode changes (ring ↔ scale)
+  // --------------------
+  useEffect(() => {
+    const buildGeom = () => {
+      if (calibMode === "scale") {
+        // Flat teardrop-ish scale: extruded rounded rectangle simulating a scale face
+        const shape = new THREE.Shape();
+        shape.moveTo(0, -1.2);
+        shape.bezierCurveTo(0.9, -1.2, 1.0, -0.3, 1.0, 0.2);
+        shape.bezierCurveTo(1.0, 0.9, 0.5, 1.2, 0, 1.2);
+        shape.bezierCurveTo(-0.5, 1.2, -1.0, 0.9, -1.0, 0.2);
+        shape.bezierCurveTo(-1.0, -0.3, -0.9, -1.2, 0, -1.2);
+        return new THREE.ShapeGeometry(shape, 24);
+      }
+      return new THREE.TorusGeometry(1.1, 0.35, 16, 32);
+    };
+    for (const meshRef of [leftMeshRef, rightMeshRef]) {
+      const mesh = meshRef.current;
+      if (!mesh) continue;
+      mesh.geometry.dispose();
+      const g = buildGeom();
+      ensureWhiteVertexColors(g);
+      mesh.geometry = g;
+    }
+  }, [calibMode]);
 
   // --------------------
   // Low-level: set colors and sample pixel
@@ -649,6 +678,30 @@ export default function ColorCalibrationTest() {
         </button>
       </div>
 
+      {/* Mode toggle + refresh */}
+      <div style={{ position: "fixed", top: 56, right: 14, zIndex: 100000, display: "flex", gap: 8, alignItems: "center" }}>
+        {(["ring", "scale"] as const).map((m) => (
+          <button
+            key={m}
+            onClick={() => { setCalibMode(m); setResults([]); setStatusMsg(""); }}
+            style={{
+              padding: "7px 14px",
+              borderRadius: 10,
+              border: calibMode === m ? "1px solid #3b82f6" : "1px solid rgba(255,255,255,0.18)",
+              background: calibMode === m ? "#1e40af" : "rgba(255,255,255,0.08)",
+              color: "#e7eefc",
+              cursor: "pointer",
+              fontWeight: calibMode === m ? 800 : 400,
+              fontSize: 13,
+              textTransform: "capitalize",
+            }}
+          >
+            {m === "ring" ? "💍 Ring Cal." : "🪙 Scale Cal."}
+          </button>
+        ))}
+        <SupplierColorRefreshButton compact />
+      </div>
+
       {/* Top controls */}
       <div
         style={{
@@ -799,7 +852,7 @@ export default function ColorCalibrationTest() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, padding: 12 }}>
         <div style={{ border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, overflow: "hidden" }}>
           <div style={{ padding: 10, fontSize: 13, opacity: 0.9 }}>
-            LEFT (SMALL) — setColorAt(input)
+            LEFT ({calibMode === "scale" ? "SCALE" : "RING"} SMALL) — setColorAt(input)
           </div>
           <div style={{ height: "52vh" }}>
             <canvas ref={leftCanvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
@@ -808,7 +861,7 @@ export default function ColorCalibrationTest() {
 
         <div style={{ border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14, overflow: "hidden" }}>
           <div style={{ padding: 10, fontSize: 13, opacity: 0.9 }}>
-            RIGHT (LARGE) — manual instanceColor(transform(input))
+            RIGHT ({calibMode === "scale" ? "SCALE" : "RING"} LARGE) — manual instanceColor(transform(input))
           </div>
           <div style={{ height: "52vh" }}>
             <canvas ref={rightCanvasRef} style={{ width: "100%", height: "100%", display: "block" }} />
