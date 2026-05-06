@@ -8,7 +8,7 @@ import React, {
   useState,
 } from "react";
 import * as THREE from "three";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { DraggableCompassNav, DraggablePill } from "../App";
 import { computeRingVarsIndependent } from "../utils/ringMath";
 import { IconHamburger } from "../components/icons/ToolIcons";
@@ -45,6 +45,40 @@ const DEFAULT_SCALE_ROW_CLEARANCE_Z = 0.22;
 const TUNER_STORAGE_KEY = "chainmailMatrix";
 const TUNER_SCALE_PREFS_KEY = "chainmailTuner.scalePrefs.v4.same3dscene.holelock";
 const FREEFORM_TUNER_SNAPSHOT_KEY = "freeform.tunerSnapshot.v1";
+
+// ─── Commercially available scale presets ─────────────────────────────────────
+// Dimensions sourced from The Ring Lord (TRL) dragon scale product line and
+// common sizes from other major suppliers. Fine-tune with sliders after selecting.
+interface ScalePreset {
+  id: string;
+  label: string;
+  holeDiaMm: number;   // mounting hole inner diameter
+  widthMm: number;     // scale width at widest point
+  heightMm: number;    // scale body height (hole top to tip)
+  dropMm: number;      // body drop from hole shoulder
+}
+
+const SCALE_PRESETS: readonly ScalePreset[] = [
+  { id: "baby",    label: "Baby Dragon",  holeDiaMm: 3.97,  widthMm: 5.0,  heightMm: 8.5,  dropMm: 5.5  }, // TRL 5/32" hole
+  { id: "xs",      label: "XS Dragon",   holeDiaMm: 4.76,  widthMm: 7.0,  heightMm: 11.5, dropMm: 7.5  }, // TRL 3/16" hole
+  { id: "sm",      label: "Sm Dragon",   holeDiaMm: 6.35,  widthMm: 9.0,  heightMm: 15.5, dropMm: 9.5  }, // TRL 1/4" hole
+  { id: "md",      label: "Md Dragon",   holeDiaMm: 7.94,  widthMm: 10.5, heightMm: 18.5, dropMm: 12.0 }, // TRL 5/16" hole, standard
+  { id: "lg",      label: "Lg Dragon",   holeDiaMm: 7.94,  widthMm: 9.1,  heightMm: 22.2, dropMm: 9.2  }, // TRL 5/16" hole, tall narrow
+  { id: "xl",      label: "XL Dragon",   holeDiaMm: 9.53,  widthMm: 13.5, heightMm: 25.5, dropMm: 16.0 }, // TRL 3/8" hole
+  { id: "jumbo",   label: "Jumbo",       holeDiaMm: 11.11, widthMm: 17.0, heightMm: 32.0, dropMm: 21.0 }, // TRL 7/16" hole
+  { id: "wide_sm", label: "Wide Sm",     holeDiaMm: 6.35,  widthMm: 12.5, heightMm: 15.0, dropMm: 9.5  }, // wide-body small
+  { id: "wide_lg", label: "Wide Lg",     holeDiaMm: 9.53,  widthMm: 16.0, heightMm: 22.0, dropMm: 14.0 }, // wide-body large
+] as const;
+
+function nearestPreset(widthMm: number, heightMm: number): string | null {
+  let bestId: string | null = null;
+  let bestDist = Infinity;
+  for (const p of SCALE_PRESETS) {
+    const d = Math.abs(p.widthMm - widthMm) + Math.abs(p.heightMm - heightMm);
+    if (d < bestDist) { bestDist = d; bestId = p.id; }
+  }
+  return bestDist < 1.5 ? bestId : null;
+}
 
 // ========================================
 // TYPES
@@ -384,6 +418,15 @@ function makeScalePivot(
 // MAIN COMPONENT
 // ========================================
 export default function ChainmailWeaveTuner() {
+  const [searchParams] = useSearchParams();
+
+  // Guided mode: launched from Atlas on an unchecked combination
+  const guidedId    = searchParams.get("id") ?? "";
+  const guidedWire  = parseFloat(searchParams.get("wire") ?? "");
+  const isGuided    = searchParams.get("guided") === "1"
+    && (ID_OPTIONS as readonly string[]).includes(guidedId)
+    && (WIRE_OPTIONS as readonly number[]).includes(guidedWire as typeof WIRE_OPTIONS[number]);
+
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const sceneHostRef = useRef<HTMLDivElement | null>(null);
 
@@ -394,15 +437,18 @@ export default function ChainmailWeaveTuner() {
   const ringGroupRef = useRef<THREE.Group | null>(null);
   const scaleGroupRef = useRef<THREE.Group | null>(null);
 
-  // Ring params
-  const [id, setId] = useState("5/16");
-  const [wire, setWire] = useState(1.2);
+  // Ring params — seed from URL when guided, fall back to defaults
+  const [id, setId] = useState(isGuided ? guidedId : "5/16");
+  const [wire, setWire] = useState(isGuided ? guidedWire : 1.2);
   const [centerSpacing, setCenterSpacing] = useState(6.7);
   const [angleIn, setAngleIn] = useState(25);
   const [angleOut, setAngleOut] = useState(-25);
 
+  // Guided workflow step: null = normal, 0 = ring step, 1 = scale step
+  const [guidanceStep, setGuidanceStep] = useState<0 | 1 | null>(isGuided ? 0 : null);
+
   // Scale params
-  const [scaleEnabled, setScaleEnabled] = useState(true);
+  const [scaleEnabled, setScaleEnabled] = useState(isGuided ? false : true);
   const [scaleBehindRings, setScaleBehindRings] = useState(false);
   const [scaleHoleId, setScaleHoleId] = useState(convertToMM("5/16"));
   const [scaleWidth, setScaleWidth] = useState(9.1);
@@ -477,6 +523,9 @@ export default function ChainmailWeaveTuner() {
   }, []);
 
   useEffect(() => {
+    // Don't restore saved prefs over a fresh guided combination from the Atlas
+    if (isGuided) return;
+
     try {
       const raw = localStorage.getItem(TUNER_SCALE_PREFS_KEY);
       if (!raw) return;
@@ -1157,6 +1206,48 @@ if (scaleEnabled) {
         }}
       >
         <div style={{ width: 36, height: 4, borderRadius: 2, background: "#334155", margin: "0 auto 4px" }} />
+
+        {/* ── Guided-mode coaching banner ── */}
+        {guidanceStep !== null && (
+          <div style={{ background: "#071c30", border: "1px solid #1d4ed8", borderRadius: 10, padding: "10px 12px", marginBottom: 4 }}>
+            {guidanceStep === 0 ? (
+              <>
+                <div style={{ color: "#7dd3fc", fontWeight: 700, fontSize: 12, marginBottom: 4 }}>
+                  Step 1 of 2 — Tune Ring Geometry
+                </div>
+                <div style={{ color: "#94a3b8", fontSize: 11, lineHeight: 1.5, marginBottom: 8 }}>
+                  Adjust center spacing and angles until the ring arrangement looks right for your weave. Scales are hidden so you can see the rings clearly.
+                </div>
+                <button
+                  onClick={() => {
+                    setGuidanceStep(1);
+                    setScaleEnabled(true);
+                    setTunerMode("calibrate_scales");
+                  }}
+                  style={{ padding: "6px 14px", borderRadius: 8, background: "#1d4ed8", color: "#fff", border: "none", cursor: "pointer", fontWeight: 700, fontSize: 12 }}
+                >
+                  Next: Add Scales →
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ color: "#86efac", fontWeight: 700, fontSize: 12, marginBottom: 4 }}>
+                  Step 2 of 2 — Calibrate Scales
+                </div>
+                <div style={{ color: "#94a3b8", fontSize: 11, lineHeight: 1.5, marginBottom: 8 }}>
+                  Pick the scale size closest to your physical scales, then fine-tune with the sliders. Switch to Tune Scales (✨) to adjust angles and depth. Save when it looks right.
+                </div>
+                <button
+                  onClick={() => setGuidanceStep(null)}
+                  style={{ padding: "5px 12px", borderRadius: 8, background: "#14532d", color: "#a7f3d0", border: "1px solid #166534", cursor: "pointer", fontWeight: 700, fontSize: 11 }}
+                >
+                  Dismiss
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         {/* ── Calibrate Rings ── */}
         {tunerMode === "calibrate_rings" && (
           <>
@@ -1189,8 +1280,54 @@ if (scaleEnabled) {
         {/* ── Calibrate Scales ── */}
         {tunerMode === "calibrate_scales" && (
           <>
+            {/* Scale size presets */}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <div style={{ color: "#cbd5e1", fontWeight: 700, fontSize: 12 }}>Scale size</div>
+                <div style={{ color: "#475569", fontSize: 11 }}>
+                  {nearestPreset(scaleWidth, scaleHeight)
+                    ? SCALE_PRESETS.find((p) => p.id === nearestPreset(scaleWidth, scaleHeight))!.label
+                    : "Custom"}
+                </div>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {SCALE_PRESETS.map((p) => {
+                  const active = nearestPreset(scaleWidth, scaleHeight) === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => {
+                        setScaleHoleId(p.holeDiaMm);
+                        setScaleWidth(p.widthMm);
+                        setScaleHeight(p.heightMm);
+                        setScaleDrop(p.dropMm);
+                      }}
+                      title={`Hole: ${p.holeDiaMm.toFixed(2)}mm  W: ${p.widthMm}mm  H: ${p.heightMm}mm  Drop: ${p.dropMm}mm`}
+                      style={{
+                        padding: "4px 9px",
+                        borderRadius: 8,
+                        border: `1px solid ${active ? "#3b82f6" : "#334155"}`,
+                        background: active ? "#1e40af" : "#0f172a",
+                        color: active ? "#fff" : "#94a3b8",
+                        cursor: "pointer",
+                        fontSize: 11,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {p.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ color: "#475569", fontSize: 10, marginTop: 4 }}>
+                Presets based on TRL/commercial dragon scales — fine-tune with sliders below.
+              </div>
+            </div>
+
+            <div style={{ height: 1, background: "#1e293b", margin: "2px 0" }} />
+
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-              <div style={{ fontSize: 13 }}>Scale dimensions</div>
+              <div style={{ fontSize: 13 }}>Fine-tune dimensions</div>
               <Link to="/_calibration?from=tuner" style={{ background: "#1f2937", color: "#a7f3d0", padding: "6px 10px", borderRadius: 10, border: "1px solid #334155", textDecoration: "none", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
                 🎛️ Calibrate
               </Link>

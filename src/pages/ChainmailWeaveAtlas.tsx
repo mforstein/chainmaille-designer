@@ -2,6 +2,7 @@
 // src/pages/ChainmailWeaveAtlas.tsx
 // ==============================
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { DraggableCompassNav, DraggablePill } from "../App";
 import { IconHamburger } from "../components/icons/ToolIcons";
 
@@ -22,6 +23,7 @@ const ID_ORDER = [
 const WIRE_ORDER = [0.9, 1.2, 1.6, 2.0, 2.5, 3.0];
 
 export default function ChainmailWeaveAtlas() {
+  const navigate = useNavigate();
   const [matrix, setMatrix] = useState<any[]>([]);
   const [activeWeaveId, setActiveWeaveId] = useState<string | null>(null);
   const [showCompass, setShowCompass] = useState(false);
@@ -45,18 +47,23 @@ export default function ChainmailWeaveAtlas() {
   const getEntry = (id: string, wire: number) =>
     matrix.find((e) => e.id === `${id}_${wire}mm`);
 
-  // ✅ Handle selecting a weave to apply it to the Designer
   const handleSelectWeave = (weave: any) => {
     try {
-      console.log("🎯 Applying weave to Designer:", weave);
       setActiveWeaveId(weave.id);
-
-      // Save and trigger update event
       localStorage.setItem("chainmailSelected", JSON.stringify(weave));
       window.dispatchEvent(new Event("weave-updated"));
     } catch (err) {
       console.error("❌ Failed to apply weave:", err);
     }
+  };
+
+  const handleTuneUnchecked = (ringId: string, wireGauge: number) => {
+    const params = new URLSearchParams({
+      id: ringId,
+      wire: String(wireGauge),
+      guided: "1",
+    });
+    navigate(`/tuner?${params.toString()}`);
   };
 
   return (
@@ -125,13 +132,26 @@ export default function ChainmailWeaveAtlas() {
                   return (
                     <td
                       key={id}
+                      onClick={() => handleTuneUnchecked(id, wire)}
+                      title={`${id}" / ${wire}mm — click to tune this combination`}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "#111d2e";
+                        e.currentTarget.style.color = "#4a7a9b";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "#0f1520";
+                        e.currentTarget.style.color = "#2d4a5f";
+                      }}
                       style={{
                         border: "1px solid #1f2a36",
-                        background: "#151d27",
-                        color: "#3f556a",
+                        background: "#0f1520",
+                        color: "#2d4a5f",
+                        cursor: "pointer",
+                        fontSize: 16,
+                        transition: "background 0.15s, color 0.15s",
                       }}
                     >
-                      ☐
+                      +
                     </td>
                   );
 
@@ -168,10 +188,15 @@ Angles: ${entry.angleIn}/${entry.angleOut}°`}
         </tbody>
       </table>
 
+      <div style={{ marginTop: 16, color: "#64748b", fontSize: 12, display: "flex", gap: 20, flexWrap: "wrap" }}>
+        <span>✅ Valid combination</span>
+        <span>❌ No solution</span>
+        <span style={{ color: "#4a7a9b" }}>+ Untested — click to tune</span>
+      </div>
+
       {matrix.length === 0 && (
-        <div style={{ marginTop: 32, color: "#8fa1b3" }}>
-          ⚠️ No data found — open the <strong>Weave Tuner</strong> and save a
-          few combinations first.
+        <div style={{ marginTop: 24, color: "#8fa1b3" }}>
+          ⚠️ No saved data yet — click any <span style={{ color: "#4a7a9b", fontWeight: 700 }}>+</span> cell to tune a combination in the Weave Tuner, or open the Tuner and save entries manually.
         </div>
       )}
 
