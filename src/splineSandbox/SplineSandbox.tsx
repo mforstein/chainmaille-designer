@@ -261,17 +261,19 @@ export default function SplineSandbox(props: {
     pointerId: number | null;
   }>({ active: false, startX: 0, startY: 0, baseX: 0, baseY: 0, pointerId: null });
 
-  // Ref for the drag handle element — native listeners bypass React's capture-phase stopPropagation
+  // Ref for the drag handle element
   const dragHandleRef = useRef<HTMLDivElement>(null);
 
+  // Window-level capture listeners fire before React's root listener, so they are never
+  // blocked by the panel's onPointerDownCapture → stopPropagation chain.
   useEffect(() => {
-    const el = dragHandleRef.current;
-    if (!el) return;
+    const handleEl = dragHandleRef.current;
+    if (!handleEl) return;
 
-    const onDown = (e: PointerEvent) => {
-      e.stopPropagation();
-      e.preventDefault();
-      el.setPointerCapture(e.pointerId);
+    const onWinDown = (e: PointerEvent) => {
+      if (!handleEl.contains(e.target as Node)) return;
+      // The drag handle is inside [data-spline-ui="panel"] so the spline-point
+      // window listener will ignore this click via its data-attribute check.
       dragRef.current = {
         active: true,
         startX: e.clientX,
@@ -280,11 +282,11 @@ export default function SplineSandbox(props: {
         baseY: panelPosRef.current.y,
         pointerId: e.pointerId,
       };
+      try { handleEl.setPointerCapture(e.pointerId); } catch {}
     };
 
-    const onMove = (e: PointerEvent) => {
+    const onWinMove = (e: PointerEvent) => {
       if (!dragRef.current.active) return;
-      e.stopPropagation();
       const dx = e.clientX - dragRef.current.startX;
       const dy = e.clientY - dragRef.current.startY;
       setPanelPos({
@@ -293,22 +295,24 @@ export default function SplineSandbox(props: {
       });
     };
 
-    const onUp = (e: PointerEvent) => {
-      e.stopPropagation();
+    const onWinUp = (_e: PointerEvent) => {
+      if (!dragRef.current.active) return;
       dragRef.current.active = false;
-      try { el.releasePointerCapture(e.pointerId); } catch {}
+      if (dragRef.current.pointerId != null) {
+        try { handleEl.releasePointerCapture(dragRef.current.pointerId); } catch {}
+      }
       dragRef.current.pointerId = null;
     };
 
-    el.addEventListener("pointerdown", onDown);
-    el.addEventListener("pointermove", onMove);
-    el.addEventListener("pointerup", onUp);
-    el.addEventListener("pointercancel", onUp);
+    window.addEventListener("pointerdown", onWinDown, { capture: true });
+    window.addEventListener("pointermove", onWinMove, { capture: true });
+    window.addEventListener("pointerup", onWinUp, { capture: true });
+    window.addEventListener("pointercancel", onWinUp, { capture: true });
     return () => {
-      el.removeEventListener("pointerdown", onDown);
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerup", onUp);
-      el.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("pointerdown", onWinDown, { capture: true });
+      window.removeEventListener("pointermove", onWinMove, { capture: true });
+      window.removeEventListener("pointerup", onWinUp, { capture: true });
+      window.removeEventListener("pointercancel", onWinUp, { capture: true });
     };
   }, []); // intentionally empty — reads mutable refs for current values
 

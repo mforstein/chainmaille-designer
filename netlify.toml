@@ -6,6 +6,9 @@
   publish = "dist"
   functions = "netlify/functions"
 
+[functions]
+  timeout = 26
+
 [build.environment]
   NODE_VERSION = "20"
   NPM_FLAGS = "--legacy-peer-deps"
