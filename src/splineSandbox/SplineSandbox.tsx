@@ -230,13 +230,15 @@ export default function SplineSandbox(props: {
 
   const posKey = storageKey ? `${storageKey}::panelPos` : undefined;
 
+  const DEFAULT_POS = { x: 60, y: 100 };
+
   const [panelPos, setPanelPos] = useState<{ x: number; y: number }>(() => {
-    if (!posKey) return { x: 16, y: 16 };
+    if (!posKey) return DEFAULT_POS;
     try {
       const raw = localStorage.getItem(posKey);
       if (raw) return JSON.parse(raw);
     } catch {}
-    return { x: 16, y: 16 };
+    return DEFAULT_POS;
   });
 
   useEffect(() => {
@@ -246,6 +248,10 @@ export default function SplineSandbox(props: {
     } catch {}
   }, [panelPos, posKey]);
 
+  // Keep a ref so native drag handlers always see current panelPos without stale closures
+  const panelPosRef = useRef(panelPos);
+  useEffect(() => { panelPosRef.current = panelPos; }, [panelPos]);
+
   const dragRef = useRef<{
     active: boolean;
     startX: number;
@@ -254,6 +260,57 @@ export default function SplineSandbox(props: {
     baseY: number;
     pointerId: number | null;
   }>({ active: false, startX: 0, startY: 0, baseX: 0, baseY: 0, pointerId: null });
+
+  // Ref for the drag handle element — native listeners bypass React's capture-phase stopPropagation
+  const dragHandleRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = dragHandleRef.current;
+    if (!el) return;
+
+    const onDown = (e: PointerEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      el.setPointerCapture(e.pointerId);
+      dragRef.current = {
+        active: true,
+        startX: e.clientX,
+        startY: e.clientY,
+        baseX: panelPosRef.current.x,
+        baseY: panelPosRef.current.y,
+        pointerId: e.pointerId,
+      };
+    };
+
+    const onMove = (e: PointerEvent) => {
+      if (!dragRef.current.active) return;
+      e.stopPropagation();
+      const dx = e.clientX - dragRef.current.startX;
+      const dy = e.clientY - dragRef.current.startY;
+      setPanelPos({
+        x: clamp(dragRef.current.baseX + dx, 0, window.innerWidth - 60),
+        y: clamp(dragRef.current.baseY + dy, 0, window.innerHeight - 60),
+      });
+    };
+
+    const onUp = (e: PointerEvent) => {
+      e.stopPropagation();
+      dragRef.current.active = false;
+      try { el.releasePointerCapture(e.pointerId); } catch {}
+      dragRef.current.pointerId = null;
+    };
+
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
+    return () => {
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+    };
+  }, []); // intentionally empty — reads mutable refs for current values
 
   // ============================================================
   // UI styles (COMPACT)
@@ -814,49 +871,15 @@ export default function SplineSandbox(props: {
             style={{ display: "flex", alignItems: "center", gap: GAP }}
           >
             <div
+              ref={dragHandleRef}
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: GAP,
                 flex: 1,
-                cursor: dragRef.current.active ? "grabbing" : "grab",
+                cursor: "grab",
                 userSelect: "none",
-              }}
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                e.preventDefault();
-                (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
-                dragRef.current = {
-                  active: true,
-                  startX: e.clientX,
-                  startY: e.clientY,
-                  baseX: panelPos.x,
-                  baseY: panelPos.y,
-                  pointerId: e.pointerId,
-                };
-              }}
-              onPointerMove={(e) => {
-                if (!dragRef.current.active) return;
-                e.stopPropagation();
-                const dx = e.clientX - dragRef.current.startX;
-                const dy = e.clientY - dragRef.current.startY;
-                const maxX = window.innerWidth - 60;
-                const maxY = window.innerHeight - 60;
-                setPanelPos({
-                  x: clamp(dragRef.current.baseX + dx, 0, maxX),
-                  y: clamp(dragRef.current.baseY + dy, 0, maxY),
-                });
-              }}
-              onPointerUp={(e) => {
-                e.stopPropagation();
-                dragRef.current.active = false;
-                try { (e.currentTarget as HTMLDivElement).releasePointerCapture(dragRef.current.pointerId!); } catch {}
-                dragRef.current.pointerId = null;
-              }}
-              onPointerCancel={(e) => {
-                e.stopPropagation();
-                dragRef.current.active = false;
-                dragRef.current.pointerId = null;
+                touchAction: "none",
               }}
             >
               <span style={{ fontWeight: 900, fontSize: 15 }}>🧵</span>

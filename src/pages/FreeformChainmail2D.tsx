@@ -5575,42 +5575,22 @@ const scales3D = useMemo(() => {
         {/* - It is NOT duplicated in the right control panel. */}
         {/* ==================================================== */}
         {showSplineTool && (
-          <DraggablePill
-            id="freeform-spline"
-            defaultPosition={{ x: Math.max(8, Math.min(160, window.innerWidth - 320)), y: 120 }}
-          >
-            <div
-              style={{
-                display: "inline-block",
-                width: "max-content",
-                maxWidth: "calc(100vw - 24px)",
-                background: "rgba(17,24,39,0.97)",
-                border: "1px solid rgba(0,0,0,0.6)",
-                borderRadius: 14,
-                boxShadow: "0 12px 40px rgba(0,0,0,.45)",
-                overflow: "hidden",
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onTouchStart={(e) => e.stopPropagation()}
-            >
-              <SplineSandbox
-                key={splineResetKey}
-                embedded
-                showPanel={true}
-                mode="freeform"
-                currentColorHex={normalizeColor6(activeColor)}
-                onRequestClose={() => setShowSplineTool(false)}
-                onApplyClosedSpline={({ polygon }) => {
-                  applyClosedSplineAsRings(
-                    polygon,
-                    normalizeColor6(activeColor),
-                  );
-                  setSplineResetKey((k) => k + 1);
-                }}
-              />
-            </div>
-          </DraggablePill>
+          <SplineSandbox
+            key={splineResetKey}
+            embedded
+            showPanel={true}
+            mode="freeform"
+            storageKey="spline-freeform"
+            currentColorHex={normalizeColor6(activeColor)}
+            onRequestClose={() => setShowSplineTool(false)}
+            onApplyClosedSpline={({ polygon }) => {
+              applyClosedSplineAsRings(
+                polygon,
+                normalizeColor6(activeColor),
+              );
+              setSplineResetKey((k) => k + 1);
+            }}
+          />
         )}
 
         {/* RIGHT CONTROL PANEL */}
