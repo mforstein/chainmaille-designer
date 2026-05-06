@@ -792,7 +792,7 @@ export default function SplineSandbox(props: {
         position: "fixed",
         inset: 0,
         zIndex: ROOT_Z,
-        pointerEvents: "none", // ✅ overlay no longer blocks UI
+        pointerEvents: "none",
         touchAction: "none",
         background: embedded
           ? "transparent"
@@ -809,28 +809,22 @@ export default function SplineSandbox(props: {
           onPointerUpCapture={(e) => e.stopPropagation()}
           onPointerCancelCapture={(e) => e.stopPropagation()}
         >
-          {/* Header row */}
+          {/* Header: drag handle + stats + close */}
           <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: GAP,
-            }}
+            style={{ display: "flex", alignItems: "center", gap: GAP }}
           >
-            {/* Drag handle */}
             <div
               style={{
                 display: "flex",
                 alignItems: "center",
                 gap: GAP,
+                flex: 1,
                 cursor: dragRef.current.active ? "grabbing" : "grab",
                 userSelect: "none",
-                minWidth: 0,
               }}
               onPointerDown={(e) => {
                 e.stopPropagation();
-                e.preventDefault(); // ✅ prevents other gesture systems from hijacking
+                e.preventDefault();
                 (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
                 dragRef.current = {
                   active: true,
@@ -844,31 +838,19 @@ export default function SplineSandbox(props: {
               onPointerMove={(e) => {
                 if (!dragRef.current.active) return;
                 e.stopPropagation();
-
                 const dx = e.clientX - dragRef.current.startX;
                 const dy = e.clientY - dragRef.current.startY;
-
-                const nextX = dragRef.current.baseX + dx;
-                const nextY = dragRef.current.baseY + dy;
-
-                const maxX = (typeof window !== "undefined" ? window.innerWidth : 1200) - 60;
-                const maxY = (typeof window !== "undefined" ? window.innerHeight : 900) - 60;
-
+                const maxX = window.innerWidth - 60;
+                const maxY = window.innerHeight - 60;
                 setPanelPos({
-                  x: clamp(nextX, 0, maxX),
-                  y: clamp(nextY, 0, maxY),
+                  x: clamp(dragRef.current.baseX + dx, 0, maxX),
+                  y: clamp(dragRef.current.baseY + dy, 0, maxY),
                 });
               }}
               onPointerUp={(e) => {
                 e.stopPropagation();
                 dragRef.current.active = false;
-                try {
-                  if (dragRef.current.pointerId != null) {
-                    (e.currentTarget as HTMLDivElement).releasePointerCapture(
-                      dragRef.current.pointerId,
-                    );
-                  }
-                } catch {}
+                try { (e.currentTarget as HTMLDivElement).releasePointerCapture(dragRef.current.pointerId!); } catch {}
                 dragRef.current.pointerId = null;
               }}
               onPointerCancel={(e) => {
@@ -877,171 +859,75 @@ export default function SplineSandbox(props: {
                 dragRef.current.pointerId = null;
               }}
             >
-              <div style={{ fontWeight: 900, fontSize: 16, whiteSpace: "nowrap" }}>
-                🧵 {modeIcon(mode)}
-              </div>
+              <span style={{ fontWeight: 900, fontSize: 15 }}>🧵</span>
+              <span style={{ fontSize: 12, color: "#9ca3af" }}>
+                {activePoints.length} pts{activeSpline?.closed ? " 🔒" : ""}
+              </span>
+              {autoCloseReady && !activeSpline?.closed && (
+                <span style={{ fontSize: 11, color: "#22c55e" }}>snap</span>
+              )}
             </div>
 
-            {/* Right side stats + close */}
-            <div style={{ display: "flex", alignItems: "center", gap: GAP }}>
-              <div style={{ fontSize: 12, color: "#9ca3af", textAlign: "right", minWidth: 0 }}>
-                🔢 {activePoints.length}
-                {activeSpline?.closed ? " 🔒" : ""}
-                <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)" }}>{pivotEmoji}</div>
-              </div>
+            <div
+              style={{
+                width: 14,
+                height: 14,
+                borderRadius: 4,
+                background: currentColorHex,
+                border: "1px solid rgba(0,0,0,.7)",
+                flexShrink: 0,
+              }}
+            />
 
-              <button
-                type="button"
-                title="✕"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRequestClose?.();
-                }}
-                onPointerDown={(e) => e.stopPropagation()}
-                style={{ ...btn, width: BTN, height: BTN, borderRadius: 12 }}
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-
-          <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "10px 0" }} />
-
-          <select
-            value={state.activeSplineId}
-            onChange={(e) => setActiveSplineId(e.target.value)}
-            style={selectStyle}
-            title="🎯"
-          >
-            {state.splines.map((sp) => (
-              <option key={sp.id} value={sp.id}>
-                {sp.name} {sp.points.length}
-                {sp.closed ? "🔒" : ""}
-              </option>
-            ))}
-          </select>
-
-          <div style={{ display: "flex", gap: GAP, marginTop: 8, width: GRID_W }}>
-            <button style={btnPrimary} onClick={addSpline} title="➕">
-              ➕
-            </button>
             <button
-              style={btn}
-              onClick={deleteActiveSpline}
-              disabled={state.splines.length <= 1}
-              title="🗑️"
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onRequestClose?.(); }}
+              onPointerDown={(e) => e.stopPropagation()}
+              style={{ ...btn, width: 28, height: 28, borderRadius: 8, fontSize: 13 }}
             >
-              🗑️
+              ✕
             </button>
           </div>
 
-          <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "10px 0" }} />
+          <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "8px 0" }} />
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: `${BTN}px ${BTN}px`,
-              gap: GAP,
-              width: GRID_W,
-            }}
-          >
+          {/* Action row */}
+          <div style={{ display: "flex", gap: GAP }}>
             <button
-              style={btnPrimary}
+              style={activePoints.length >= 3 && !activeSpline?.closed ? btnPrimary : { ...btn, opacity: 0.4, cursor: "not-allowed" }}
               onClick={closeActive}
               disabled={activePoints.length < 3 || !!activeSpline?.closed}
-              title="🔒"
+              title="Close shape"
             >
               🔒
             </button>
-            <button style={btn} onClick={openActive} disabled={!activeSpline?.closed} title="🔓">
-              🔓
-            </button>
 
-            <button style={btn} onClick={undo} disabled={activeUndoCount === 0} title="↩️">
+            <button
+              style={activeUndoCount > 0 ? btn : { ...btn, opacity: 0.4, cursor: "not-allowed" }}
+              onClick={undo}
+              disabled={activeUndoCount === 0}
+              title="Undo"
+            >
               ↩️
             </button>
-            <button style={btn} onClick={clear} disabled={activePoints.length === 0} title="🧼">
+
+            <button
+              style={activePoints.length > 0 ? btn : { ...btn, opacity: 0.4, cursor: "not-allowed" }}
+              onClick={clear}
+              disabled={activePoints.length === 0}
+              title="Clear"
+            >
               🧼
             </button>
-          </div>
 
-          <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "10px 0" }} />
-
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: `${BTN}px ${BTN}px`,
-              gap: GAP,
-              width: GRID_W,
-            }}
-          >
-            <button style={btn} onClick={() => mirrorCopyAndMaybeClose("vertical")} title="🪞↔️">
-              🪞↔️
-            </button>
-            <button style={btn} onClick={() => mirrorCopyAndMaybeClose("horizontal")} title="🪞↕️">
-              🪞↕️
-            </button>
             <button
-              style={btn}
-              onClick={() => mirrorCopyAndMaybeClose("vertical", true)}
-              disabled={activePoints.length < 3}
-              title="🪞↔️🔒"
-            >
-              🪞↔️🔒
-            </button>
-            <button
-              style={btn}
-              onClick={() => mirrorCopyAndMaybeClose("horizontal", true)}
-              disabled={activePoints.length < 3}
-              title="🪞↕️🔒"
-            >
-              🪞↕️🔒
-            </button>
-          </div>
-
-          <div
-            style={{
-              marginTop: 10,
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: GAP,
-              width: GRID_W,
-            }}
-          >
-            <button style={btn} onClick={closeActive} disabled={!autoCloseReady} title="🤝🔒">
-              🤝🔒
-            </button>
-            <button style={btn} onClick={exportJson} title="📋">
-              📋
-            </button>
-            <button style={btn} onClick={importJson} title="📥">
-              📥
-            </button>
-            <button
-              style={canApply ? btnPrimary : { ...btnPrimary, opacity: 0.45, cursor: "not-allowed" }}
+              style={canApply ? btnPrimary : { ...btnPrimary, opacity: 0.35, cursor: "not-allowed" }}
               disabled={!canApply}
               onClick={doApply}
-              title={canApply ? "🪣➡️" : "🔒➕➕➕"}
+              title={canApply ? "Fill with rings" : "Close the shape first (need 3+ pts)"}
             >
               🪣
             </button>
-          </div>
-
-          {/* Color swatch */}
-          <div
-            style={{ marginTop: 10, display: "flex", gap: GAP, alignItems: "center", width: GRID_W }}
-          >
-            <div
-              style={{
-                width: 18,
-                height: 18,
-                borderRadius: 6,
-                background: currentColorHex,
-                border: "1px solid rgba(0,0,0,.8)",
-              }}
-              title="🎨"
-            />
-            <div style={{ flex: 1 }} />
           </div>
         </div>
       )}
