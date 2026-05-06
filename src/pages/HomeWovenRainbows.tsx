@@ -222,15 +222,37 @@ const HomeWovenRainbows: React.FC = () => {
               boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
             }}
           >
-            <h2 style={{ fontSize: "1.6rem", marginBottom: 10 }}>
-              Latest Release Notes
-            </h2>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 12 }}>
+              <h2 style={{ fontSize: "1.4rem", margin: 0 }}>Latest Release Notes</h2>
+              {isErin && (
+                <button
+                  onClick={() => navigate("/blog-editor")}
+                  style={{ background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 13, fontWeight: 700 }}
+                >
+                  + Post Update
+                </button>
+              )}
+            </div>
             <p style={{ whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
               {latestPost.content}
             </p>
-            <div style={{ marginTop: 10, color: "#9ca3af", fontSize: 13 }}>
+            <div style={{ marginTop: 10, color: "#9ca3af", fontSize: 13, marginBottom: 16 }}>
               — {latestPost.author},{" "}
               {new Date(latestPost.timestamp).toLocaleDateString()}
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button
+                onClick={() => navigate("/release-notes")}
+                style={{ background: "#0f172a", color: "#94a3b8", border: "1px solid #334155", borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+              >
+                View All Release Notes
+              </button>
+              <button
+                onClick={() => navigate("/manual")}
+                style={{ background: "#0f172a", color: "#60a5fa", border: "1px solid #334155", borderRadius: 8, padding: "7px 14px", cursor: "pointer", fontSize: 13, fontWeight: 600 }}
+              >
+                📖 User Manual
+              </button>
             </div>
           </div>
         )}

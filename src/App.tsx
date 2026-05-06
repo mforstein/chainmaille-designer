@@ -108,6 +108,8 @@ import EulaPage from "./pages/EulaPage";
 import CommercialLicensePage from "./pages/CommercialLicensePage";
 import FreeformChainmail2D from "./pages/FreeformChainmail2D";
 import ErinPattern2D from "./pages/ErinPattern2D";
+import UserManual from "./pages/UserManual";
+import ReleaseNotes from "./pages/ReleaseNotes";
 import BOMButtons from "./components/BOMButtons";
 import { IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo } from "./components/icons/ToolIcons";
 import { ToolBtn } from "./components/ui/ToolBtn";
@@ -2409,6 +2411,8 @@ function App() {
       <Route path="/chart" element={<RingSizeChart />} />
       <Route path="/tuner" element={<ChainmailWeaveTuner />} />
       <Route path="/atlas" element={<ChainmailWeaveAtlas />} />
+      <Route path="/manual" element={<UserManual />} />
+      <Route path="/release-notes" element={<ReleaseNotes />} />
 <Route path="/_calibration" element={<ColorCalibrationTest />} />
       {/* Fallback */}
       <Route path="*" element={<Navigate to="/wovenrainbowsbyerin" replace />} />
