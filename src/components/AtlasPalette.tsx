@@ -33,7 +33,8 @@ export default function AtlasPalette({
         border: "1px solid rgba(0,0,0,0.6)",
         borderRadius: 12,
         padding: 10,
-        width: 420,
+        width: "100%",
+        maxWidth: 420,
         maxHeight: 420,
         overflow: "auto",
       }}

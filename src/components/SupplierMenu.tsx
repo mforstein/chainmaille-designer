@@ -132,7 +132,8 @@ export default function SupplierMenu({ onApplyPalette }: SupplierMenuProps) {
   return (
     <div
       style={{
-        width: 360,
+        width: "100%",
+        maxWidth: 360,
         background: "rgba(15,23,42,0.98)",
         borderRadius: 14,
         border: "1px solid rgba(0,0,0,0.6)",

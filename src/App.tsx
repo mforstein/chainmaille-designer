@@ -1685,33 +1685,42 @@ onChange={(e) => {
           onClick={(e) => e.stopPropagation()}
           style={{
             position: "fixed",
-            right: 18,
-            top: 74,
+            left: 90,
+            right: 8,
+            top: 60,
+            bottom: 8,
             zIndex: 70,
             background: "rgba(10,15,20,.98)",
             border: "1px solid rgba(0,0,0,.6)",
             borderRadius: 14,
             padding: 12,
             boxShadow: "0 12px 40px rgba(0,0,0,.45)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            overflowY: "auto",
+            maxWidth: 780,
           }}
         >
+          {/* header row with close button */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+            <span style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700, letterSpacing: 1 }}>SUPPLIER & ATLAS</span>
+            <button
+              onClick={() => setShowMagnet(false)}
+              style={{ background: "none", border: "none", color: "#64748b", fontSize: 18, cursor: "pointer", lineHeight: 1, padding: "0 4px" }}
+            >×</button>
+          </div>
+
+          {/* Supplier section */}
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "320px 440px",
-              gap: 10,
-              alignItems: "stretch",
+              background: "rgba(17,24,39,.96)",
+              borderRadius: 10,
+              padding: 10,
+              border: "1px solid #1f2937",
+              flexShrink: 0,
             }}
           >
-            {/* Supplier Menu */}
-            <div
-              style={{
-                background: "rgba(17,24,39,.96)",
-                borderRadius: 10,
-                padding: 10,
-                border: "1px solid #1f2937",
-              }}
-            >
               <SupplierMenu
                 onApplyPalette={(sel: any) => {
                   const isDefault =
@@ -1819,17 +1828,17 @@ onChange={(e) => {
               />
             </div>
 
-            {/* Atlas Palette */}
-            <div
-              style={{
-                background: "rgba(17,24,39,.96)",
-                borderRadius: 10,
-                padding: 10,
-                border: "1px solid #1f2937",
-              }}
-            >
-              <AtlasPalette onApply={(e) => applyAtlas(e)} />
-            </div>
+          {/* Atlas Palette section */}
+          <div
+            style={{
+              background: "rgba(17,24,39,.96)",
+              borderRadius: 10,
+              padding: 10,
+              border: "1px solid #1f2937",
+              flexShrink: 0,
+            }}
+          >
+            <AtlasPalette onApply={(e) => applyAtlas(e)} />
           </div>
         </div>
       )}
