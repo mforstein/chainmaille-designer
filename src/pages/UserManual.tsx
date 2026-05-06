@@ -566,12 +566,17 @@ const AtlasMock = () => (
       <div style={{ fontSize: 11, fontWeight: 800, color: "#f1f5f9", marginBottom: 10 }}>🌐 Weave Atlas</div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7 }}>
         {[
-          { name: "Box Chain", ar: "4.5", wire: "1.2", id: "5/16" },
-          { name: "Byzantine", ar: "3.8", wire: "1.6", id: "5/16" },
-          { name: "Full Persian", ar: "4.2", wire: "1.2", id: "1/4" },
-          { name: "Scale Maille", ar: "3.5", wire: "1.2", id: "5/16" },
+          { name: "Box Chain",    ar: "4.5", wire: "1.2", id: "5/16", wip: true },
+          { name: "Byzantine",    ar: "3.8", wire: "1.6", id: "5/16", wip: true },
+          { name: "Full Persian", ar: "4.2", wire: "1.2", id: "1/4",  wip: true },
+          { name: "Scale Maille", ar: "3.5", wire: "1.2", id: "5/16", wip: true },
         ].map(w => (
-          <div key={w.name} style={{ background: "#1f2937", borderRadius: 7, padding: 8, border: "1px solid #1e293b" }}>
+          <div key={w.name} style={{ background: "#1f2937", borderRadius: 7, padding: 8, border: "1px solid #1e293b", position: "relative", opacity: w.wip ? 0.7 : 1 }}>
+            {w.wip && (
+              <div style={{ position: "absolute", top: 6, right: 6, background: "#78350f", color: "#fcd34d", fontSize: 7, fontWeight: 800, padding: "2px 5px", borderRadius: 4, letterSpacing: "0.04em" }}>
+                COMING SOON
+              </div>
+            )}
             <div style={{ height: 36, background: "#111827", borderRadius: 5, marginBottom: 6, display: "flex", alignItems: "center", justifyContent: "center" }}>
               <svg width={76} height={32} viewBox="0 0 76 32">
                 {[9,26,43,60].map((x,i) => (
@@ -581,7 +586,9 @@ const AtlasMock = () => (
             </div>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#f1f5f9", marginBottom: 3 }}>{w.name}</div>
             <div style={{ fontSize: 8, color: "#64748b", marginBottom: 5 }}>AR {w.ar} · {w.wire}mm · {w.id}"</div>
-            <div style={{ background: "#1d4ed8", color: "#fff", borderRadius: 5, padding: "3px 0", fontSize: 8, fontWeight: 700, textAlign: "center" }}>Apply to Designer</div>
+            <div style={{ background: w.wip ? "#374151" : "#1d4ed8", color: w.wip ? "#6b7280" : "#fff", borderRadius: 5, padding: "3px 0", fontSize: 8, fontWeight: 700, textAlign: "center" }}>
+              {w.wip ? "In Development" : "Apply to Designer"}
+            </div>
           </div>
         ))}
       </div>
@@ -1072,11 +1079,25 @@ export default function UserManual() {
             A curated catalog of preset ring configurations for well-known chainmaille weaves. Browse freely — applying a preset to the Designer requires Maker tier.
           </p>
           <AtlasMock />
+
+          <div style={{ background: "#1c1008", border: "1px solid #92400e", borderRadius: 10, padding: "12px 14px", margin: "14px 0" }}>
+            <div style={{ color: "#fbbf24", fontWeight: 700, fontSize: 12, marginBottom: 6 }}>🚧 Weave canvas support — current status</div>
+            <p style={{ color: "#d97706", fontSize: 12, lineHeight: 1.7, margin: 0 }}>
+              The current canvas engine renders <strong style={{ color: "#fcd34d" }}>4-in-1 European</strong> ring placement only. All other weave architectures — Box Chain, Byzantine, Full Persian, Scale Maille grid, and Japanese variants — are <strong style={{ color: "#fcd34d" }}>work in progress</strong> and not yet released.
+            </p>
+            <p style={{ color: "#92400e", fontSize: 11, marginTop: 8, marginBottom: 0, lineHeight: 1.6 }}>
+              Atlas presets for those weaves configure ring <em>geometry</em> (AR, wire, center spacing) correctly today, but the canvas will still render a 4-in-1 European grid. Each weave pattern requires its own placement algorithm, unit-cell definition, and connectivity graph. These are actively being developed.
+            </p>
+          </div>
+
           <Feat title="Browse presets">
-            Scroll through cards. Each card shows the weave name, a live ring preview colored by AR, and the key parameters: Aspect Ratio, wire diameter, and recommended inner diameter.
+            Scroll through cards. Each card shows the weave name, a live ring preview colored by AR, and the key parameters: Aspect Ratio, wire diameter, and recommended inner diameter. Cards marked <strong>Coming Soon</strong> represent weaves whose geometry is catalogued but whose canvas layout engine is not yet released.
           </Feat>
           <Feat title="Apply to Designer">
-            Tap <em>Apply to Designer</em> on any card to push the preset's inner diameter, wire diameter, center spacing, and tilt angles directly into the 3D Designer. The ring grid reconfigures immediately. Existing paint is preserved.
+            Tap <em>Apply to Designer</em> on any released card to push the preset's inner diameter, wire diameter, center spacing, and tilt angles directly into the 3D Designer. The ring grid reconfigures immediately. Existing paint is preserved.
+          </Feat>
+          <Feat title="Tune from Atlas">
+            Clicking any <strong>unchecked (+)</strong> cell in the Atlas table opens the Weave Tuner pre-loaded with that ring size combination and a guided setup flow — tune the rings first, then enable and calibrate scales.
           </Feat>
           <Note>The Atlas applies geometry only — it does not change colors or layout. Apply a preset, then paint freely on top.</Note>
         </Sec>
