@@ -3925,8 +3925,9 @@ const derived = useMemo(() => {
   const handleFileJSONLoad = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (!file) return;
+      if (!file) { e.target.value = ""; return; }
 
+      const inputEl = e.target;
       const reader = new FileReader();
       reader.onload = (ev) => {
         try {
@@ -3962,8 +3963,11 @@ const derived = useMemo(() => {
         } catch (err) {
           alert("Could not parse JSON file.");
           console.error(err);
+        } finally {
+          inputEl.value = "";
         }
       };
+      reader.onerror = () => { inputEl.value = ""; };
 
       reader.readAsText(file);
     },
@@ -5195,7 +5199,10 @@ const scales3D = useMemo(() => {
                   reader.readAsDataURL(file);
                 }
               }}
-              onClick={() => (document.getElementById("freeform-overlay-file-input") as HTMLInputElement)?.click()}
+              onClick={() => {
+                const inp = document.getElementById("freeform-overlay-file-input") as HTMLInputElement | null;
+                if (inp) { inp.value = ""; inp.click(); }
+              }}
               style={{ border: "2px dashed #374151", borderRadius: 10, padding: 12, textAlign: "center", cursor: "pointer", userSelect: "none" }}
               title="Click or drop an image"
             >
@@ -5204,15 +5211,22 @@ const scales3D = useMemo(() => {
                 type="file"
                 accept="image/*"
                 style={{ display: "none" }}
+                onClick={(e) => {
+                  const inp = e.target as HTMLInputElement;
+                  inp.value = "";
+                  const onCancel = () => { inp.value = ""; document.documentElement.focus(); inp.removeEventListener("cancel", onCancel); };
+                  inp.addEventListener("cancel", onCancel);
+                }}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
-                  if (!file) return;
+                  if (!file) { e.target.value = ""; return; }
                   const reader = new FileReader();
                   reader.onload = (ev) => {
                     const dataUrl = String(ev.target?.result || "");
                     setOverlay((p) => ({ ...(p ?? { rotation: 0, repeat: "none", patternScale: 100 } as OverlayState), dataUrl, scale: p?.scale ?? 1, opacity: p?.opacity ?? 0.8, offsetX: 0, offsetY: 0 }));
                   };
                   reader.readAsDataURL(file);
+                  e.target.value = "";
                 }}
               />
               <div style={{ fontSize: 12, color: "#9ca3af" }}>
@@ -5772,8 +5786,14 @@ const scales3D = useMemo(() => {
                   <input
                     type="file"
                     accept="application/json,.json"
-                    onChange={handleFileJSONLoad}
                     style={{ display: "none" }}
+                    onClick={(e) => {
+                      const inp = e.target as HTMLInputElement;
+                      inp.value = "";
+                      const onCancel = () => { inp.value = ""; document.documentElement.focus(); inp.removeEventListener("cancel", onCancel); };
+                      inp.addEventListener("cancel", onCancel);
+                    }}
+                    onChange={handleFileJSONLoad}
                   />
                 </label>
 

@@ -2,7 +2,7 @@
 // src/components/ProjectSaveLoadButtons.tsx
 // ======================================================
 
-import React, { useRef } from "react";
+import React, { useEffect, useRef } from "react";
 
 type MaybePromise<T> = T | Promise<T>;
 
@@ -125,6 +125,17 @@ export default function ProjectSaveLoadButtons({
 }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  useEffect(() => {
+    const input = fileInputRef.current;
+    if (!input) return;
+    const onCancel = () => {
+      input.value = "";
+      document.documentElement.focus();
+    };
+    input.addEventListener("cancel", onCancel);
+    return () => input.removeEventListener("cancel", onCancel);
+  }, []);
+
   const handleSaveClick = () => {
     try {
       const suggestedName = `${defaultFileName}-${new Date()
@@ -163,7 +174,11 @@ export default function ProjectSaveLoadButtons({
   };
 
   const handleLoadClick = () => {
-    fileInputRef.current?.click();
+    const input = fileInputRef.current;
+    if (input) {
+      input.value = "";
+      input.click();
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
