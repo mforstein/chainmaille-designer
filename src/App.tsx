@@ -54,6 +54,7 @@
 // ==============================
 
 import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
+import { useViewport } from "./hooks/useViewport";
 import { Routes, Route, Navigate, useNavigate, Link } from "react-router-dom";
 import { calculateBOM } from "./BOM/bomCalculator";
 import "./index.css";
@@ -234,8 +235,11 @@ function DraggablePill({
       }
     }
 
-    // initial clamp using a conservative size guess (refine after mount)
-    const guessedSize = { w: 220, h: 220 };
+    // Conservative guess: assume panel could be up to 80% of viewport wide
+    const guessedSize = {
+      w: Math.min(400, Math.round(window.innerWidth * 0.8)),
+      h: Math.min(500, Math.round(window.innerHeight * 0.7)),
+    };
     return clampToViewport(initial, guessedSize);
   });
 
@@ -1588,7 +1592,7 @@ onChange={(e) => {
       {showMaterialPalette && (
         <DraggablePill
           id="material-selector"
-          defaultPosition={{ x: 120, y: 80 }}
+          defaultPosition={{ x: Math.min(120, Math.max(8, window.innerWidth - 220)), y: 80 }}
         >
           <div
             style={{
@@ -1885,10 +1889,11 @@ onChange={(e) => {
           🧾 Floating BOM Panel
          ============================== */}
       {showBOM && (
-        <DraggablePill id="bom-panel" defaultPosition={{ x: 420, y: 120 }}>
+        <DraggablePill id="bom-panel" defaultPosition={{ x: Math.max(20, window.innerWidth - 380), y: 120 }}>
           <div
             style={{
-              minWidth: 280,
+              width: `min(340px, calc(100vw - 32px))`,
+              minWidth: 240,
               maxWidth: 360,
               background: "rgba(17,24,39,0.97)",
               border: "1px solid rgba(0,0,0,.6)",
@@ -2061,7 +2066,7 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
   };
 
   return (
-    <DraggablePill id="compass-nav" defaultPosition={{ x: 140, y: 140 }}>
+    <DraggablePill id="compass-nav" defaultPosition={{ x: Math.min(140, Math.max(8, window.innerWidth / 2 - 100)), y: Math.min(140, window.innerHeight / 2 - 100) }}>
       <div
         style={{
           display: "flex",
@@ -2074,6 +2079,7 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
           padding: 10,
           boxShadow: "0 8px 22px rgba(0,0,0,0.45)",
           userSelect: "none",
+          maxWidth: "calc(100vw - 24px)",
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >

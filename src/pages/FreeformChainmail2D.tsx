@@ -4816,8 +4816,8 @@ const scales3D = useMemo(() => {
         <DraggablePill
           id="freeform-stats"
           defaultPosition={{
-            x: (typeof window !== "undefined" ? window.innerWidth : 1200) - 360,
-            y: (typeof window !== "undefined" ? window.innerHeight : 900) - 320,
+            x: Math.max(8, (typeof window !== "undefined" ? window.innerWidth : 1200) - 360),
+            y: Math.max(80, (typeof window !== "undefined" ? window.innerHeight : 900) - 320),
           }}
         >
           <div
@@ -5154,11 +5154,11 @@ const scales3D = useMemo(() => {
       {showImageOverlay && canUseOverlay && (
         <DraggablePill
           id="freeform-image-overlay"
-          defaultPosition={{ x: 120, y: 120 }}
+          defaultPosition={{ x: Math.max(8, Math.min(120, window.innerWidth - 370)), y: 120 }}
         >
           <div
             style={{
-              width: 360,
+              width: "min(360px, calc(100vw - 32px))",
               background: "rgba(17,24,39,0.97)",
               border: "1px solid #1f2937",
               borderRadius: 18,
@@ -5573,7 +5573,7 @@ const scales3D = useMemo(() => {
         {showSplineTool && (
           <DraggablePill
             id="freeform-spline"
-            defaultPosition={{ x: 160, y: 120 }}
+            defaultPosition={{ x: Math.max(8, Math.min(160, window.innerWidth - 320)), y: 120 }}
           >
             <div
               style={{
@@ -5614,9 +5614,9 @@ const scales3D = useMemo(() => {
           <div
             style={{
               position: "fixed",
-              right: 16,
-              top: 16,
-              width: 340,
+              right: 8,
+              top: "max(60px, env(safe-area-inset-top, 60px))",
+              width: "min(340px, calc(100vw - 16px))",
               background: "#0f172a",
               color: "#e5e7eb",
               borderRadius: 12,
@@ -5627,7 +5627,7 @@ const scales3D = useMemo(() => {
               display: "flex",
               flexDirection: "column",
               gap: 10,
-              maxHeight: "80vh",
+              maxHeight: "calc(100vh - 80px - env(safe-area-inset-bottom, 0px))",
               overflowY: "auto",
               fontSize: 12,
             }}
