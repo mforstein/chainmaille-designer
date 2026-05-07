@@ -986,7 +986,7 @@ const FreeformChainmail2D: React.FC = () => {
   const [showSupplierColors, setShowSupplierColors] = useState(false);
   const [splineResetKey, setSplineResetKey] = useState(0);
   // ==============================
-  // 📏 Freeform Stats (dims + counts)
+  // 📏 Studio Stats (dims + counts)
   // ==============================
   const [showFreeformStats, setShowFreeformStats] = useState(true);
   const [cursorPx, setCursorPx] = useState<{ x: number; y: number } | null>(
@@ -4446,8 +4446,8 @@ const scales3D = useMemo(() => {
               onClick={() => setShowFreeformStats((v) => !v)}
               title={
                 showFreeformStats
-                  ? "Hide Freeform Stats"
-                  : "Show Freeform Stats"
+                  ? "Hide Studio Stats"
+                  : "Show Studio Stats"
               }
               style={{
                 width: 44, // match your toolbox button size if different
@@ -4854,7 +4854,7 @@ const scales3D = useMemo(() => {
               }}
             >
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <strong style={{ fontSize: 14 }}>📏 Freeform Stats</strong>
+                <strong style={{ fontSize: 14 }}>📏 Studio Stats</strong>
               </div>
               <button
                 onClick={() => setShowFreeformStats(false)}
