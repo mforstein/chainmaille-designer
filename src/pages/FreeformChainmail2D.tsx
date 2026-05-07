@@ -4133,8 +4133,8 @@ const scales3D = useMemo(() => {
             flexDirection: "column",
             gap: 10,
             alignItems: "center",
-            width: 64,
-            padding: 10,
+            width: 56,
+            padding: "10px 6px",
             maxHeight: 226,
             overflowY: "auto",
             overflowX: "hidden",
@@ -4335,8 +4335,8 @@ const scales3D = useMemo(() => {
               flexDirection: "column",
               gap: 10,
               alignItems: "center",
-              width: 64,
-              padding: 10,
+              width: 56,
+              padding: "10px 6px",
               maxHeight: 226,
               overflowY: "auto",
               overflowX: "hidden",
@@ -4390,47 +4390,46 @@ const scales3D = useMemo(() => {
               💰{!canUseOverlay && <span style={{ position: "absolute", top: 2, right: 2, fontSize: 8, lineHeight: 1 }}>🔒</span>}
             </ToolBtn>
 
-            {/* Canvas background colour */}
-            <div
-              style={{ display: "flex", alignItems: "center", gap: 4, position: "relative" }}
-              title="Canvas background colour"
+            {/* Canvas background — dark/light toggle */}
+            <button
+              onClick={() => updateCanvasBg(canvasBg === "#020617" ? "#f8fafc" : "#020617")}
+              title={canvasBg === "#020617" ? "Switch to light background" : "Switch to dark background"}
+              style={{
+                width: 44, height: 44, borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.08)",
+                background: "#1f2937", color: "#d1d5db",
+                cursor: "pointer", display: "flex",
+                alignItems: "center", justifyContent: "center",
+                fontSize: 20, flexShrink: 0,
+              }}
             >
-              <button
-                onClick={() => updateCanvasBg(canvasBg === "#020617" ? "#f8fafc" : "#020617")}
-                title={canvasBg === "#020617" ? "Switch to light background" : "Switch to dark background"}
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 14,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: canvasBg,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 18,
-                  boxShadow: "inset 0 0 0 1.5px rgba(255,255,255,0.15)",
-                  transition: "background 0.2s",
-                }}
-              >
-                {canvasBg === "#020617" ? "🌙" : "☀️"}
-              </button>
+              {canvasBg === "#020617" ? "🌙" : "☀️"}
+            </button>
+
+            {/* Any-colour picker — rainbow button triggers hidden input */}
+            <label
+              title="Custom canvas background colour"
+              style={{
+                width: 44, height: 44, borderRadius: 12,
+                border: "1px solid rgba(255,255,255,0.08)",
+                background: "#1f2937",
+                cursor: "pointer", display: "flex",
+                alignItems: "center", justifyContent: "center",
+                fontSize: 20, flexShrink: 0, position: "relative",
+              }}
+            >
+              🌈
               <input
                 type="color"
                 value={canvasBg}
                 onChange={(e) => updateCanvasBg(e.target.value)}
-                title="Custom canvas background colour"
                 style={{
-                  width: 20,
-                  height: 20,
-                  borderRadius: 5,
-                  border: "1px solid rgba(255,255,255,0.15)",
-                  padding: 0,
-                  cursor: "pointer",
-                  background: "none",
+                  position: "absolute", inset: 0,
+                  opacity: 0, width: "100%", height: "100%",
+                  cursor: "pointer", padding: 0, border: "none",
                 }}
               />
-            </div>
+            </label>
 
             <ToolBtn
               onClick={() => {
