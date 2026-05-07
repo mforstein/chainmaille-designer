@@ -88,6 +88,7 @@ function readPixel(
 
 function sampleBestOnRing(
   which: "left" | "right",
+  calibMode: "ring" | "scale",
   leftRendererRef: React.MutableRefObject<THREE.WebGLRenderer | null>,
   rightRendererRef: React.MutableRefObject<THREE.WebGLRenderer | null>,
   leftSceneRef: React.MutableRefObject<THREE.Scene | null>,
@@ -107,7 +108,31 @@ function sampleBestOnRing(
   renderer.setRenderTarget(rt);
   renderer.render(scene, cam);
 
-  // background sample
+  if (calibMode === "scale") {
+    // Scale fills the center — center IS the surface color.
+    // Sampling "most different from center" would return the scene background.
+    // Instead, average a small cluster at the center of the face.
+    const cx = rt.width / 2;
+    const cy = rt.height / 2;
+    const off = Math.max(2, rt.width * 0.04);
+    const cluster: RGB[] = [
+      readPixel(renderer, rt, cx, cy),
+      readPixel(renderer, rt, cx - off, cy),
+      readPixel(renderer, rt, cx + off, cy),
+      readPixel(renderer, rt, cx, cy - off),
+      readPixel(renderer, rt, cx, cy + off),
+    ];
+    renderer.setRenderTarget(null);
+    renderer.render(scene, cam);
+    return {
+      r: cluster.reduce((s, p) => s + p.r, 0) / cluster.length,
+      g: cluster.reduce((s, p) => s + p.g, 0) / cluster.length,
+      b: cluster.reduce((s, p) => s + p.b, 0) / cluster.length,
+    };
+  }
+
+  // Ring: center is the torus hole (scene background).
+  // Find the ring surface by taking the point most different from center.
   const bg = readPixel(renderer, rt, rt.width / 2, rt.height / 2);
 
   const pts: Array<[number, number]> = [
@@ -478,6 +503,7 @@ export default function ColorCalibrationTest() {
   const sampleCenter = (which: "left" | "right"): RGB => {
     return sampleBestOnRing(
       which,
+      calibMode,
       leftRendererRef,
       rightRendererRef,
       leftSceneRef,
@@ -513,12 +539,12 @@ export default function ColorCalibrationTest() {
 
     const out: ResultRow[] = [];
 
-    const GAIN_MIN = 0.45;
-    const GAIN_MAX = 0.95;
-    const GAMMA_MIN = 0.90;
-    const GAMMA_MAX = 1.45;
+    const GAIN_MIN = 0.15;
+    const GAIN_MAX = 2.50;
+    const GAMMA_MIN = 0.40;
+    const GAMMA_MAX = 2.00;
 
-    const coarseStep = 0.04;
+    const coarseStep = 0.12;
     const fineStep = 0.01;
 
     for (let ci = 0; ci < palette.length; ci++) {
@@ -547,10 +573,10 @@ export default function ColorCalibrationTest() {
         }
       }
 
-      const fineGainMin = Math.max(GAIN_MIN, bestGain - coarseStep);
-      const fineGainMax = Math.min(GAIN_MAX, bestGain + coarseStep);
-      const fineGammaMin = Math.max(GAMMA_MIN, bestGamma - coarseStep);
-      const fineGammaMax = Math.min(GAMMA_MAX, bestGamma + coarseStep);
+      const fineGainMin = Math.max(GAIN_MIN, bestGain - coarseStep * 1.1);
+      const fineGainMax = Math.min(GAIN_MAX, bestGain + coarseStep * 1.1);
+      const fineGammaMin = Math.max(GAMMA_MIN, bestGamma - coarseStep * 1.1);
+      const fineGammaMax = Math.min(GAMMA_MAX, bestGamma + coarseStep * 1.1);
 
       for (let g2 = fineGainMin; g2 <= fineGainMax + 1e-9; g2 += fineStep) {
         for (let ga2 = fineGammaMin; ga2 <= fineGammaMax + 1e-9; ga2 += fineStep) {
@@ -763,8 +789,8 @@ export default function ColorCalibrationTest() {
           <div style={{ width: 56 }}>Gain</div>
           <input
             type="range"
-            min={0.4}
-            max={1.0}
+            min={0.1}
+            max={2.5}
             step={0.01}
             value={gain}
             onChange={(e) => setGain(Number(e.target.value))}
@@ -777,8 +803,8 @@ export default function ColorCalibrationTest() {
           <div style={{ width: 56 }}>Gamma</div>
           <input
             type="range"
-            min={0.8}
-            max={1.6}
+            min={0.4}
+            max={2.0}
             step={0.01}
             value={gamma}
             onChange={(e) => setGamma(Number(e.target.value))}
