@@ -3915,7 +3915,7 @@ const derived = useMemo(() => {
   ]);
 
   const loadFreeformProject = useCallback(
-    (data: any) => {
+    (data: any, resetView = true) => {
       if (!data || data.type !== "freeform") {
         alert("❌ Not a Freeform project file");
         return;
@@ -3982,6 +3982,31 @@ const derived = useMemo(() => {
       } else {
         setOverlay(null);
       }
+
+      // Center viewport on the loaded rings so the template is fully visible
+      // and new rings can be placed relative to it correctly.
+      if (resetView && map.size > 0) {
+        const newCS = (data.geometry?.centerSpacing as number | undefined) ?? centerSpacing;
+        const newSY = newCS * 0.866;
+        let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
+        map.forEach((r) => {
+          if (r.row < minR) minR = r.row;
+          if (r.row > maxR) maxR = r.row;
+          if (r.col < minC) minC = r.col;
+          if (r.col > maxC) maxC = r.col;
+        });
+        const minLX = minC * newCS + ((minR & 1) ? newCS / 2 : 0);
+        const minLY = minR * newSY;
+        const maxLX = maxC * newCS + ((maxR & 1) ? newCS / 2 : 0);
+        const maxLY = maxR * newSY;
+        setPanWorldX((minLX + maxLX) / 2);
+        setPanWorldY((minLY + maxLY) / 2);
+        setZoom(1.0);
+      } else if (resetView) {
+        setPanWorldX(0);
+        setPanWorldY(0);
+        setZoom(1.0);
+      }
     },
     [innerIDmm, wireMm, centerSpacing, angleIn, angleOut, setTunerSnapshot],
   );
@@ -4017,7 +4042,7 @@ const derived = useMemo(() => {
         overlay: undefined,
         scaleSettings: undefined,
       };
-      loadFreeformProject(merged);
+      loadFreeformProject(merged, false); // keep current viewport in append mode
     },
     [rings, loadFreeformProject],
   );
