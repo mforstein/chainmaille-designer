@@ -416,20 +416,6 @@ export const ProjectLibraryPanel: React.FC<Props> = ({ onLoad, onClose }) => {
 
   return (
     <>
-    {/* Full-screen overlay */}
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.72)",
-        zIndex: 10000,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        backdropFilter: "blur(4px)",
-      }}
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
       {/* Panel */}
       <div
         style={{
@@ -443,7 +429,6 @@ export const ProjectLibraryPanel: React.FC<Props> = ({ onLoad, onClose }) => {
           flexDirection: "column",
           overflow: "hidden",
         }}
-        onMouseDown={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div
@@ -652,7 +637,6 @@ export const ProjectLibraryPanel: React.FC<Props> = ({ onLoad, onClose }) => {
           <b style={{ color: "#475569" }}>Append →</b> places the design to the right of your existing work
         </div>
       </div>
-    </div>
 
     {imgConverterOpen && (
       <ImageToDesignPanel

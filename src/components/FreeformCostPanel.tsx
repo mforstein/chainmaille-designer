@@ -217,17 +217,14 @@ export default function FreeformCostPanel({
   return (
     <div
       style={{
-        position: "fixed",
-        top: 60,
-        right: 16,
         width: 420,
-        maxHeight: "calc(100vh - 80px)",
+        maxWidth: "calc(100vw - 16px)",
+        maxHeight: "min(80vh, 560px)",
         overflowY: "auto",
         background: "#111827",
         border: "1px solid #1f2937",
         borderRadius: 14,
         boxShadow: "0 12px 40px rgba(0,0,0,0.6)",
-        zIndex: 3500,
         color: "#e5e7eb",
         fontFamily: "system-ui, sans-serif",
         fontSize: 13,

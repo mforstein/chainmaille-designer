@@ -172,25 +172,27 @@ const STUDIO_COLORS = [
 ];
 
 const StudioMock = () => (
-  <Mock label="Freeform Studio — toolbar (left), canvas, palette (bottom)" height={230}>
+  <Mock label="Freeform Studio — floating toolbar, canvas, floating palette" height={230}>
     <div style={{ display: "flex", height: 230, background: "#111827" }}>
-      {/* Toolbar */}
-      <div style={{ width: 44, background: "#0f172a", borderRight: "1px solid #1e293b", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, paddingTop: 8 }}>
+      {/* Toolbar — floating pill (shown pinned left for reference) */}
+      <div style={{ width: 52, background: "#0f172a", borderRight: "1px solid #1e293b", display: "flex", flexDirection: "column", alignItems: "center", gap: 5, paddingTop: 8 }}>
         {[
-          { icon: "☰", label: "Nav", dim: false },
-          { icon: "📦", label: "Export", dim: false },
-          { icon: "▼", label: "Collapse", dim: true },
-          { icon: "✏️", label: "Draw", active: true },
-          { icon: "⌫", label: "Erase", dim: false },
-          { icon: "↩", label: "Undo", dim: false },
-          { icon: "↪", label: "Redo", dim: true },
-          { icon: "◼", label: "Shapes", dim: false },
-          { icon: "S",  label: "Scale mode", dim: false },
-          { icon: "✋", label: "Pan", dim: false },
+          { icon: "☰",  label: "Nav",          dim: false },
+          { icon: "📦", label: "Export",        dim: false },
+          { icon: "▸",  label: "Collapse",      dim: true  },
+          { icon: "⚙️", label: "Utility panel", dim: false },
+          { icon: "🎨", label: "Draw",          active: true },
+          { icon: "⌫",  label: "Erase",         dim: false },
+          { icon: "↩",  label: "Undo",          dim: false },
+          { icon: "↪",  label: "Redo",          dim: true  },
+          { icon: "◼",  label: "Shapes",        dim: false },
+          { icon: "S",  label: "Scale mode",    dim: false },
+          { icon: "✋", label: "Pan",           dim: false },
+          { icon: "🧹", label: "Clear",         dim: false },
         ].map(b => (
           <div key={b.label} title={b.label} style={{
             width: 32, height: 32,
-            background: b.active ? "#1d4ed8" : b.dim ? "#111827" : "#1e293b",
+            background: (b as any).active ? "#1d4ed8" : b.dim ? "#111827" : "#1e293b",
             borderRadius: 7, display: "flex", alignItems: "center", justifyContent: "center",
             fontSize: b.icon === "S" ? 11 : 13, color: b.dim ? "#374151" : "#94a3b8",
             fontWeight: 700, border: "1px solid #334155", opacity: b.dim ? 0.5 : 1,
@@ -813,15 +815,18 @@ export default function UserManual() {
           </p>
           <StudioMock />
 
-          <Sub title="Left toolbar" />
+          <Sub title="Floating toolbar" />
           <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.7, marginBottom: 12 }}>
-            The vertical toolbar on the left edge contains all tools. It can be collapsed with the ▼ button to reclaim screen space.
+            The vertical toolbar is a draggable floating panel — grab it anywhere and reposition it. It can be collapsed with the ▸ button to reclaim canvas space.
           </p>
 
           <Feat title="☰ Navigation Menu">Opens the draggable compass to jump between pages.</Feat>
           <Feat title="📦 Finalize & Export">Opens the export panel — PDF, CSV, 3D model, and BOM.</Feat>
-          <Feat title="▼ Collapse / ▲ Expand">Hides all tool buttons below it to maximise canvas space. Tap again to restore.</Feat>
-          <Feat title="✏️ Draw (Paint rings)">
+          <Feat title="▸ Collapse / ▾ Expand">Hides all tool buttons below it to maximise canvas space. Tap again to restore.</Feat>
+          <Feat title="⚙️ Utility Panel">
+            Toggles the secondary utility panel (a separate floating pill). Contains: 🧰 Studio Geometry, save/load buttons, 📚 Design Library, 💰 Cost Estimator, 🌙/☀️ canvas background, 🌈 custom color, ♻️ Reset UI, and ✨ Studio Stats.
+          </Feat>
+          <Feat title="🎨 Draw (Paint rings)">
             The primary drawing tool. Click or drag on the dark canvas to place rings at their hex-grid positions. Rings snap to the grid automatically. The active palette color is applied to each new ring.
           </Feat>
           <Feat title="⌫ Eraser">
@@ -830,16 +835,13 @@ export default function UserManual() {
           <Feat title="↩️ Undo / ↪️ Redo">
             Step through the full edit history one action at a time. Keyboard shortcuts: <KS>Ctrl+Z</KS> / <KS>Cmd+Z</KS> to undo, <KS>Ctrl+Shift+Z</KS> / <KS>Ctrl+Y</KS> to redo.
           </Feat>
-          <Feat title="◼ □ / ○ Shape Select (rubber-band)">
-            Two selection tools — rectangle (□) and circle (○) — appear in the toolbar. Drag on the canvas to draw a selection region. All rings inside are highlighted. Once selected, tap any palette color to recolor the entire selection, or tap the eraser to remove all rings in the selection.
+          <Feat title="◼ Shapes — Shape Select & Shape Fill">
+            Tapping the ◼ icon opens the Shape Fill picker with six options: Square (□), Circle (○), Hexagon (⬡), Octagon (⯃), Heart (♥), and Triangle (◺). Once a shape is chosen, drag on the canvas to define its bounding box — all rings whose grid positions fall inside the shape are placed immediately. You can also use the rectangle or circle as a <strong>rubber-band selection</strong>: drag to highlight rings, then tap a palette color to recolor them or tap the eraser to remove them.
           </Feat>
           <SelectionMock />
-          <Feat title="◼ Shape Fill">
-            Opens the Shape Fill picker with six shape options: Square (□), Circle (○), Hexagon (⬡), Octagon (⯃), Heart (♥), and Triangle (◺). Once a shape is chosen, drag on the canvas to define its bounding box — all rings whose grid positions fall inside the shape are placed immediately.
-          </Feat>
           <ShapeFillMock />
-          <Feat title="S — Scale Mode toggle">
-            Switches the drawing tool between <strong>ring mode</strong> and <strong>scale mode</strong>. In scale mode the S button is highlighted blue. Placing a position now drops a decorative scale instead of a ring. Scale geometry (shape, size, angles) is driven by the Weave Tuner snapshot.
+          <Feat title="R/S — Ring/Scale Mode toggle">
+            Switches the drawing tool between <strong>ring mode (R)</strong> and <strong>scale mode (S)</strong>. In scale mode the button is highlighted blue. Placing a position now drops a decorative scale instead of a ring. Scale geometry (shape, size, angles) is driven by the Weave Tuner snapshot.
           </Feat>
           <ScaleModeMock />
           <Feat title="✋ Pan / Drag view">
@@ -848,11 +850,19 @@ export default function UserManual() {
           <Feat title="🖼️ Image Overlay">
             Opens the Image Overlay panel (see below). Studio tier required.
           </Feat>
-          <Feat title="🗑️ Clear All">
+          <Feat title="🧹 Clear All">
             Removes every ring and scale from the canvas. A confirmation dialog prevents accidental clears.
           </Feat>
-          <Feat title="⚙️ Geometry & JSON Controls">
-            Opens the right-side geometry panel showing ring and scale tuner parameters (center spacing, wire diameter, ring inner diameter, etc.) and JSON import/export for the current canvas state.
+
+          <Sub title="Utility panel (⚙️)" />
+          <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.7, marginBottom: 12 }}>
+            A second floating pill opened with the ⚙️ button. Contains tools that are used less frequently.
+          </p>
+          <Feat title="🧰 Studio Geometry">
+            Opens the Studio Geometry panel — a draggable dialog with six tabbed sections (📏 Ring Spacing, ⭕ Circle Tuning, 💍 Ring Sets, 👁 View, 🐠 Scale Tuners, 🔬 Diagnostics). Each tab shows only the relevant sliders so the panel never needs scrolling. All geometry parameters link to the Weave Tuner snapshot.
+          </Feat>
+          <Feat title="💾 / 📂 Save & Load project">
+            Save the entire canvas — ring positions, colors, scale positions, palette, and overlay settings — as a JSON file. Load restores a saved file completely.
           </Feat>
           <Feat title="📚 Design Library">
             Opens the Design Library with two tabs:
@@ -863,11 +873,14 @@ export default function UserManual() {
           <Feat title="💰 Cost Estimator">
             Opens the Material Cost Estimator (Studio tier). Matches your BOM ring/scale counts against the supplier catalog, shows per-color pack counts, estimated totals per supplier, and flags potential import tariff scenarios. Estimates only — verify on the supplier site before ordering.
           </Feat>
-          <Feat title="🎨 Canvas background">
-            Toggles between dark and light canvas background. A custom color picker lets you set any background color for contrast testing.
+          <Feat title="🌙 / ☀️ Canvas background">
+            Toggles between dark and light canvas background. The 🌈 custom color button next to it opens a full color picker for any background color — useful for contrast testing or matching your work surface.
           </Feat>
-          <Feat title="↺ Reset UI">
+          <Feat title="♻️ Reset UI">
             Resets floating panel positions, view transform (zoom/pan), and all tool states back to defaults.
+          </Feat>
+          <Feat title="✨ Studio Stats">
+            Toggles the ring/scale count overlay showing total placed rings, total scales, and a per-color breakdown.
           </Feat>
 
           <Sub title="Color palette" />
@@ -884,10 +897,10 @@ export default function UserManual() {
             Restores the palette to the default set of colors.
           </Feat>
           <Feat title="Browse Supplier Colors">
-            Fetches live ring and scale color data from The Ring Lord, Chainmail Joe, Metal Designz, and Steampunk Garage (cached 6 hours). Results appear as swatches sorted by supplier so you can design with colors that actually exist in the catalog.
+            Fetches live ring and scale color data from The Ring Lord, Chainmail Joe, Metal Designz, and Steampunk Garage (cached 1 hour). Results appear as swatches sorted by supplier so you can design with colors that actually exist in the catalog.
           </Feat>
           <Feat title="🔄 Refresh Colors button">
-            Forces a fresh fetch from all suppliers (bypasses the 6-hour cache). Also available in the Ring Chart, Color Calibration, and Designer palette.
+            Forces a fresh fetch from all suppliers (bypasses the 1-hour cache). Also available in the Ring Chart, Color Calibration, and Designer palette.
           </Feat>
 
           <Sub title="Image overlay & color transfer" />
@@ -908,7 +921,7 @@ export default function UserManual() {
 
           <Sub title="Spline fill tool" />
           <Feat title="Open spline tool">
-            Tap the 〰️ spline button in the toolbar. A transparent overlay appears and the compact spline panel opens (draggable, persists position between sessions).
+            Tap the spline icon (〰️) in the <strong>palette row</strong> — the small button strip above the color swatches, alongside the 🎨 palette manager and ↺ reset buttons. A transparent overlay appears and the compact spline panel opens (draggable, persists position between sessions).
           </Feat>
           <Feat title="Place control points">
             Tap anywhere on the canvas (not on a UI element) to add control points. A smooth Catmull-Rom curve is drawn through them in real time. Point numbers appear next to each dot.
@@ -924,14 +937,6 @@ export default function UserManual() {
           </Feat>
           <SplineMock />
           <Note>The spline operates in screen coordinates. Zoom in before placing points for finer control. Undo in the main canvas (Ctrl+Z) reverses the fill after Apply.</Note>
-
-          <Sub title="Save & load" />
-          <Feat title="💾 Save project">
-            Saves the entire canvas — ring positions, colors, scale positions, palette, and overlay settings — as a JSON file to your device.
-          </Feat>
-          <Feat title="📂 Load project">
-            Loads a previously saved JSON file. Choose <em>Replace</em> to clear the canvas first, or <em>Append</em> to merge the loaded rings alongside what's already there (merged rings are shifted right to avoid overlaps).
-          </Feat>
 
           <Sub title="Bill of Materials & export" />
           <BOMMock />
@@ -1051,7 +1056,7 @@ export default function UserManual() {
             Products from The Ring Lord, Chainmail Joe, Metal Designz, and Steampunk Garage matched within ±0.35 mm of the tapped ring's ID and WD. Shows available colors as swatches and a direct link to the supplier page.
           </Feat>
           <Feat title="🔄 Refresh Colors button (top-right)">
-            Fetches the latest ring colors from all supplier sites and caches them for 6 hours. Swatches in the detail panel update automatically.
+            Fetches the latest ring colors from all supplier sites and caches them for 1 hour. Swatches in the detail panel update automatically.
           </Feat>
 
           <Sub title="Axis labels" />

@@ -216,10 +216,12 @@ function clampToViewport(
 function DraggablePill({
   id,
   defaultPosition = { x: 20, y: 20 },
+  style: overrideStyle,
   children,
 }: {
   id: string;
   defaultPosition?: { x: number; y: number };
+  style?: React.CSSProperties;
   children: React.ReactNode;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -339,20 +341,25 @@ function DraggablePill({
     <div
       ref={rootRef}
       style={{
+        // Default chrome (only when caller didn't provide style)
+        ...(!overrideStyle ? {
+          background: "rgba(17,24,39,.92)",
+          border: "1px solid rgba(0,0,0,.6)",
+          boxShadow: "0 12px 40px rgba(0,0,0,.45)",
+          borderRadius: 24,
+          padding: 12,
+          maxWidth: "min(92vw, 520px)",
+        } : {}),
+        // Caller visual overrides
+        ...(overrideStyle ?? {}),
+        // Infrastructure always wins
         position: "fixed",
         left: pos.x,
         top: pos.y,
         zIndex: 9999,
-        background: "rgba(17,24,39,.92)",
-        border: "1px solid rgba(0,0,0,.6)",
-        boxShadow: "0 12px 40px rgba(0,0,0,.45)",
-        borderRadius: 24,
-        padding: 12,
         userSelect: "none",
         cursor: dragging ? "grabbing" : "grab",
         touchAction: "none",
-        // Optional: ensure it never visually “bleeds” offscreen
-        maxWidth: "min(92vw, 520px)",
       }}
       onPointerDown={(e) => {
         if (isInteractive(e.target)) return;
@@ -811,7 +818,7 @@ const applyDesignerFillFromScreenPolygon = useCallback(
     const gridH_mm = (rows - 1) * cs;
 
 // Use a small, symmetric margin (half a cell) instead of a big pad + 0.92 fudge.
-// This reduces the consistent “inward shift”.
+// This reduces the consistent "inward shift".
 const pad_mm = cs * 0.9;
 const scale = Math.min(
   rect.width / (gridW_mm + pad_mm),
@@ -2444,7 +2451,7 @@ function App() {
 export { DraggableCompassNav, DraggablePill };
 export default App;
 
-// Keep imports “live” for future switching / shared helpers.
+// Keep imports "live" for future switching / shared helpers.
 void generateRingsDesigner;
 void BOMButtons;
 void getDeviceLimits;

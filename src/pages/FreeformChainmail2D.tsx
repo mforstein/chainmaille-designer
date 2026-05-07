@@ -771,8 +771,8 @@ function formatNum(n: number, digits = 1) {
 const FreeformChainmail2D: React.FC = () => {
   const navigate = useNavigate();
   const { tier } = useAuth();
-  const canUseOverlay = tierAtLeast(tier, "studio");
-  const isPreviewOnly = !tierAtLeast(tier, "studio");
+  const isStudioTier = tierAtLeast(tier, "studio");
+  const isPreviewOnly = !isStudioTier;
 
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null); // interaction + selection overlay
@@ -975,6 +975,8 @@ const FreeformChainmail2D: React.FC = () => {
     eraseModeRef.current = eraseMode;
   }, [eraseMode]);
   const [showControls, setShowControls] = useState(false);
+  type ControlsTab = "spacing" | "circles" | "rings" | "view" | "scales" | "diag";
+  const [controlsTab, setControlsTab] = useState<ControlsTab>("spacing");
   const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
 
   // ✅ Floating submenu (Designer pattern) — show/hide compass nav
@@ -4135,11 +4137,6 @@ const scales3D = useMemo(() => {
             alignItems: "center",
             width: 56,
             padding: "10px 6px",
-            maxHeight: 226,
-            overflowY: "auto",
-            overflowX: "hidden",
-            scrollbarWidth: "thin",
-            scrollbarColor: "rgba(255,255,255,0.18) transparent",
             background: "#0f172a",
             border: "1px solid #0b1020",
             borderRadius: 20,
@@ -4303,13 +4300,13 @@ const scales3D = useMemo(() => {
               <ToolBtn
                 active={showImageOverlay}
                 onClick={() => {
-                  if (canUseOverlay) setShowImageOverlay((v) => !v);
+                  if (isStudioTier) setShowImageOverlay((v) => !v);
                   else window.location.href = "/auth?mode=upgrade";
                 }}
-                title={canUseOverlay ? "Image overlay (apply to rings)" : "Image Overlay (Studio)"}
-                style={{ opacity: canUseOverlay ? 1 : 0.45, position: "relative" }}
+                title={isStudioTier ? "Image overlay (apply to rings)" : "Image Overlay (Studio)"}
+                style={{ opacity: isStudioTier ? 1 : 0.45, position: "relative" }}
               >
-                🖼️{!canUseOverlay && <span style={{ position: "absolute", top: 2, right: 2, fontSize: 8, lineHeight: 1 }}>🔒</span>}
+                🖼️{!isStudioTier && <span style={{ position: "absolute", top: 2, right: 2, fontSize: 8, lineHeight: 1 }}>🔒</span>}
               </ToolBtn>
 
               {/* Clear */}
@@ -4337,11 +4334,6 @@ const scales3D = useMemo(() => {
               alignItems: "center",
               width: 56,
               padding: "10px 6px",
-              maxHeight: 226,
-              overflowY: "auto",
-              overflowX: "hidden",
-              scrollbarWidth: "thin",
-              scrollbarColor: "rgba(255,255,255,0.18) transparent",
               background: "rgba(15,23,42,0.96)",
               border: "1px solid #0b1020",
               borderRadius: 20,
@@ -4381,13 +4373,13 @@ const scales3D = useMemo(() => {
             <ToolBtn
               active={costPanelOpen}
               onClick={() => {
-                if (canUseOverlay) setCostPanelOpen((v) => !v);
+                if (isStudioTier) setCostPanelOpen((v) => !v);
                 else window.location.href = "/pricing";
               }}
-              title={canUseOverlay ? "Material cost estimator" : "Cost Estimator (Studio)"}
-              style={{ opacity: canUseOverlay ? 1 : 0.45, position: "relative" }}
+              title={isStudioTier ? "Material cost estimator" : "Cost Estimator (Studio)"}
+              style={{ opacity: isStudioTier ? 1 : 0.45, position: "relative" }}
             >
-              💰{!canUseOverlay && <span style={{ position: "absolute", top: 2, right: 2, fontSize: 8, lineHeight: 1 }}>🔒</span>}
+              💰{!isStudioTier && <span style={{ position: "absolute", top: 2, right: 2, fontSize: 8, lineHeight: 1 }}>🔒</span>}
             </ToolBtn>
 
             {/* Canvas background — dark/light toggle */}
@@ -5158,7 +5150,7 @@ const scales3D = useMemo(() => {
       {/* ============================= */}
       {/* ✅ IMAGE OVERLAY PANEL (Freeform) */}
       {/* ============================= */}
-      {showImageOverlay && canUseOverlay && (
+      {showImageOverlay && isStudioTier && (
         <DraggablePill
           id="freeform-image-overlay"
           defaultPosition={{ x: Math.max(8, Math.min(120, window.innerWidth - 370)), y: 120 }}
@@ -5380,30 +5372,55 @@ const scales3D = useMemo(() => {
       )}
 
       {libraryOpen && (
-        <ProjectLibraryPanel
-          onLoad={(data, mode) => {
-            setLibraryOpen(false);
-            handleLibraryLoad(data, mode);
+        <DraggablePill
+          id="freeform-library"
+          defaultPosition={{ x: Math.max(8, Math.round((window.innerWidth - Math.min(920, window.innerWidth * 0.96)) / 2)), y: 60 }}
+          style={{
+            width: "min(920px, 96vw)",
+            background: "transparent",
+            border: "none",
+            boxShadow: "none",
+            borderRadius: 0,
+            padding: 0,
           }}
-          onClose={() => setLibraryOpen(false)}
-        />
+        >
+          <ProjectLibraryPanel
+            onLoad={(data, mode) => {
+              setLibraryOpen(false);
+              handleLibraryLoad(data, mode);
+            }}
+            onClose={() => setLibraryOpen(false)}
+          />
+        </DraggablePill>
       )}
 
-      {costPanelOpen && canUseOverlay && (
-        <FreeformCostPanel
-          ringColorCounts={ringStats?.byColor ?? []}
-          innerDiameterMm={innerIDmm}
-          wireDiameterMm={wireMm}
-          scaleColorCounts={scaleStats?.byColor ?? []}
-          scaleWidthMm={activeScaleSettings.widthMm}
-          scaleHeightMm={activeScaleSettings.heightMm}
-          scaleHoleIdMm={activeScaleSettings.holeIdMm}
-          onChangeRingSize={(idMm, wd) => {
-            setInnerIDmm(idMm);
-            setWireMm(wd);
+      {costPanelOpen && isStudioTier && (
+        <DraggablePill
+          id="freeform-cost"
+          defaultPosition={{ x: Math.max(8, window.innerWidth - 444), y: 60 }}
+          style={{
+            background: "transparent",
+            border: "none",
+            boxShadow: "none",
+            borderRadius: 0,
+            padding: 0,
           }}
-          onClose={() => setCostPanelOpen(false)}
-        />
+        >
+          <FreeformCostPanel
+            ringColorCounts={ringStats?.byColor ?? []}
+            innerDiameterMm={innerIDmm}
+            wireDiameterMm={wireMm}
+            scaleColorCounts={scaleStats?.byColor ?? []}
+            scaleWidthMm={activeScaleSettings.widthMm}
+            scaleHeightMm={activeScaleSettings.heightMm}
+            scaleHoleIdMm={activeScaleSettings.holeIdMm}
+            onChangeRingSize={(idMm, wd) => {
+              setInnerIDmm(idMm);
+              setWireMm(wd);
+            }}
+            onClose={() => setCostPanelOpen(false)}
+          />
+        </DraggablePill>
       )}
 
       {/* ============================= */}
@@ -5417,7 +5434,7 @@ const scales3D = useMemo(() => {
         />
       )}
 
-      {/* Preview banner for Crafter tier */}
+      {/* Preview banner for non-Studio users */}
       {isPreviewOnly && (
         <div style={{
           position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999,
@@ -5596,13 +5613,12 @@ const scales3D = useMemo(() => {
           />
         )}
 
-        {/* RIGHT CONTROL PANEL */}
+        {/* STUDIO GEOMETRY PANEL */}
         {showControls && (
-          <div
+          <DraggablePill
+            id="freeform-controls"
+            defaultPosition={{ x: Math.max(8, window.innerWidth - 316), y: 60 }}
             style={{
-              position: "fixed",
-              right: 8,
-              top: "max(60px, env(safe-area-inset-top, 60px))",
               width: "min(300px, calc(100vw - 16px))",
               background: "#0f172a",
               color: "#e5e7eb",
@@ -5610,496 +5626,268 @@ const scales3D = useMemo(() => {
               padding: 12,
               border: "1px solid rgba(148,163,184,0.35)",
               boxShadow: "0 10px 30px rgba(0,0,0,0.6)",
-              zIndex: 12,
               display: "flex",
               flexDirection: "column",
               gap: 10,
-              maxHeight: "min(50vh, 360px)",
-              overflowY: "auto",
-              scrollbarWidth: "thin",
-              scrollbarColor: "rgba(255,255,255,0.18) transparent",
               fontSize: 12,
             }}
           >
-            <h3 style={{ margin: 0, fontSize: 14 }}>
-              Freeform Geometry (Tuner-linked)
-            </h3>
-
-            <p style={{ margin: 0, opacity: 0.8, lineHeight: 1.3 }}>
-              Uses the same <b>center spacing</b> and hex grid as the Weave
-              Tuner. Vertical spacing is <code>center × 0.866</code> and odd
-              rows are shifted by <code>center / 2</code>.
-            </p>
-
-            <SliderRow
-              label="Center Spacing (mm)"
-              value={centerSpacing}
-              setValue={(v) => {
-                setCenterSpacing(v);
-                setAutoFollowTuner(false);
-              }}
-              min={2}
-              max={25}
-              step={0.1}
-              unit="mm"
-            />
-
-            {/* CIRCLE TUNING PANEL */}
-            <div
-              style={{
-                marginTop: 4,
-                padding: 8,
-                borderRadius: 12,
-                background: "rgba(15,23,42,0.95)",
-                border: "1px solid rgba(148,163,184,0.25)",
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-                fontSize: 11,
-              }}
-            >
-              <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <input
-                  type="checkbox"
-                  checked={hideCircles}
-                  onChange={(e) => setHideCircles(e.target.checked)}
-                />
-                <span>Hide circles (still clickable)</span>
-              </label>
-
-              <div style={{ fontWeight: 700, fontSize: 12, textAlign: "left" }}>
-                Circles (on placed rings only)
-              </div>
-
-              <SliderRow
-                label="Circle Offset X (mm)"
-                value={circleOffsetX}
-                setValue={(v) => setCircleOffsetX(v)}
-                min={-50}
-                max={50}
-                step={0.1}
-                unit="mm"
-              />
-
-              <SliderRow
-                label="Circle Offset Y (mm)"
-                value={circleOffsetY}
-                setValue={(v) => setCircleOffsetY(v)}
-                min={-50}
-                max={50}
-                step={0.1}
-                unit="mm"
-              />
-
-              <SliderRow
-                label="Circle Scale"
-                value={circleScale}
-                setValue={(v) => setCircleScale(v)}
-                min={0.2}
-                max={3}
-                step={0.01}
-              />
-
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  type="button"
-                  style={smallBtn}
-                  onClick={() => {
-                    setCircleOffsetX(0);
-                    setCircleOffsetY(0);
-                    setCircleScale(1);
-                  }}
-                  title="Reset circle offset/scale"
-                >
-                  Reset circles
-                </button>
-                <button
-                  type="button"
-                  style={smallBtnBlue}
-                  onClick={() => {
-                    setHideCircles((v) => !v);
-                  }}
-                  title="Toggle circle visibility"
-                >
-                  {hideCircles ? "Show circles" : "Hide circles"}
-                </button>
-              </div>
-            </div>
-
-            {/* RING SETS (Tuner-linked) */}
-            <div
-              style={{
-                marginTop: 6,
-                padding: 10,
-                borderRadius: 12,
-                background: "rgba(15,23,42,0.95)",
-                border: "1px solid rgba(148,163,184,0.25)",
-                display: "grid",
-                gap: 8,
-              }}
-            >
-              <div style={{ fontWeight: 800, fontSize: 12 }}>
-                Ring Sets (from Tuner)
-              </div>
-
-              <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="checkbox"
-                  checked={autoFollowTuner}
-                  onChange={(e) => setAutoFollowTuner(e.target.checked)}
-                />
-                <span>Auto-follow latest tuner set</span>
-              </label>
-
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button
-                  type="button"
-                  style={smallBtn}
-                  onClick={reloadRingSets}
-                  title="Reload ring sets from localStorage"
-                >
-                  Reload
-                </button>
-
-                <label
-                  style={{
-                    ...smallBtn,
-                    display: "grid",
-                    placeItems: "center",
-                    cursor: "pointer",
-                    textAlign: "center",
-                  }}
-                  title="Load ring + scale settings from a JSON file"
-                >
-                  Load JSON…
-                  <input
-                    type="file"
-                    accept="application/json,.json"
-                    style={{ display: "none" }}
-                    onClick={(e) => {
-                      const inp = e.target as HTMLInputElement;
-                      inp.value = "";
-                      const onCancel = () => { inp.value = ""; document.documentElement.focus(); inp.removeEventListener("cancel", onCancel); };
-                      inp.addEventListener("cancel", onCancel);
+            {/* Header: title + section icon tabs */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+              <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>Studio Geometry</h3>
+              <div style={{ display: "flex", gap: 3, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                {([
+                  { id: "spacing", icon: "📏", title: "Ring Spacing" },
+                  { id: "circles", icon: "⭕", title: "Circle Tuning" },
+                  { id: "rings",   icon: "💍", title: "Ring Sets" },
+                  { id: "view",    icon: "👁", title: "View Controls" },
+                  { id: "scales",  icon: "🐠", title: "Scale Tuners" },
+                  ...(showDiagnostics ? [{ id: "diag", icon: "🔬", title: "Diagnostics" }] : []),
+                ] as { id: ControlsTab; icon: string; title: string }[]).map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    title={tab.title}
+                    data-nondrag="1"
+                    onClick={() => setControlsTab(tab.id)}
+                    style={{
+                      width: 28, height: 28, borderRadius: 7,
+                      border: controlsTab === tab.id ? "1px solid #3b82f6" : "1px solid rgba(255,255,255,0.12)",
+                      background: controlsTab === tab.id ? "rgba(59,130,246,0.3)" : "rgba(255,255,255,0.06)",
+                      cursor: "pointer", fontSize: 13,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      padding: 0, flexShrink: 0,
                     }}
-                    onChange={handleFileJSONLoad}
-                  />
-                </label>
-
-                <button
-                  type="button"
-                  style={smallBtn}
-                  onClick={handleSaveJSON}
-                  title="Save current ring + scale settings to a JSON file"
-                >
-                  Save JSON
-                </button>
-              </div>
-
-              <select
-                value={activeRingSetId ?? ""}
-                onChange={(e) => {
-                  const id = e.target.value || null;
-                  setActiveRingSetId(id);
-                  setAutoFollowTuner(false);
-                  const rs = ringSets.find((r) => r.id === id);
-                  if (rs) applyRingSet(rs);
-                }}
-                style={{
-                  padding: 8,
-                  borderRadius: 10,
-                  border: "1px solid rgba(255,255,255,0.12)",
-                  background: "rgba(255,255,255,0.06)",
-                  color: "#f8fafc",
-                  fontSize: 12,
-                }}
-              >
-                <option value="">(select ring set)</option>
-                {ringSets.map((rs) => (
-                  <option key={rs.id} value={rs.id}>
-                    {rs.aspectRatio ? `${rs.aspectRatio} • ` : ""}
-                    {rs.status ? `${rs.status} • ` : ""}
-                    {rs.savedAt ? new Date(rs.savedAt).toLocaleString() : rs.id}
-                  </option>
+                  >
+                    {tab.icon}
+                  </button>
                 ))}
-              </select>
-
-              <div style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.35 }}>
-                Current:{" "}
-                <b>
-                  ID {formatNum(innerIDmm, 2)}mm • Wire {formatNum(wireMm, 2)}mm
-                  • Center {formatNum(centerSpacing, 2)}mm
-                </b>
-                <br />
-                Aspect ratio: <b>{formatNum(aspectRatio, 2)}</b>
               </div>
             </div>
 
-            {/* VIEW CONTROLS */}
-            <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ fontWeight: 800, fontSize: 12 }}>View</div>
+            {/* ── SPACING ── */}
+            {controlsTab === "spacing" && (
+              <>
+                <p style={{ margin: 0, opacity: 0.75, lineHeight: 1.3, fontSize: 11 }}>
+                  Hex grid spacing shared with the Weave Tuner.
+                  Vertical = <code>center × 0.866</code>, odd rows offset by <code>center / 2</code>.
+                </p>
+                <SliderRow
+                  label="Center Spacing (mm)"
+                  value={centerSpacing}
+                  setValue={(v) => {
+                    setCenterSpacing(v);
+                    setAutoFollowTuner(false);
+                  }}
+                  min={2}
+                  max={25}
+                  step={0.1}
+                  unit="mm"
+                />
+              </>
+            )}
 
-              <div style={{ display: "grid", gap: 6 }}>
-                <div style={{ fontSize: 11, opacity: 0.9 }}>
-                  Zoom: <b>{formatNum(zoom, 2)}</b> • Pan:{" "}
-                  <b>
-                    {formatNum(panWorldX, 1)}, {formatNum(panWorldY, 1)}
-                  </b>
-                </div>
-
+            {/* ── CIRCLES ── */}
+            {controlsTab === "circles" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 11 }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={hideCircles}
+                    onChange={(e) => setHideCircles(e.target.checked)}
+                  />
+                  <span>Hide circles (still clickable)</span>
+                </label>
+                <div style={{ fontWeight: 700, fontSize: 12 }}>Circles (on placed rings only)</div>
+                <SliderRow
+                  label="Circle Offset X (mm)"
+                  value={circleOffsetX}
+                  setValue={(v) => setCircleOffsetX(v)}
+                  min={-50}
+                  max={50}
+                  step={0.1}
+                  unit="mm"
+                />
+                <SliderRow
+                  label="Circle Offset Y (mm)"
+                  value={circleOffsetY}
+                  setValue={(v) => setCircleOffsetY(v)}
+                  min={-50}
+                  max={50}
+                  step={0.1}
+                  unit="mm"
+                />
+                <SliderRow
+                  label="Circle Scale"
+                  value={circleScale}
+                  setValue={(v) => setCircleScale(v)}
+                  min={0.2}
+                  max={3}
+                  step={0.01}
+                />
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    type="button"
-                    style={smallBtn}
-                    onClick={() => {
-                      setZoom(1);
-                      setPanWorldX(0);
-                      setPanWorldY(0);
-                    }}
+                  <button type="button" style={smallBtn}
+                    onClick={() => { setCircleOffsetX(0); setCircleOffsetY(0); setCircleScale(1); }}
+                    title="Reset circle offset/scale"
+                  >Reset circles</button>
+                  <button type="button" style={smallBtnBlue}
+                    onClick={() => setHideCircles((v) => !v)}
+                    title="Toggle circle visibility"
+                  >{hideCircles ? "Show circles" : "Hide circles"}</button>
+                </div>
+              </div>
+            )}
+
+            {/* ── RING SETS ── */}
+            {controlsTab === "rings" && (
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontWeight: 800, fontSize: 12 }}>Ring Sets (from Tuner)</div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={autoFollowTuner}
+                    onChange={(e) => setAutoFollowTuner(e.target.checked)}
+                  />
+                  <span>Auto-follow latest tuner set</span>
+                </label>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button type="button" style={smallBtn} onClick={reloadRingSets}
+                    title="Reload ring sets from localStorage"
+                  >Reload</button>
+                  <label
+                    style={{ ...smallBtn, display: "grid", placeItems: "center", cursor: "pointer", textAlign: "center" }}
+                    title="Load ring + scale settings from a JSON file"
+                  >
+                    Load JSON…
+                    <input
+                      type="file"
+                      accept="application/json,.json"
+                      style={{ display: "none" }}
+                      onClick={(e) => {
+                        const inp = e.target as HTMLInputElement;
+                        inp.value = "";
+                        const onCancel = () => { inp.value = ""; document.documentElement.focus(); inp.removeEventListener("cancel", onCancel); };
+                        inp.addEventListener("cancel", onCancel);
+                      }}
+                      onChange={handleFileJSONLoad}
+                    />
+                  </label>
+                  <button type="button" style={smallBtn} onClick={handleSaveJSON}
+                    title="Save current ring + scale settings to a JSON file"
+                  >Save JSON</button>
+                </div>
+                <select
+                  value={activeRingSetId ?? ""}
+                  onChange={(e) => {
+                    const id = e.target.value || null;
+                    setActiveRingSetId(id);
+                    setAutoFollowTuner(false);
+                    const rs = ringSets.find((r) => r.id === id);
+                    if (rs) applyRingSet(rs);
+                  }}
+                  style={{ padding: 8, borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#f8fafc", fontSize: 12 }}
+                >
+                  <option value="">(select ring set)</option>
+                  {ringSets.map((rs) => (
+                    <option key={rs.id} value={rs.id}>
+                      {rs.aspectRatio ? `${rs.aspectRatio} • ` : ""}
+                      {rs.status ? `${rs.status} • ` : ""}
+                      {rs.savedAt ? new Date(rs.savedAt).toLocaleString() : rs.id}
+                    </option>
+                  ))}
+                </select>
+                <div style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.35 }}>
+                  Current: <b>ID {formatNum(innerIDmm, 2)}mm • Wire {formatNum(wireMm, 2)}mm • Center {formatNum(centerSpacing, 2)}mm</b>
+                  <br />Aspect ratio: <b>{formatNum(aspectRatio, 2)}</b>
+                </div>
+              </div>
+            )}
+
+            {/* ── VIEW ── */}
+            {controlsTab === "view" && (
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontSize: 11, opacity: 0.9 }}>
+                  Zoom: <b>{formatNum(zoom, 2)}</b> • Pan: <b>{formatNum(panWorldX, 1)}, {formatNum(panWorldY, 1)}</b>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" style={smallBtn}
+                    onClick={() => { setZoom(1); setPanWorldX(0); setPanWorldY(0); }}
                     title="Reset view"
-                  >
-                    Reset view
-                  </button>
-
-                  <button
-                    type="button"
-                    style={smallBtnBlue}
-                    onClick={() => {
-                      // gentle zoom-in to help visibility
-                      setZoom((z) => Math.min(MAX_ZOOM, z * 1.2));
-                    }}
+                  >Reset view</button>
+                  <button type="button" style={smallBtnBlue}
+                    onClick={() => setZoom((z) => Math.min(MAX_ZOOM, z * 1.2))}
                     title="Zoom in"
-                  >
-                    Zoom +
-                  </button>
-
-                  <button
-                    type="button"
-                    style={smallBtnBlue}
-                    onClick={() => {
-                      setZoom((z) => Math.max(MIN_ZOOM, z / 1.2));
-                    }}
+                  >Zoom +</button>
+                  <button type="button" style={smallBtnBlue}
+                    onClick={() => setZoom((z) => Math.max(MIN_ZOOM, z / 1.2))}
                     title="Zoom out"
-                  >
-                    Zoom –
-                  </button>
+                  >Zoom –</button>
                 </div>
               </div>
-            </div>
-            {/* SCALE TUNERS (from Tuner) */}
-            <div
-              style={{
-                marginTop: 6,
-                padding: 10,
-                borderRadius: 12,
-                background: "rgba(15,23,42,0.95)",
-                border: "1px solid rgba(148,163,184,0.25)",
-                display: "grid",
-                gap: 8,
-              }}
-            >
-              <div style={{ fontWeight: 800, fontSize: 12 }}>
-                Scale Tuners (from Tuner)
+            )}
+
+            {/* ── SCALE TUNERS ── */}
+            {controlsTab === "scales" && (
+              <div style={{ display: "grid", gap: 8 }}>
+                <div style={{ fontWeight: 800, fontSize: 12 }}>Scale Tuners (from Tuner)</div>
+                <div style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.35 }}>
+                  Local overrides — don't affect Tuner placement locking.
+                </div>
+                <SliderRow label="Scale Hole ID (mm)" value={activeScaleSettings.holeIdMm}
+                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, holeIdMm: Math.max(1, Math.min(20, v)) })); }}
+                  min={1} max={20} step={0.1} unit="mm" />
+                <SliderRow label="Scale Width (mm)" value={activeScaleSettings.widthMm}
+                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, widthMm: v })); }}
+                  min={4} max={30} step={0.1} unit="mm" />
+                <SliderRow label="Scale Height (mm)" value={activeScaleSettings.heightMm}
+                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, heightMm: v })); }}
+                  min={6} max={45} step={0.1} unit="mm" />
+                <SliderRow label="Scale Drop (mm)" value={activeScaleSettings.dropMm}
+                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, dropMm: v })); }}
+                  min={-10} max={20} step={0.05} unit="mm" />
+                <SliderRow label="Angle In (°)" value={activeScaleSettings.angleInDeg}
+                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, angleInDeg: v })); }}
+                  min={-45} max={45} step={0.5} unit="°" />
+                <SliderRow label="Angle Out (°)" value={activeScaleSettings.angleOutDeg}
+                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, angleOutDeg: v })); }}
+                  min={-45} max={45} step={0.5} unit="°" />
+                <SliderRow label="Scale Plane Z (mm)" value={activeScaleSettings.scalePlaneZ}
+                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, scalePlaneZ: v })); }}
+                  min={-30} max={30} step={0.1} unit="mm" />
+                <SliderRow label="Scale Tip Lift (°)" value={activeScaleSettings.scaleTipLiftDeg}
+                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, scaleTipLiftDeg: v })); }}
+                  min={-10} max={70} step={1} unit="°" />
+                <SliderRow label="Scale Row Clearance Z (mm)" value={activeScaleSettings.scaleRowClearanceZ}
+                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, scaleRowClearanceZ: v })); }}
+                  min={-5} max={5} step={0.01} unit="mm" />
               </div>
+            )}
 
-              <div style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.35 }}>
-                These values drive Freeform scale geometry locally without
-                changing Freeform placement locking.
-              </div>
-
-              <SliderRow
-                label="Scale Hole ID (mm)"
-                value={activeScaleSettings.holeIdMm}
-                setValue={(v) => {
-                  setAutoFollowTuner(false);
-                  setScaleSettingsOverride((prev) => ({
-                    ...prev,
-                    holeIdMm: Math.max(1, Math.min(20, v)),
-                  }));
-                }}
-                min={1}
-                max={20}
-                step={0.1}
-                unit="mm"
-              />
-
-              <SliderRow
-                label="Scale Width (mm)"
-                value={activeScaleSettings.widthMm}
-                setValue={(v) => {
-                  setAutoFollowTuner(false);
-                  setScaleSettingsOverride((prev) => ({
-                    ...prev,
-                    widthMm: v,
-                  }));
-                }}
-                min={4}
-                max={30}
-                step={0.1}
-                unit="mm"
-              />
-
-              <SliderRow
-                label="Scale Height (mm)"
-                value={activeScaleSettings.heightMm}
-                setValue={(v) => {
-                  setAutoFollowTuner(false);
-                  setScaleSettingsOverride((prev) => ({
-                    ...prev,
-                    heightMm: v,
-                  }));
-                }}
-                min={6}
-                max={45}
-                step={0.1}
-                unit="mm"
-              />
-
-              <SliderRow
-                label="Scale Drop (mm)"
-                value={activeScaleSettings.dropMm}
-                setValue={(v) => {
-                  setAutoFollowTuner(false);
-                  setScaleSettingsOverride((prev) => ({
-                    ...prev,
-                    dropMm: v,
-                  }));
-                }}
-                min={-10}
-                max={20}
-                step={0.05}
-                unit="mm"
-              />
-
-              <SliderRow
-                label="Angle In (°)"
-                value={activeScaleSettings.angleInDeg}
-                setValue={(v) => {
-                  setAutoFollowTuner(false);
-                  setScaleSettingsOverride((prev) => ({
-                    ...prev,
-                    angleInDeg: v,
-                  }));
-                }}
-                min={-45}
-                max={45}
-                step={0.5}
-                unit="°"
-              />
-
-              <SliderRow
-                label="Angle Out (°)"
-                value={activeScaleSettings.angleOutDeg}
-                setValue={(v) => {
-                  setAutoFollowTuner(false);
-                  setScaleSettingsOverride((prev) => ({
-                    ...prev,
-                    angleOutDeg: v,
-                  }));
-                }}
-                min={-45}
-                max={45}
-                step={0.5}
-                unit="°"
-              />
-
-              <SliderRow
-                label="Scale Plane Z (mm)"
-                value={activeScaleSettings.scalePlaneZ}
-                setValue={(v) => {
-                  setAutoFollowTuner(false);
-                  setScaleSettingsOverride((prev) => ({
-                    ...prev,
-                    scalePlaneZ: v,
-                  }));
-                }}
-                min={-30}
-                max={30}
-                step={0.1}
-                unit="mm"
-              />
-
-              <SliderRow
-                label="Scale Tip Lift (°)"
-                value={activeScaleSettings.scaleTipLiftDeg}
-                setValue={(v) => {
-                  setAutoFollowTuner(false);
-                  setScaleSettingsOverride((prev) => ({
-                    ...prev,
-                    scaleTipLiftDeg: v,
-                  }));
-                }}
-                min={-10}
-                max={70}
-                step={1}
-                unit="°"
-              />
-
-              <SliderRow
-                label="Scale Row Clearance Z (mm)"
-                value={activeScaleSettings.scaleRowClearanceZ}
-                setValue={(v) => {
-                  setAutoFollowTuner(false);
-                  setScaleSettingsOverride((prev) => ({
-                    ...prev,
-                    scaleRowClearanceZ: v,
-                  }));
-                }}
-                min={-5}
-                max={5}
-                step={0.01}
-                unit="mm"
-              />
-            </div>
-            {/* DIAGNOSTICS */}
-            {showDiagnostics && (
-              <div
-                style={{
-                  marginTop: 6,
-                  padding: 10,
-                  borderRadius: 12,
-                  background: "rgba(2,6,23,0.85)",
-                  border: "1px solid rgba(255,255,255,0.10)",
-                  display: "grid",
-                  gap: 8,
-                }}
-              >
+            {/* ── DIAGNOSTICS ── */}
+            {controlsTab === "diag" && showDiagnostics && (
+              <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontWeight: 800, fontSize: 12 }}>Diagnostics</div>
-
                 <div style={{ fontSize: 11, opacity: 0.85 }}>
-                  Rings: <b>{rings.size}</b> • Selected:{" "}
-                  <b>{lastSelectionCount}</b>
+                  Rings: <b>{rings.size}</b> • Selected: <b>{lastSelectionCount}</b>
                 </div>
-
                 <textarea
                   value={diagLog}
                   readOnly
                   placeholder="Click rings while diagnostics is on to append log lines…"
                   style={{
-                    width: "100%",
-                    minHeight: 120,
-                    resize: "vertical",
-                    padding: 10,
-                    borderRadius: 10,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(255,255,255,0.06)",
-                    color: "#f8fafc",
-                    fontFamily:
-                      "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                    width: "100%", minHeight: 120, resize: "vertical", padding: 10,
+                    borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)",
+                    background: "rgba(255,255,255,0.06)", color: "#f8fafc",
+                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
                     fontSize: 11,
                   }}
                 />
-                <button
-                  type="button"
-                  style={smallBtn}
-                  onClick={() => setDiagLog("")}
+                <button type="button" style={smallBtn} onClick={() => setDiagLog("")}
                   title="Clear diagnostics log"
-                >
-                  Clear log
-                </button>
+                >Clear log</button>
               </div>
             )}
-          </div>
+          </DraggablePill>
         )}
       </div>
     </div>
