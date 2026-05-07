@@ -1495,12 +1495,12 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
           depthWrite: true,
           depthTest: true,
           polygonOffset: true,
-          polygonOffsetFactor: 1,
-          polygonOffsetUnits: 1,
+          polygonOffsetFactor: -1,
+          polygonOffsetUnits: -1,
         });
 
-        // 0.5 mm per row ensures depth-buffer can distinguish rows even at rowClearanceZ=0
-        const rowZ = (maxRow - s.row) * 0.5;
+        // +1 ensures even the bottom row (maxRow) gets 0.5mm of Z clearance above rings
+        const rowZ = (maxRow - s.row + 1) * 0.5;
         const pivot = new THREE.Group();
         pivot.position.set(s.x, -s.y, s.planeZMm + rowZ + i * 0.001);
         pivot.rotation.order = "YXZ";
