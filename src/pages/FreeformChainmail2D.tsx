@@ -99,6 +99,7 @@ const DEFAULT_PALETTE: string[] = [
 // ======================================================
 const COLOR_PALETTE_KEY = "freeform.colorPalette.v1";
 const SAVED_COLOR_PALETTES_KEY = "freeform.savedColorPalettes.v1";
+const AUTOSAVE_KEY = "freeform.autosave.v1";
 
 type SavedColorPalettes = Record<string, string[]>;
 
@@ -156,6 +157,15 @@ function toHex8(rgb: string, alpha255: number): string {
   const base = p?.rgb ?? "#000000";
   const a = Math.max(0, Math.min(255, Math.round(alpha255)));
   return `${base}${hex2(a)}`;
+}
+
+function formatSavedAt(ts?: number): string {
+  if (!ts) return "your last session";
+  const diff = Date.now() - ts;
+  if (diff < 90_000) return "just now";
+  if (diff < 3_600_000) return `${Math.round(diff / 60_000)} minutes ago`;
+  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)} hours ago`;
+  return new Date(ts).toLocaleDateString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
 function loadColorPalette(): string[] {
@@ -982,6 +992,11 @@ const FreeformChainmail2D: React.FC = () => {
   // ✅ Floating submenu (Designer pattern) — show/hide compass nav
   const [showCompass, setShowCompass] = useState(false);
 
+  // Autosave / resume dialog
+  const [showResumeDialog, setShowResumeDialog] = useState(false);
+  const autosaveMetaRef = useRef<{ savedAt: number; ringCount: number } | null>(null);
+  const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // ✅ Secondary utility panel (toolbox/save-load/reset)
   const [showUtilityPanel, setShowUtilityPanel] = useState(false);
   const [showSplineTool, setShowSplineTool] = useState(false);
@@ -1113,6 +1128,91 @@ const FreeformChainmail2D: React.FC = () => {
       window.removeEventListener("freeform:tunerSnapshotSaved", refreshTunerSnapshot as EventListener);
     };
   }, []);
+
+  // ====================================================
+  // AUTOSAVE — check on mount, save on changes
+  // ====================================================
+  useEffect(() => {
+    if (!isStudioTier) return;
+    try {
+      const raw = localStorage.getItem(AUTOSAVE_KEY);
+      if (!raw) return;
+      const data = JSON.parse(raw);
+      if (!Array.isArray(data.rings) || data.rings.length === 0) return;
+      autosaveMetaRef.current = { savedAt: data.savedAt ?? 0, ringCount: data.rings.length };
+      setShowResumeDialog(true);
+    } catch {
+      // corrupt autosave — ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // intentionally runs once on mount
+
+  useEffect(() => {
+    if (!isStudioTier || rings.size === 0) return;
+    if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = setTimeout(() => {
+      try {
+        const payload = {
+          type: "freeform" as const,
+          version: 2,
+          rings: Array.from(rings.values()).map((r: PlacedRing) => ({
+            row: r.row,
+            col: r.col,
+            cluster: r.cluster,
+            color: (r as any).color ?? "#ffffff",
+          })),
+          scaleColors: Array.from(scaleColors.entries()).map(([key, color]) => ({ key, color })),
+          geometry: {
+            innerDiameter: innerIDmm,
+            wireDiameter: wireMm,
+            centerSpacing,
+            angleIn,
+            angleOut,
+          },
+          scaleSettings: {
+            scaleEnabled: activeScaleSettings.enabled,
+            scaleBehindRings: activeScaleSettings.behindRings,
+            scaleHoleDiameter: activeScaleSettings.holeIdMm,
+            scaleWidth: activeScaleSettings.widthMm,
+            scaleHeight: activeScaleSettings.heightMm,
+            scaleShape: activeScaleSettings.shape,
+            scaleDrop: activeScaleSettings.dropMm,
+            scaleColor: activeScaleSettings.colorHex,
+            scaleOnEveryCell: activeScaleSettings.onEveryCell,
+            lockScaleHolesToRingCenters: activeScaleSettings.lockScaleHolesToRingCenters,
+            scaleCenterSpacing: activeScaleSettings.centerSpacingMm,
+            scaleGridOffsetX: activeScaleSettings.gridOffsetXmm,
+            scaleGridOffsetY: activeScaleSettings.gridOffsetYmm,
+            scaleHoleOffsetY: activeScaleSettings.holeOffsetYMm,
+            scaleWeaveMode: activeScaleSettings.weaveMode,
+            scaleAngleIn: activeScaleSettings.angleInDeg,
+            scaleAngleOut: activeScaleSettings.angleOutDeg,
+            scalePlaneZ: activeScaleSettings.scalePlaneZ,
+            scaleTipLiftDeg: activeScaleSettings.scaleTipLiftDeg,
+            scaleRowClearanceZ: activeScaleSettings.scaleRowClearanceZ,
+          },
+          // Save overlay position metadata but not the image data (too large for autosave)
+          overlay: overlay ? {
+            scale: overlay.scale,
+            rotation: overlay.rotation,
+            offsetX: overlay.offsetX,
+            offsetY: overlay.offsetY,
+            opacity: overlay.opacity,
+          } : null,
+          paletteAssignment: assignment,
+          savedAt: Date.now(),
+        };
+        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload));
+      } catch {
+        // QuotaExceededError — skip silently
+      }
+    }, 3000);
+    return () => {
+      if (autosaveTimerRef.current) clearTimeout(autosaveTimerRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rings, scaleColors, innerIDmm, wireMm, centerSpacing, angleIn, angleOut,
+      activeScaleSettings, overlay, assignment, isStudioTier]);
 
   // ====================================================
   // WEAVE GRID SETTINGS (for resolvePlacement)
@@ -5888,6 +5988,74 @@ const scales3D = useMemo(() => {
               </div>
             )}
           </DraggablePill>
+        )}
+
+        {/* ── RESUME DIALOG ── */}
+        {showResumeDialog && (
+          <div style={{
+            position: "fixed", inset: 0,
+            background: "rgba(0,0,0,0.75)",
+            backdropFilter: "blur(8px)",
+            zIndex: 100000,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <div style={{
+              background: "#0f172a",
+              border: "1px solid rgba(148,163,184,0.25)",
+              borderRadius: 20,
+              padding: 32,
+              maxWidth: 420,
+              width: "calc(100vw - 40px)",
+              boxShadow: "0 24px 64px rgba(0,0,0,0.75)",
+              display: "flex", flexDirection: "column", gap: 18,
+              color: "#e5e7eb",
+            }}>
+              <div style={{ fontSize: 20, fontWeight: 800 }}>Welcome back</div>
+              <div style={{ fontSize: 13, opacity: 0.85, lineHeight: 1.6 }}>
+                You have unsaved work from <b>{formatSavedAt(autosaveMetaRef.current?.savedAt)}</b>
+                {autosaveMetaRef.current?.ringCount
+                  ? ` — ${autosaveMetaRef.current.ringCount.toLocaleString()} rings.`
+                  : "."}
+                <br />
+                Would you like to continue where you left off?
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      const raw = localStorage.getItem(AUTOSAVE_KEY);
+                      if (raw) loadFreeformProject(JSON.parse(raw));
+                    } catch {}
+                    setShowResumeDialog(false);
+                  }}
+                  style={{
+                    flex: 1, padding: "13px 0", borderRadius: 12,
+                    background: "rgba(59,130,246,0.30)",
+                    border: "1px solid rgba(59,130,246,0.60)",
+                    color: "#e5e7eb", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                  }}
+                >
+                  Continue
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem(AUTOSAVE_KEY);
+                    setShowResumeDialog(false);
+                  }}
+                  style={{
+                    flex: 1, padding: "13px 0", borderRadius: 12,
+                    background: "rgba(255,255,255,0.07)",
+                    border: "1px solid rgba(255,255,255,0.15)",
+                    color: "#e5e7eb", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                  }}
+                >
+                  New Project
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>
