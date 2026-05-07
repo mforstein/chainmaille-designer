@@ -92,12 +92,18 @@ export default function ShapePanel(props: {
     </button>
   );
 
-  const Item = (id: ShapeTool, label: string) => (
+  const OctIcon = () => (
+    <svg viewBox="0 0 20 20" width={18} height={18} fill="none" stroke="currentColor" strokeWidth="1.5">
+      <polygon points="6,1 14,1 19,6 19,14 14,19 6,19 1,14 1,6" />
+    </svg>
+  );
+
+  const Item = (id: ShapeTool, label: React.ReactNode, title?: string) => (
     <button
       type="button"
       style={active === id ? btnOn : btn}
       onClick={() => onPick(id)}
-      title={label}
+      title={title ?? String(label)}
     >
       {label}
     </button>
@@ -114,7 +120,7 @@ export default function ShapePanel(props: {
         {Item("square", "□")}
         {Item("circle", "○")}
         {Item("hex", "⬡")}
-        {Item("oct", "⯃")}
+        {Item("oct", <OctIcon />, "Octagon")}
         {Item("heart", "♥")}
         {Item("tri", "◺")}
       </div>
