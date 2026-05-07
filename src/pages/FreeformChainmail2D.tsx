@@ -5604,7 +5604,7 @@ const scales3D = useMemo(() => {
               position: "fixed",
               right: 8,
               top: "max(60px, env(safe-area-inset-top, 60px))",
-              width: "min(340px, calc(100vw - 16px))",
+              width: "min(300px, calc(100vw - 16px))",
               background: "#0f172a",
               color: "#e5e7eb",
               borderRadius: 12,
@@ -5615,8 +5615,10 @@ const scales3D = useMemo(() => {
               display: "flex",
               flexDirection: "column",
               gap: 10,
-              maxHeight: "calc(100vh - 80px - env(safe-area-inset-bottom, 0px))",
+              maxHeight: "min(50vh, 360px)",
               overflowY: "auto",
+              scrollbarWidth: "thin",
+              scrollbarColor: "rgba(255,255,255,0.18) transparent",
               fontSize: 12,
             }}
           >
