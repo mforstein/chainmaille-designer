@@ -477,6 +477,8 @@ export default function ChainmailWeaveTuner() {
   const [showCompass, setShowCompass] = useState(false);
   const [tunerMode, setTunerMode] = useState<TunerMode>("tune_rings");
   const [panelOpen, setPanelOpen] = useState(true);
+  const [calibrateScaleTab, setCalibrateScaleTab] = useState<"size" | "dims">("size");
+  const [tuneScaleTab, setTuneScaleTab] = useState<"angles" | "depth">("angles");
 
   const pendingSnapshotSaveRef = useRef(false);
 
@@ -1307,86 +1309,83 @@ if (scaleEnabled) {
         {/* ── Calibrate Scales ── */}
         {tunerMode === "calibrate_scales" && (
           <>
-            {/* Scale size presets */}
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <div style={{ color: "#cbd5e1", fontWeight: 700, fontSize: 12 }}>Scale size</div>
-                <div style={{ color: "#475569", fontSize: 11 }}>
-                  {nearestPreset(scaleWidth, scaleHeight)
-                    ? SCALE_PRESETS.find((p) => p.id === nearestPreset(scaleWidth, scaleHeight))!.label
-                    : "Custom"}
-                </div>
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                {SCALE_PRESETS.map((p) => {
-                  const active = nearestPreset(scaleWidth, scaleHeight) === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => {
-                        setScaleHoleId(p.holeDiaMm);
-                        setScaleWidth(p.widthMm);
-                        setScaleHeight(p.heightMm);
-                        setScaleDrop(p.dropMm);
-                      }}
-                      title={`Hole: ${p.holeDiaMm.toFixed(2)}mm  W: ${p.widthMm}mm  H: ${p.heightMm}mm  Drop: ${p.dropMm}mm`}
-                      style={{
-                        padding: "4px 9px",
-                        borderRadius: 8,
-                        border: `1px solid ${active ? "#3b82f6" : "#334155"}`,
-                        background: active ? "#1e40af" : "#0f172a",
-                        color: active ? "#fff" : "#94a3b8",
-                        cursor: "pointer",
-                        fontSize: 11,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {p.label}
-                    </button>
-                  );
-                })}
-              </div>
-              <div style={{ color: "#475569", fontSize: 10, marginTop: 4 }}>
-                Presets based on TRL/commercial dragon scales — fine-tune with sliders below.
-              </div>
+            {/* Sub-tab toggle */}
+            <div style={{ display: "flex", gap: 4 }}>
+              {(["size", "dims"] as const).map((t) => (
+                <button key={t} onClick={() => setCalibrateScaleTab(t)} style={{ flex: 1, padding: "4px 0", borderRadius: 7, border: "none", background: calibrateScaleTab === t ? "#1e40af" : "#1e293b", color: calibrateScaleTab === t ? "#fff" : "#64748b", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+                  {t === "size" ? "Size & Style" : "Dimensions"}
+                </button>
+              ))}
             </div>
 
-            <div style={{ height: 1, background: "#1e293b", margin: "2px 0" }} />
-
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-              <div style={{ fontSize: 13 }}>Fine-tune dimensions</div>
-              <Link to="/_calibration?from=tuner" style={{ background: "#1f2937", color: "#a7f3d0", padding: "6px 10px", borderRadius: 10, border: "1px solid #334155", textDecoration: "none", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 8, whiteSpace: "nowrap" }}>
-                🎛️ Calibrate
-              </Link>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
-              <div style={{ minWidth: 70, color: "#cbd5e1", fontWeight: 700 }}>Hole ID</div>
-              <input type="number" min={1} max={20} step={0.1} value={scaleHoleId} onChange={(e) => setScaleHoleId(clamp(parseFloat(e.target.value) || 0, 1, 20))} style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }} />
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
-              <div style={{ minWidth: 70, color: "#cbd5e1", fontWeight: 700 }}>Shape</div>
-              <select value={scaleShape} onChange={(e) => setScaleShape(e.target.value as ScaleShape)} style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }}>
-                {SCALE_SHAPES.map((v) => (<option key={v} value={v}>{v}</option>))}
-              </select>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
-              <div style={{ minWidth: 70, color: "#cbd5e1", fontWeight: 700 }}>Color</div>
-              <input type="color" value={scaleColor} onChange={(e) => setScaleColor(e.target.value)} style={{ width: 56, height: 34, padding: 0, border: "1px solid #334155", borderRadius: 8, background: "#0b1220" }} />
-            </div>
-            {[
-              { label: "Width", val: scaleWidth, set: setScaleWidth, min: 4, max: 30, step: 0.1 },
-              { label: "Height", val: scaleHeight, set: setScaleHeight, min: 6, max: 45, step: 0.1 },
-              { label: "Drop", val: scaleDrop, set: setScaleDrop, min: -10, max: 20, step: 0.05 },
-              { label: "Hole pos", val: scaleHoleOffsetY, set: setScaleHoleOffsetY, min: -12, max: 12, step: 0.05 },
-            ].map(({ label, val, set, min, max, step }) => (
-              <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <div style={{ color: "#cbd5e1", fontWeight: 700 }}>{label}</div>
-                  <div style={{ color: "#93c5fd", fontWeight: 700 }}>{val.toFixed(step < 0.1 ? 2 : 1)} mm</div>
+            {calibrateScaleTab === "size" && (
+              <>
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <div style={{ color: "#cbd5e1", fontWeight: 700, fontSize: 12 }}>Scale size</div>
+                    <div style={{ color: "#475569", fontSize: 11 }}>
+                      {nearestPreset(scaleWidth, scaleHeight)
+                        ? SCALE_PRESETS.find((p) => p.id === nearestPreset(scaleWidth, scaleHeight))!.label
+                        : "Custom"}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                    {SCALE_PRESETS.map((p) => {
+                      const active = nearestPreset(scaleWidth, scaleHeight) === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          onClick={() => { setScaleHoleId(p.holeDiaMm); setScaleWidth(p.widthMm); setScaleHeight(p.heightMm); setScaleDrop(p.dropMm); }}
+                          title={`Hole: ${p.holeDiaMm.toFixed(2)}mm  W: ${p.widthMm}mm  H: ${p.heightMm}mm  Drop: ${p.dropMm}mm`}
+                          style={{ padding: "4px 9px", borderRadius: 8, border: `1px solid ${active ? "#3b82f6" : "#334155"}`, background: active ? "#1e40af" : "#0f172a", color: active ? "#fff" : "#94a3b8", cursor: "pointer", fontSize: 11, fontWeight: 600 }}
+                        >
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ color: "#475569", fontSize: 10, marginTop: 4 }}>
+                    Presets based on TRL/commercial dragon scales.
+                  </div>
                 </div>
-                <input type="range" min={min} max={max} step={step} value={val} onChange={(e) => set(parseFloat(e.target.value))} style={{ width: "100%" }} />
-              </div>
-            ))}
+                <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
+                  <div style={{ minWidth: 70, color: "#cbd5e1", fontWeight: 700 }}>Shape</div>
+                  <select value={scaleShape} onChange={(e) => setScaleShape(e.target.value as ScaleShape)} style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }}>
+                    {SCALE_SHAPES.map((v) => (<option key={v} value={v}>{v}</option>))}
+                  </select>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
+                  <div style={{ minWidth: 70, color: "#cbd5e1", fontWeight: 700 }}>Color</div>
+                  <input type="color" value={scaleColor} onChange={(e) => setScaleColor(e.target.value)} style={{ width: 56, height: 34, padding: 0, border: "1px solid #334155", borderRadius: 8, background: "#0b1220" }} />
+                </div>
+              </>
+            )}
+
+            {calibrateScaleTab === "dims" && (
+              <>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                  <div style={{ color: "#cbd5e1", fontWeight: 700 }}>Hole ID</div>
+                  <input type="number" min={1} max={20} step={0.1} value={scaleHoleId} onChange={(e) => setScaleHoleId(clamp(parseFloat(e.target.value) || 0, 1, 20))} style={{ width: 80, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }} />
+                </div>
+                {[
+                  { label: "Width", val: scaleWidth, set: setScaleWidth, min: 4, max: 30, step: 0.1 },
+                  { label: "Height", val: scaleHeight, set: setScaleHeight, min: 6, max: 45, step: 0.1 },
+                  { label: "Drop", val: scaleDrop, set: setScaleDrop, min: -10, max: 20, step: 0.05 },
+                  { label: "Hole pos", val: scaleHoleOffsetY, set: setScaleHoleOffsetY, min: -12, max: 12, step: 0.05 },
+                ].map(({ label, val, set, min, max, step }) => (
+                  <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <div style={{ color: "#cbd5e1", fontWeight: 700 }}>{label}</div>
+                      <div style={{ color: "#93c5fd", fontWeight: 700 }}>{val.toFixed(step < 0.1 ? 2 : 1)} mm</div>
+                    </div>
+                    <input type="range" min={min} max={max} step={step} value={val} onChange={(e) => set(parseFloat(e.target.value))} style={{ width: "100%" }} />
+                  </div>
+                ))}
+                <Link to="/_calibration?from=tuner" style={{ background: "#1f2937", color: "#a7f3d0", padding: "6px 10px", borderRadius: 10, border: "1px solid #334155", textDecoration: "none", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+                  🎛️ Calibrate screen accuracy
+                </Link>
+              </>
+            )}
           </>
         )}
 
@@ -1446,56 +1445,60 @@ if (scaleEnabled) {
         {/* ── Tune Scales ── */}
         {tunerMode === "tune_scales" && (
           <>
-            <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-              <span style={{ color: "#cbd5e1", fontWeight: 700 }}>Enable scales</span>
-              <input type="checkbox" checked={scaleEnabled} onChange={(e) => setScaleEnabled(e.target.checked)} />
-            </label>
-            <button type="button" onClick={() => setScaleBehindRings((v) => !v)} style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1px solid #334155", background: scaleBehindRings ? "#1d4ed8" : "#0b1220", color: "#e5e7eb", cursor: "pointer", fontWeight: 700 }}>
-              {scaleBehindRings ? "🔵 Alignment view" : "🟢 Weave view"}
-            </button>
-            {[
-              { label: "Angle In", val: scaleAngleIn, set: setScaleAngleIn },
-              { label: "Angle Out", val: scaleAngleOut, set: setScaleAngleOut },
-            ].map(({ label, val, set }) => (
-              <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <div style={{ color: "#93c5fd", fontWeight: 700 }}>{label}</div>
-                  <div style={{ color: "#93c5fd", fontWeight: 700 }}>{val.toFixed(0)}°</div>
-                </div>
-                <input type="range" min="-85" max="85" step="1" value={val} onChange={(e) => set(parseFloat(e.target.value))} style={{ width: "100%" }} />
-              </div>
-            ))}
-            <button type="button" onClick={() => { setScaleAngleIn(angleIn); setScaleAngleOut(angleOut); }} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #334155", background: "#0f172a", color: "#7dd3fc", cursor: "pointer", fontSize: 12 }}>
-              ↺ Sync to ring angles ({angleIn}° / {angleOut}°)
-            </button>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <div style={{ color: "#cbd5e1", fontWeight: 700 }}>Plane Z</div>
-                <div style={{ color: "#93c5fd", fontWeight: 700 }}>{scalePlaneZ.toFixed(1)} mm</div>
-              </div>
-              <input type="range" min="-30" max="30" step="0.1" value={scalePlaneZ} onChange={(e) => setScalePlaneZ(parseFloat(e.target.value))} style={{ width: "100%" }} />
+            {/* Sub-tab toggle */}
+            <div style={{ display: "flex", gap: 4 }}>
+              {(["angles", "depth"] as const).map((t) => (
+                <button key={t} onClick={() => setTuneScaleTab(t)} style={{ flex: 1, padding: "4px 0", borderRadius: 7, border: "none", background: tuneScaleTab === t ? "#1e40af" : "#1e293b", color: tuneScaleTab === t ? "#fff" : "#64748b", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+                  {t === "angles" ? "Angles & View" : "Depth & Zoom"}
+                </button>
+              ))}
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <div style={{ color: "#cbd5e1", fontWeight: 700 }}>Tip lift</div>
-                <div style={{ color: "#93c5fd", fontWeight: 700 }}>{scaleTipLiftDeg.toFixed(0)}°</div>
-              </div>
-              <input type="range" min="-10" max="70" step="1" value={scaleTipLiftDeg} onChange={(e) => setScaleTipLiftDeg(parseFloat(e.target.value))} style={{ width: "100%" }} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <div style={{ color: "#cbd5e1", fontWeight: 700 }}>Row clearance Z</div>
-                <div style={{ color: "#93c5fd", fontWeight: 700 }}>{scaleRowClearanceZ.toFixed(2)} mm</div>
-              </div>
-              <input type="range" min="-5" max="5" step="0.01" value={scaleRowClearanceZ} onChange={(e) => setScaleRowClearanceZ(parseFloat(e.target.value))} style={{ width: "100%" }} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <div style={{ color: "#cbd5e1", fontWeight: 700 }}>Zoom</div>
-                <div style={{ color: "#93c5fd", fontWeight: 700 }}>{cameraZoom.toFixed(2)}×</div>
-              </div>
-              <input type="range" min="0.45" max="3.2" step="0.01" value={cameraZoom} onChange={(e) => setCameraZoom(parseFloat(e.target.value))} style={{ width: "100%" }} />
-            </div>
+
+            {tuneScaleTab === "angles" && (
+              <>
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                  <span style={{ color: "#cbd5e1", fontWeight: 700 }}>Enable scales</span>
+                  <input type="checkbox" checked={scaleEnabled} onChange={(e) => setScaleEnabled(e.target.checked)} />
+                </label>
+                <button type="button" onClick={() => setScaleBehindRings((v) => !v)} style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1px solid #334155", background: scaleBehindRings ? "#1d4ed8" : "#0b1220", color: "#e5e7eb", cursor: "pointer", fontWeight: 700 }}>
+                  {scaleBehindRings ? "🔵 Alignment view" : "🟢 Weave view"}
+                </button>
+                {[
+                  { label: "Angle In", val: scaleAngleIn, set: setScaleAngleIn },
+                  { label: "Angle Out", val: scaleAngleOut, set: setScaleAngleOut },
+                ].map(({ label, val, set }) => (
+                  <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <div style={{ color: "#93c5fd", fontWeight: 700 }}>{label}</div>
+                      <div style={{ color: "#93c5fd", fontWeight: 700 }}>{val.toFixed(0)}°</div>
+                    </div>
+                    <input type="range" min="-85" max="85" step="1" value={val} onChange={(e) => set(parseFloat(e.target.value))} style={{ width: "100%" }} />
+                  </div>
+                ))}
+                <button type="button" onClick={() => { setScaleAngleIn(angleIn); setScaleAngleOut(angleOut); }} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #334155", background: "#0f172a", color: "#7dd3fc", cursor: "pointer", fontSize: 12 }}>
+                  ↺ Sync to ring angles ({angleIn}° / {angleOut}°)
+                </button>
+              </>
+            )}
+
+            {tuneScaleTab === "depth" && (
+              <>
+                {[
+                  { label: "Plane Z", val: scalePlaneZ, set: setScalePlaneZ, min: -30, max: 30, step: 0.1, unit: "mm" },
+                  { label: "Tip lift", val: scaleTipLiftDeg, set: setScaleTipLiftDeg, min: -10, max: 70, step: 1, unit: "°" },
+                  { label: "Row clearance Z", val: scaleRowClearanceZ, set: setScaleRowClearanceZ, min: -5, max: 5, step: 0.01, unit: "mm" },
+                  { label: "Zoom", val: cameraZoom, set: setCameraZoom, min: 0.45, max: 3.2, step: 0.01, unit: "×" },
+                ].map(({ label, val, set, min, max, step, unit }) => (
+                  <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <div style={{ color: "#cbd5e1", fontWeight: 700 }}>{label}</div>
+                      <div style={{ color: "#93c5fd", fontWeight: 700 }}>{val.toFixed(step < 0.1 ? 2 : step < 1 ? 1 : 0)}{unit}</div>
+                    </div>
+                    <input type="range" min={min} max={max} step={step} value={val} onChange={(e) => set(parseFloat(e.target.value))} style={{ width: "100%" }} />
+                  </div>
+                ))}
+              </>
+            )}
           </>
         )}
 
