@@ -1199,32 +1199,39 @@ if (scaleEnabled) {
         })}
       </div>
 
-      {/* ── Controls panel (bottom sheet) ── */}
-      {panelOpen && <div
+      {/* ── Controls panel (floating) ── */}
+      {panelOpen && <DraggablePill
+        id="tuner-controls"
+        defaultPosition={{ x: 60, y: typeof window !== "undefined" ? Math.max(60, window.innerHeight - 480) : 100 }}
         style={{
-          position: "absolute",
-          bottom: 0,
-          left: 52,
-          right: 0,
-          background: "rgba(18,24,32,0.97)",
-          borderTop: "1px solid #1e293b",
-          borderLeft: "1px solid #0b1020",
-          borderRadius: "14px 14px 0 0",
+          width: "min(280px, calc(100vw - 80px))",
+          background: "#0f172a",
+          color: "#e5e7eb",
+          borderRadius: 12,
+          padding: "10px 14px 14px",
+          border: "1px solid rgba(148,163,184,0.25)",
+          boxShadow: "0 10px 30px rgba(0,0,0,0.65)",
           display: "flex",
           flexDirection: "column",
-          alignItems: "stretch",
           gap: 10,
-          padding: "10px 14px 20px",
-          zIndex: 10,
-          fontSize: 13,
-          color: "#e5e7eb",
-          backdropFilter: "blur(6px)",
-          maxHeight: "44vh",
+          fontSize: 12,
+          maxHeight: "min(480px, 80vh)",
           overflowY: "auto",
-          boxShadow: "0 -6px 24px rgba(0,0,0,0.4)",
+          backdropFilter: "blur(8px)",
         }}
       >
-        <div style={{ width: 36, height: 4, borderRadius: 2, background: "#334155", margin: "0 auto 4px" }} />
+        {/* Drag handle / header */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 2, cursor: "grab" }}>
+          <span style={{ fontWeight: 700, fontSize: 12, color: "#94a3b8", letterSpacing: "0.04em", textTransform: "uppercase" }}>
+            {TUNER_MODES.find((m) => m.id === tunerMode)?.icon ?? "⚙️"}{" "}
+            {TUNER_MODES.find((m) => m.id === tunerMode)?.label ?? "Tuner"}
+          </span>
+          <button
+            onClick={() => setPanelOpen(false)}
+            style={{ width: 22, height: 22, borderRadius: 6, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.06)", color: "#94a3b8", cursor: "pointer", fontSize: 11, display: "grid", placeItems: "center" }}
+            title="Close"
+          >✕</button>
+        </div>
 
         {/* ── Guided-mode coaching banner ── */}
         {guidanceStep !== null && (
@@ -1536,7 +1543,7 @@ if (scaleEnabled) {
             </div>
           </>
         )}
-      </div>}
+      </DraggablePill>}
 
       <DraggablePill id="tuner-compass" defaultPosition={{ x: 20, y: 70 }}>
         <button
