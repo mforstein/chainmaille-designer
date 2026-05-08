@@ -14,7 +14,7 @@ const SECTIONS = [
   { id: "chart",      icon: "📊",  title: "Ring Chart" },
   { id: "tuner",      icon: "⚙️",  title: "Weave Tuner" },
   { id: "atlas",      icon: "🌐",  title: "Weave Atlas" },
-  { id: "pattern",    icon: "🪡",  title: "Pattern 2D" },
+  { id: "pattern",    icon: "🪡",  title: "Basic" },
   { id: "export",     icon: "📦",  title: "Export" },
   { id: "shortcuts",  icon: "⌨️",  title: "Shortcuts" },
 ];
@@ -652,7 +652,7 @@ const Pattern2DMock = () => {
     ["#60a5fa","#60a5fa","#f472b6","#f472b6","#60a5fa","#60a5fa","#f472b6","#f472b6"],
   ];
   return (
-    <Mock label="Erin Pattern 2D — grid-based color planner">
+    <Mock label="Basic — grid-based color planner">
       <div style={{ background: "#111827", padding: 10 }}>
         <div style={{ display: "inline-grid", gridTemplateColumns: "repeat(8,1fr)", gap: 3 }}>
           {grid.flatMap((row, ri) => row.map((c, ci) => (
@@ -792,7 +792,7 @@ export default function UserManual() {
           </Feat>
 
           <Sub title="Design tools" />
-          <Feat title="🪡 Basic (Erin Pattern 2D)">
+          <Feat title="🪡 Basic">
             Grid-based color planner. Lightest tool — great for quick color-way sketches. Available to all tiers.
           </Feat>
           <Feat title="💎 Designer (3D Ring Grid)">
@@ -1154,7 +1154,7 @@ export default function UserManual() {
         </Sec>
 
         {/* ── PATTERN 2D ──────────────────────────────────────────────────── */}
-        <Sec id="pattern" icon="🪡" title="Erin Pattern 2D · /erin2d">
+        <Sec id="pattern" icon="🪡" title="Basic · /erin2d">
           <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
             A lightweight grid-based 2D color planner. Faster and simpler than Freeform Studio — ideal for quick color-way sketches and simple row-and-column patterns. Free for all tiers.
           </p>
@@ -1183,13 +1183,13 @@ export default function UserManual() {
           <Feat title="Export (BOM + PDF)">
             Opens the shared Finalize &amp; Export panel for PDF and CSV export of the ring layout.
           </Feat>
-          <Tip>Erin Pattern 2D is the fastest way to sketch a color-way before committing to a full Studio design. Use it to confirm a color scheme, then recreate the design in Studio for detailed placement.</Tip>
+          <Tip>Basic is the fastest way to sketch a color-way before committing to a full Studio design. Use it to confirm a color scheme, then recreate the design in Studio for detailed placement.</Tip>
         </Sec>
 
         {/* ── EXPORT ──────────────────────────────────────────────────────── */}
         <Sec id="export" icon="📦" title="Export Reference">
           <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
-            All three design tools (Studio, Designer, Pattern 2D) share the same Finalize &amp; Export panel. Here is a summary of every export format.
+            All three design tools (Studio, Designer, Basic) share the same Finalize &amp; Export panel. Here is a summary of every export format.
           </p>
 
           <div style={{ overflowX: "auto" }}>
