@@ -25,6 +25,7 @@ import type {
   ExternalViewState,
   Ring as RingBase,
   RenderParams,
+  ScaleRenderItem,
 } from "./RingRenderer";
 
 import {
@@ -41,6 +42,64 @@ import type { ColorCalibrationProfile } from "../utils/colorCalibration";
 // Constants
 // ============================================================
 const LARGE_COUNT_THRESHOLD = 5000;
+const DEG_RR = Math.PI / 180;
+
+// ============================================================
+// Scale geometry helpers (shared with non-instanced renderer)
+// ============================================================
+function makeScaleShapeRR(
+  shape: string,
+  w: number,
+  h: number,
+  holeDia: number,
+  bodyOffY: number,
+): THREE.Shape {
+  const hw = w / 2;
+  const tipY = bodyOffY - h;
+  const shoulderY = bodyOffY - h * 0.08;
+  const bellyY = bodyOffY - h * 0.45;
+  const lowerY = bodyOffY - h * 0.78;
+  const s = new THREE.Shape();
+  if (shape === "leaf") {
+    s.moveTo(0, shoulderY);
+    s.bezierCurveTo(hw * 0.95, bodyOffY - h * 0.16, hw * 1.05, bellyY, hw * 0.34, lowerY);
+    s.bezierCurveTo(hw * 0.18, bodyOffY - h * 0.9, hw * 0.08, bodyOffY - h * 0.96, 0, tipY);
+    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.96, -hw * 0.18, bodyOffY - h * 0.9, -hw * 0.34, lowerY);
+    s.bezierCurveTo(-hw * 1.05, bellyY, -hw * 0.95, bodyOffY - h * 0.16, 0, shoulderY);
+  } else if (shape === "round") {
+    s.moveTo(0, shoulderY);
+    s.bezierCurveTo(hw * 0.95, shoulderY, hw * 1.05, bodyOffY - h * 0.52, 0, tipY);
+    s.bezierCurveTo(-hw * 1.05, bodyOffY - h * 0.52, -hw * 0.95, shoulderY, 0, shoulderY);
+  } else if (shape === "kite") {
+    s.moveTo(0, shoulderY);
+    s.lineTo(hw * 0.96, bodyOffY - h * 0.3);
+    s.lineTo(hw * 0.56, lowerY);
+    s.lineTo(0, tipY);
+    s.lineTo(-hw * 0.56, lowerY);
+    s.lineTo(-hw * 0.96, bodyOffY - h * 0.3);
+    s.closePath();
+  } else {
+    s.moveTo(0, shoulderY);
+    s.bezierCurveTo(hw * 1.08, bodyOffY - h * 0.14, hw * 1.16, bellyY, hw * 0.36, lowerY);
+    s.bezierCurveTo(hw * 0.18, bodyOffY - h * 0.88, hw * 0.08, bodyOffY - h * 0.95, 0, tipY);
+    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.95, -hw * 0.18, bodyOffY - h * 0.88, -hw * 0.36, lowerY);
+    s.bezierCurveTo(-hw * 1.16, bellyY, -hw * 1.08, bodyOffY - h * 0.14, 0, shoulderY);
+  }
+  const hole = new THREE.Path();
+  hole.absellipse(0, 0, holeDia / 2, holeDia / 2, 0, Math.PI * 2, true, 0);
+  s.holes.push(hole);
+  return s;
+}
+
+function makeHoleRimRR(r: number, z: number, color: number): THREE.LineLoop {
+  const pts = new THREE.EllipseCurve(0, 0, r, r, 0, Math.PI * 2, false, 0)
+    .getPoints(64)
+    .map((p) => new THREE.Vector3(p.x, p.y, z));
+  return new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 }),
+  );
+}
 
 // ============================================================
 // Color helpers
@@ -211,6 +270,9 @@ type Props = {
   initialPaintMode?: boolean;
   initialEraseMode?: boolean;
   initialRotationLocked?: boolean;
+  scales3D?: ScaleRenderItem[];
+  showScales?: boolean;
+  scalesBehindRings?: boolean;
 };
 
 // ============================================================
@@ -248,6 +310,9 @@ const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
       initialPaintMode = true,
       initialEraseMode = false,
       initialRotationLocked = true,
+      scales3D,
+      showScales,
+      scalesBehindRings,
     },
     ref,
   ) {
@@ -355,6 +420,13 @@ if (calibrationProfileRef.current == null) {
     const pmremRef = useRef<THREE.PMREMGenerator | null>(null);
     const envTexRef = useRef<THREE.Texture | null>(null);
 
+    // Scale rendering refs
+    const scaleGroupRef = useRef<THREE.Group | null>(null);
+    const scaleGeoCacheRef = useRef<Map<string, THREE.ShapeGeometry>>(new Map());
+    const lastScaleShapeKeyRef = useRef<string>("");
+    const showScalesRef = useRef(showScales ?? false);
+    const scalesBehindRingsRef = useRef(scalesBehindRings ?? false);
+
     type GroupMesh = {
       key: string;
       mesh: THREE.InstancedMesh;
@@ -409,6 +481,9 @@ if (calibrationProfileRef.current == null) {
     useEffect(() => {
       panEnabledRef.current = panEnabled;
     }, [panEnabled]);
+
+    useEffect(() => { showScalesRef.current = showScales ?? false; }, [showScales]);
+    useEffect(() => { scalesBehindRingsRef.current = scalesBehindRings ?? false; }, [scalesBehindRings]);
 
     useEffect(() => {
       spatialCellSizeRef.current = safeParams.centerSpacing ?? 7.5;
@@ -990,27 +1065,43 @@ const applyPaintAll = useCallback(() => {
     }, []);
 
     // ------------------------------------------------------------
-    // External view-state sync (optional)
+    // External view-state sync (optional) — with scale tilt support
     // ------------------------------------------------------------
+    const applyExternalCameraInstanced = useCallback(
+      (vs: ExternalViewState | undefined) => {
+        if (!vs) return;
+        const cam = cameraRef.current;
+        const ctr = controlsRef.current;
+        if (!cam || !ctr) return;
+        const zoom = Math.max(1e-6, vs.zoom);
+        const dist = initialZRef.current / zoom;
+        if (showScalesRef.current) {
+          const tilt = scalesBehindRingsRef.current ? 0.08 : 0.22;
+          cam.position.set(vs.panX, vs.panY + dist * Math.sin(tilt), dist * Math.cos(tilt));
+        } else {
+          cam.position.set(vs.panX, vs.panY, dist);
+        }
+        ctr.target.set(vs.panX, vs.panY, 0);
+        cam.near = Math.max(0.1, dist * 0.005);
+        cam.far = Math.max(10000, dist * 200);
+        cam.lookAt(ctr.target);
+        cam.updateProjectionMatrix();
+        ctr.update();
+      },
+      [],
+    );
+
+    const externalViewStateRef = useRef(externalViewState);
+    useEffect(() => { externalViewStateRef.current = externalViewState; }, [externalViewState]);
+
     useEffect(() => {
-      if (!externalViewState) return;
+      applyExternalCameraInstanced(externalViewState);
+    }, [externalViewState, applyExternalCameraInstanced]);
 
-      const cam = cameraRef.current;
-      const ctr = controlsRef.current;
-      if (!cam || !ctr) return;
-
-      const zoom = Math.max(1e-6, externalViewState.zoom);
-      const z = initialZRef.current / zoom;
-
-      cam.position.set(externalViewState.panX, externalViewState.panY, z);
-      ctr.target.set(externalViewState.panX, externalViewState.panY, 0);
-
-      cam.near = 0.01;
-      cam.far = 100000;
-      cam.lookAt(ctr.target);
-      cam.updateProjectionMatrix();
-      ctr.update();
-    }, [externalViewState]);
+    // Re-apply camera tilt when showScales / scalesBehindRings changes
+    useEffect(() => {
+      applyExternalCameraInstanced(externalViewStateRef.current);
+    }, [showScales, scalesBehindRings, applyExternalCameraInstanced]);
 
     // ------------------------------------------------------------
     // Build / rebuild instanced geometry groups when rings change
@@ -1196,6 +1287,117 @@ prevPaintRef.current = new Map(paint);
 
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rings, externalViewState, rebuildSpatialIndex, setInstanceColorByKey]);
+
+    // ------------------------------------------------------------
+    // Scale geometry build (mirrors non-instanced renderer logic)
+    // ------------------------------------------------------------
+    useEffect(() => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+
+      if (scaleGroupRef.current) {
+        try {
+          scaleGroupRef.current.traverse((o: any) => {
+            if (o.isMesh) {
+              if (Array.isArray(o.material)) o.material.forEach((m: any) => m?.dispose?.());
+              else o.material?.dispose?.();
+            } else if (o.isLine) {
+              o.geometry?.dispose?.();
+              o.material?.dispose?.();
+            }
+          });
+        } catch {}
+        try { scene.remove(scaleGroupRef.current); } catch {}
+        scaleGroupRef.current = null;
+      }
+
+      if (!showScales || !Array.isArray(scales3D) || scales3D.length === 0) return;
+
+      if (scales3D.length > 0) {
+        const s0 = scales3D[0];
+        const shapeKey = `${s0.shape}|${s0.width.toFixed(2)}|${s0.height.toFixed(2)}|${s0.holeDiameter.toFixed(2)}|${s0.dropMm.toFixed(2)}`;
+        if (shapeKey !== lastScaleShapeKeyRef.current) {
+          scaleGeoCacheRef.current.forEach((g) => g.dispose());
+          scaleGeoCacheRef.current.clear();
+          lastScaleShapeKeyRef.current = shapeKey;
+        }
+      }
+
+      const sg = new THREE.Group();
+      const maxRow = scales3D.reduce((m, s) => Math.max(m, s.row), 0);
+      const showEdges = scales3D.length <= 120;
+
+      const wireRadius = (safeParams.wireDiameter ?? 2) / 2;
+      const zFloor = wireRadius + 0.3;
+      const minPivotZ = scales3D.reduce((m, s) => {
+        const rowZ = (maxRow - s.row + 1) * 0.5;
+        return Math.min(m, s.planeZMm + rowZ);
+      }, Infinity);
+      const globalLift = Math.max(0, zFloor - minPivotZ);
+
+      scales3D.forEach((s, i) => {
+        const hsi = Math.max(s.holeDiameter * 0.54, s.height * 0.15);
+        const bodyOffY = -hsi + s.dropMm;
+
+        const geoKey = `${s.shape}|${s.width.toFixed(2)}|${s.height.toFixed(2)}|${s.holeDiameter.toFixed(2)}|${bodyOffY.toFixed(2)}`;
+        let geo = scaleGeoCacheRef.current.get(geoKey);
+        const shape = makeScaleShapeRR(s.shape, s.width, s.height, s.holeDiameter, bodyOffY);
+        if (!geo) {
+          geo = new THREE.ShapeGeometry(shape, 20);
+          geo.computeVertexNormals();
+          scaleGeoCacheRef.current.set(geoKey, geo);
+        }
+
+        const mat = new THREE.MeshStandardMaterial({
+          color: new THREE.Color(s.color),
+          side: THREE.DoubleSide,
+          metalness: 0.08,
+          roughness: 0.8,
+          depthWrite: true,
+          depthTest: true,
+          polygonOffset: true,
+          polygonOffsetFactor: -1,
+          polygonOffsetUnits: -1,
+        });
+
+        const rowZ = (maxRow - s.row + 1) * 0.5;
+        const pivot = new THREE.Group();
+        pivot.position.set(s.x, -s.y, s.planeZMm + rowZ + globalLift + i * 0.001);
+        pivot.rotation.order = "YXZ";
+        pivot.rotation.y = s.tiltRad ?? 0;
+        pivot.rotation.x = -((s.tipLiftDeg ?? 0) * DEG_RR);
+
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.renderOrder = 20 + (maxRow - s.row);
+        pivot.add(mesh);
+
+        if (showEdges) {
+          const edgeMat = new THREE.LineBasicMaterial({ color: 0x234050, transparent: true, opacity: 0.98 });
+          const outlinePts = shape.getPoints(20).map((p) => new THREE.Vector3(p.x, p.y, 0.008));
+          if (outlinePts.length > 1) outlinePts.push(outlinePts[0].clone());
+          const outlineGeo = new THREE.BufferGeometry().setFromPoints(outlinePts);
+          const outline = new THREE.Line(outlineGeo, edgeMat);
+          outline.renderOrder = mesh.renderOrder + 1;
+          pivot.add(outline);
+        }
+
+        const rimF = makeHoleRimRR(s.holeDiameter / 2, 0.008, 0x1f4755);
+        rimF.renderOrder = mesh.renderOrder + 2;
+        pivot.add(rimF);
+
+        const rimB = makeHoleRimRR(s.holeDiameter / 2, -0.008, 0x1f4755);
+        rimB.renderOrder = mesh.renderOrder + 2;
+        pivot.add(rimB);
+
+        sg.add(pivot);
+      });
+
+      scaleGroupRef.current = sg;
+      scene.add(sg);
+
+      applyExternalCameraInstanced(externalViewStateRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scales3D, showScales, scalesBehindRings]);
 
     // ------------------------------------------------------------
     // Paint changes: apply diff only
