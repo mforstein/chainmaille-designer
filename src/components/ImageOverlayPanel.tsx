@@ -15,6 +15,7 @@ export interface OverlayState {
 interface Props {
   onApply: (overlay: OverlayState) => void;
   gridAspect?: number; // width/height ratio of the ring grid — preview matches this
+  onClose?: () => void;
 }
 
 /* ----------------------- defaults ----------------------- */
@@ -30,11 +31,11 @@ const defaultOverlay: OverlayState = {
 };
 
 /* ------------------- component ------------------- */
-export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect }) => {
+export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClose }) => {
   // Preview height matches the ring grid's aspect ratio (width ÷ aspect).
-  // Panel content width is 352px (380px - 14px padding × 2).
-  const PREVIEW_W = 352;
-  const previewH = gridAspect ? Math.round(PREVIEW_W / gridAspect) : 220;
+  // Panel content width is 412px (440px - 14px padding × 2).
+  const PREVIEW_W = 412;
+  const previewH = gridAspect ? Math.max(120, Math.min(320, Math.round(PREVIEW_W / gridAspect))) : 240;
   const [overlay, setOverlay] = useState<OverlayState>(defaultOverlay);
   const [dragging, setDragging] = useState(false);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
@@ -155,7 +156,7 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect }) => {
   return (
     <div
       style={{
-        width: 380,
+        width: "min(440px, calc(100vw - 32px))",
         background: "rgba(17,24,39,0.97)",
         border: "1px solid #1f2937",
         borderRadius: 18,
@@ -163,19 +164,30 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect }) => {
         color: "#f3f4f6",
         boxShadow: "0 8px 25px rgba(0,0,0,.5)",
         zIndex: 9999,
+        maxHeight: "90vh",
+        overflowY: "auto",
       }}
       onMouseDown={(e) => e.stopPropagation()}
     >
-      <h3
-        style={{
-          fontSize: 16,
-          fontWeight: 700,
-          marginBottom: 10,
-          color: "#e5e7eb",
-        }}
-      >
-        🖼️ Image Overlay
-      </h3>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+        <h3
+          style={{
+            fontSize: 16,
+            fontWeight: 700,
+            color: "#e5e7eb",
+            margin: 0,
+          }}
+        >
+          🖼️ Image Overlay
+        </h3>
+        {onClose && (
+          <button
+            onClick={onClose}
+            style={{ background: "none", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 8, color: "#9ca3af", cursor: "pointer", fontSize: 14, padding: "4px 8px", lineHeight: 1 }}
+            title="Close"
+          >✕</button>
+        )}
+      </div>
 
       {/* Upload / Drop zone */}
       <div

@@ -1058,6 +1058,8 @@ const FreeformChainmail2D: React.FC = () => {
 
   type OverlayScope = "all" | "selection";
   const [overlayScope, setOverlayScope] = useState<OverlayScope>("all");
+  type TransferTarget = "rings" | "scales" | "both";
+  const [transferTarget, setTransferTarget] = useState<TransferTarget>("rings");
 
   // Keys used when user chooses "selection" scope for overlay transfer
   const [overlayMaskKeys, setOverlayMaskKeys] = useState<Set<string>>(
@@ -1402,11 +1404,12 @@ const FreeformChainmail2D: React.FC = () => {
       return { wx: lx - ox, wy: -(ly - oy) };
     };
 
-    const isScales = activeLayer === "scales";
+    const doRings = transferTarget === "rings" || transferTarget === "both";
+    const doScales = transferTarget === "scales" || transferTarget === "both";
 
     // Current behavior: recolor only existing cells.
-    if (!isScales && rings.size === 0) return;
-    if (isScales && scaleColorsRef.current.size === 0) return;
+    if (doRings && rings.size === 0 && !doScales) return;
+    if (doScales && scaleColorsRef.current.size === 0 && !doRings) return;
 
     const offsetX = Number((overlay as any)?.offsetX ?? 0);
     const offsetY = Number((overlay as any)?.offsetY ?? 0);
@@ -1479,7 +1482,7 @@ const FreeformChainmail2D: React.FC = () => {
       minY = Infinity,
       maxY = -Infinity;
 
-    if (!isScales) {
+    if (doRings) {
       rings.forEach((r, key) => {
         if (targetKeys && !targetKeys.has(key)) return;
 
@@ -1491,14 +1494,15 @@ const FreeformChainmail2D: React.FC = () => {
         minY = Math.min(minY, wy);
         maxY = Math.max(maxY, wy);
       });
-    } else {
+    }
+    if (doScales) {
       for (const [k] of scaleColorsRef.current.entries()) {
         const [rowStr, colStr] = k.split(",");
         const row = Number(rowStr);
         const col = Number(colStr);
         if (!Number.isFinite(row) || !Number.isFinite(col)) continue;
 
-        const dashKey = `${row}-${col}`; // selection masking keys are dash-form
+        const dashKey = `${row}-${col}`;
         if (targetKeys && !targetKeys.has(dashKey)) continue;
 
         const { x: lx, y: ly } = rcToLogical(row, col);
@@ -1628,7 +1632,7 @@ const FreeformChainmail2D: React.FC = () => {
       return `#${hex2(outR)}${hex2(outG)}${hex2(outB)}`;
     };
 
-    if (!isScales) {
+    if (doRings) {
       // ---------------------------
       // Apply to rings
       // ---------------------------
@@ -1650,40 +1654,41 @@ const FreeformChainmail2D: React.FC = () => {
       });
 
       setRings(next);
-      return;
     }
 
-    // ---------------------------
-    // Apply to scales (recolor existing only)
-    // ---------------------------
-    setScaleColors((prev) => {
-      const next = new Map(prev);
+    if (doScales) {
+      // ---------------------------
+      // Apply to scales
+      // ---------------------------
+      setScaleColors((prev) => {
+        const next = new Map(prev);
 
-      for (const [k] of prev.entries()) {
-        const [rowStr, colStr] = k.split(",");
-        const row = Number(rowStr);
-        const col = Number(colStr);
-        if (!Number.isFinite(row) || !Number.isFinite(col)) continue;
+        for (const [k] of prev.entries()) {
+          const [rowStr, colStr] = k.split(",");
+          const row = Number(rowStr);
+          const col = Number(colStr);
+          if (!Number.isFinite(row) || !Number.isFinite(col)) continue;
 
-        const dashKey = `${row}-${col}`;
-        if (targetKeys && !targetKeys.has(dashKey)) continue;
+          const dashKey = `${row}-${col}`;
+          if (targetKeys && !targetKeys.has(dashKey)) continue;
 
-        const { x: lx, y: ly } = rcToLogical(row, col);
-        const { wx, wy } = logicalToWorldLocal(lx, ly);
+          const { x: lx, y: ly } = rcToLogical(row, col);
+          const { wx, wy } = logicalToWorldLocal(lx, ly);
 
-        const sampled = sampleAtWorld(wx, wy);
-        if (!sampled) continue;
+          const sampled = sampleAtWorld(wx, wy);
+          if (!sampled) continue;
 
-        next.set(k, normalizeColor6(sampled));
-      }
+          next.set(k, normalizeColor6(sampled));
+        }
 
-      return next;
-    });
+        return next;
+      });
+    }
   }, [
     overlay,
     overlayScope,
     overlayMaskKeys,
-    activeLayer,
+    transferTarget,
     rings,
     rcToLogical,
     logicalOrigin,
@@ -5480,6 +5485,19 @@ const scales3D = useMemo(() => {
               )}
             </div>
 
+            {/* Transfer Target */}
+            <div style={{ display: "grid", gap: 6, padding: 10, borderRadius: 12, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(2,6,23,0.75)" }}>
+              <div style={{ fontWeight: 800, fontSize: 11, color: "#94a3b8" }}>TRANSFER TARGET</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {(["rings", "scales", "both"] as const).map((t) => (
+                  <label key={t} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, cursor: "pointer", padding: "5px 4px", borderRadius: 8, border: `1px solid ${transferTarget === t ? "rgba(59,130,246,0.65)" : "rgba(255,255,255,0.10)"}`, background: transferTarget === t ? "rgba(59,130,246,0.25)" : "rgba(255,255,255,0.04)" }}>
+                    <input type="radio" name="transferTarget" style={{ display: "none" }} checked={transferTarget === t} onChange={() => setTransferTarget(t)} />
+                    <span style={{ fontSize: 11, fontWeight: 700, color: transferTarget === t ? "#93c5fd" : "#94a3b8", textTransform: "capitalize" }}>{t}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
             {/* Transfer button */}
             <button type="button" onClick={transferOverlayToRings}
               disabled={!overlay?.dataUrl || (overlayScope === "selection" && overlayMaskKeys.size === 0)}
@@ -5488,7 +5506,7 @@ const scales3D = useMemo(() => {
                 background: "#22c55e", color: "#052e16", cursor: "pointer", fontWeight: 900,
                 opacity: !overlay?.dataUrl || (overlayScope === "selection" && overlayMaskKeys.size === 0) ? 0.6 : 1,
               }}
-            >Transfer to Rings</button>
+            >{transferTarget === "rings" ? "Transfer to Rings" : transferTarget === "scales" ? "Transfer to Scales" : "Transfer to Rings + Scales"}</button>
           </div>
         </DraggablePill>
       )}

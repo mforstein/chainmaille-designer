@@ -1866,16 +1866,12 @@ onChange={(e) => {
             top: "50%",
             left: "50%",
             transform: "translate(-50%, -50%)",
-            background: "rgba(17,24,39,0.98)",
-            borderRadius: 16,
-            padding: 20,
-            border: "1px solid #1f2937",
             zIndex: 100001,
-            boxShadow: "0 20px 60px rgba(0,0,0,.7)",
           }}
         >
           <ImageOverlayPanel
             gridAspect={gridAspect}
+            onClose={() => setShowOverlayPanel(false)}
             onApply={async (overlay) => {
               setOverlayState(overlay);
               try {

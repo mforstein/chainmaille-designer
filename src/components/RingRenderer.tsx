@@ -1660,11 +1660,11 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       const worldCenterX = (minX + maxX) * 0.5;
       const worldCenterY = (minY + maxY) * 0.5;
 
-      // Preview panel pixel dimensions — width is fixed (380px panel, 14px padding each side).
+      // Preview panel pixel dimensions — width is fixed (440px panel, 14px padding each side).
       // Height is derived from the ring grid's aspect ratio so the preview and transfer match.
-      const PREVIEW_W = 352;
+      const PREVIEW_W = 412;
       const gridAspect = worldW / worldH;
-      const PREVIEW_H = Math.round(PREVIEW_W / gridAspect);
+      const PREVIEW_H = Math.max(120, Math.min(320, Math.round(PREVIEW_W / gridAspect)));
 
       // Cache key includes everything that affects the rendered preview
       const baseHex = normalizeColor6(paramsRef.current.ringColor || "#FFFFFF");
