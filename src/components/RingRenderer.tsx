@@ -1472,6 +1472,18 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       const maxRow = scales3D.reduce((m, s) => Math.max(m, s.row), 0);
       const showEdges = scales3D.length <= 120; // skip edges for large counts (perf)
 
+      // The stackedZ formula in FreeformChainmail2D creates negative planeZMm for bottom rows
+      // (e.g. an 80-row fill puts the bottom row at planeZMm = -48mm, far below the rings).
+      // rowZ alone (0.5mm for the bottom row) cannot compensate.
+      // Compute a globalLift so the lowest scale always clears the ring tube tops (WD/2 + buffer).
+      const wireRadius = (safeParams.wireDiameter ?? 2) / 2;
+      const zFloor = wireRadius + 0.3; // must sit above ring-tube tops
+      const minPivotZ = scales3D.reduce((m, s) => {
+        const rowZ = (maxRow - s.row + 1) * 0.5;
+        return Math.min(m, s.planeZMm + rowZ);
+      }, Infinity);
+      const globalLift = Math.max(0, zFloor - minPivotZ);
+
       scales3D.forEach((s, i) => {
         const hsi = Math.max(s.holeDiameter * 0.54, s.height * 0.15);
         const bodyOffY = -hsi + s.dropMm;
@@ -1499,10 +1511,9 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
           polygonOffsetUnits: -1,
         });
 
-        // +1 ensures even the bottom row (maxRow) gets 0.5mm of Z clearance above rings
         const rowZ = (maxRow - s.row + 1) * 0.5;
         const pivot = new THREE.Group();
-        pivot.position.set(s.x, -s.y, s.planeZMm + rowZ + i * 0.001);
+        pivot.position.set(s.x, -s.y, s.planeZMm + rowZ + globalLift + i * 0.001);
         pivot.rotation.order = "YXZ";
         pivot.rotation.y = s.tiltRad ?? 0;
         pivot.rotation.x = -((s.tipLiftDeg ?? 0) * DEG_RR);
