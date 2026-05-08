@@ -113,6 +113,17 @@ function normalizeColor6(hex: string): string {
   return p?.rgb ?? "#ffffff"; // always #rrggbb
 }
 
+// Returns a display-safe color: near-white (#fff, lum > 0.88) → light gray so it's
+// visible on the white canvas background, matching the existing ring visibility rule.
+function visibleColor(hex: string): string {
+  const h = hex.toLowerCase();
+  const r = parseInt(h.slice(1, 3), 16) / 255;
+  const g = parseInt(h.slice(3, 5), 16) / 255;
+  const b = parseInt(h.slice(5, 7), 16) / 255;
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  return lum > 0.88 ? "#d4d4d4" : hex;
+}
+
 function parseHexColor(hex: string): { rgb: string; alpha255: number } | null {
   const h = hex.trim();
   const m6 = /^#([0-9a-fA-F]{6})$/.exec(h);
@@ -4211,7 +4222,7 @@ const scales3D = useMemo(() => {
       z: stackedZ + index * 0.001,
       bodyX: holeX,   // bodyX == holeX (scales hang directly below hole)
       bodyY,
-      color: normalizeColor6(s.colorHex ?? activeScaleSettings.colorHex ?? activeColorRef.current ?? "#ffffff"),
+      color: visibleColor(normalizeColor6(s.colorHex ?? activeScaleSettings.colorHex ?? activeColorRef.current ?? "#ffffff")),
       holeDiameter: s.holeIdMm,
       width: s.widthMm,
       height: s.heightMm,

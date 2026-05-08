@@ -1559,7 +1559,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       // Re-apply camera tilt now that scales are present
       applyExternalCamera(externalViewStateRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [scales3D, showScales, scalesBehindRings]);
+    }, [scales3D, showScales, scalesBehindRings, glEpoch]);
 
     // ============================================================
     // Keep mesh colors updated if paint changes (without rebuild)
