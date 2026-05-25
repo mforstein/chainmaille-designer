@@ -462,6 +462,13 @@ if (calibrationProfileRef.current == null) {
     const activeColorRef = useRef(activeColor);
     const paintRef = useRef(paint);
 
+    // Tracks previous ring structure so color-only changes skip the expensive rebuild
+    const prevRingStructureRef = useRef<{
+      count: number;
+      keySet: Set<string>;
+      geomKey: string;
+    }>({ count: -1, keySet: new Set(), geomKey: "" });
+
     useEffect(() => {
       paintModeRef.current = localPaintMode;
     }, [localPaintMode]);
@@ -1110,6 +1117,31 @@ const applyPaintAll = useCallback(() => {
       const scene = sceneRef.current;
       if (!scene) return;
 		paintRef.current = paint;
+
+      // Skip full rebuild if only colors changed (paint diff effect handles that).
+      // Structural change = ring count, key set, or shared geometry changed.
+      if (Array.isArray(rings) && rings.length > 0 && groupsRef.current.length > 0) {
+        const prev = prevRingStructureRef.current;
+        const newCount = rings.length;
+        const firstR = rings[0];
+        const newGeomKey = `${(firstR.innerDiameter ?? 0).toFixed(3)}:${(firstR.wireDiameter ?? 0).toFixed(3)}`;
+
+        let structural = newCount !== prev.count || newGeomKey !== prev.geomKey;
+        if (!structural) {
+          for (const r of rings) {
+            if (!prev.keySet.has(`${r.row},${r.col}`)) {
+              structural = true;
+              break;
+            }
+          }
+        }
+
+        if (!structural) {
+          // Color-only update — let applyPaintDiff (paint effect) handle it.
+          return;
+        }
+      }
+
       // Clear old groups
       if (groupsRef.current.length) {
         for (const g of groupsRef.current) {
@@ -1268,6 +1300,16 @@ const applyPaintAll = useCallback(() => {
       groupsRef.current = groups;
       instanceLookupRef.current = lookup;
 
+      // Update structural snapshot so future color-only changes are detected correctly.
+      prevRingStructureRef.current = {
+        count: rings.length,
+        keySet: new Set(rings.map((r) => `${r.row},${r.col}`)),
+        geomKey:
+          rings.length > 0
+            ? `${(rings[0].innerDiameter ?? 0).toFixed(3)}:${(rings[0].wireDiameter ?? 0).toFixed(3)}`
+            : "",
+      };
+
       rebuildSpatialIndex();
 // We rebuilt groups; force a full paint apply on next paint effect tick.
 forceFullApplyRef.current = true;
@@ -1291,25 +1333,39 @@ prevPaintRef.current = new Map(paint);
     // ------------------------------------------------------------
     // Scale geometry build (mirrors non-instanced renderer logic)
     // ------------------------------------------------------------
+    // Helper: dispose per-instance materials + line geometries (mesh
+    // geometries are cached and reused). Used on rebuild AND on unmount.
+    const disposeScaleGroupInstanced = () => {
+      const scene = sceneRef.current;
+      const grp = scaleGroupRef.current;
+      if (!grp) return;
+      try {
+        const seenGeo = new Set<unknown>();
+        grp.traverse((o: any) => {
+          if (o.material) {
+            const mats: any[] = Array.isArray(o.material) ? o.material : [o.material];
+            mats.forEach((m: any) => {
+              if (!m) return;
+              if (m.map) m.map.dispose?.();
+              m.dispose?.();
+              (m as any).disposed = true;
+            });
+          }
+          if (!o.isMesh && o.geometry && !seenGeo.has(o.geometry)) {
+            seenGeo.add(o.geometry);
+            o.geometry.dispose?.();
+          }
+        });
+      } catch {}
+      try { scene?.remove(grp); } catch {}
+      scaleGroupRef.current = null;
+    };
+
     useEffect(() => {
       const scene = sceneRef.current;
       if (!scene) return;
 
-      if (scaleGroupRef.current) {
-        try {
-          scaleGroupRef.current.traverse((o: any) => {
-            if (o.isMesh) {
-              if (Array.isArray(o.material)) o.material.forEach((m: any) => m?.dispose?.());
-              else o.material?.dispose?.();
-            } else if (o.isLine) {
-              o.geometry?.dispose?.();
-              o.material?.dispose?.();
-            }
-          });
-        } catch {}
-        try { scene.remove(scaleGroupRef.current); } catch {}
-        scaleGroupRef.current = null;
-      }
+      disposeScaleGroupInstanced();
 
       if (!showScales || !Array.isArray(scales3D) || scales3D.length === 0) return;
 
@@ -1398,6 +1454,15 @@ prevPaintRef.current = new Map(paint);
       applyExternalCameraInstanced(externalViewStateRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [scales3D, showScales, scalesBehindRings]);
+
+    // Unmount cleanup — dispose the final scale group (rebuild effect above
+    // only fires on dep changes, not on component teardown).
+    useEffect(() => {
+      return () => {
+        disposeScaleGroupInstanced();
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // ------------------------------------------------------------
     // Paint changes: apply diff only

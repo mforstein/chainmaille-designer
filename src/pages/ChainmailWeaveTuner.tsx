@@ -12,6 +12,17 @@ import { Link, useSearchParams } from "react-router-dom";
 import { DraggableCompassNav, DraggablePill } from "../App";
 import { computeRingVarsIndependent } from "../utils/ringMath";
 import { IconHamburger } from "../components/icons/ToolIcons";
+import CustomShapeEditor from "../components/CustomShapeEditor";
+import {
+  type CustomScaleShape,
+  loadCustomShapes,
+  saveCustomShapes,
+  getCustomShapeById,
+  notifyCustomShapesChanged,
+  CUSTOM_SHAPES_EVENT,
+  loadDefaultScaleShape,
+  saveDefaultScaleShape,
+} from "../lib/customScaleShapes";
 
 // ========================================
 // CONSTANTS
@@ -22,8 +33,9 @@ const ID_OPTIONS = [
 ] as const;
 const WIRE_OPTIONS = [0.9, 1.2, 1.6, 2.0, 2.5, 3.0] as const;
 const SCALE_SHAPES = ["teardrop", "leaf", "round", "kite"] as const;
-
-type ScaleShape = (typeof SCALE_SHAPES)[number];
+type BuiltinScaleShape = (typeof SCALE_SHAPES)[number];
+// Includes "custom:<uuid>" entries that resolve to user-defined polygons.
+type ScaleShape = BuiltinScaleShape | (string & {});
 type ScaleWeaveMode = "independent" | "interlocked";
 type TunerMode = "calibrate_rings" | "calibrate_scales" | "tune_rings" | "tune_scales" | "tune_weave";
 
@@ -286,6 +298,46 @@ function makeScaleShape(
 
   const s = new THREE.Shape();
 
+  // Custom polygon shape (shared library): map a normalized polygon into
+  // the same vertical span built-ins occupy.
+  if (typeof shape === "string" && shape.startsWith("custom:")) {
+    const custom = getCustomShapeById(shape);
+    if (custom?.source === "base" && custom.baseShape) {
+      shape = custom.baseShape;
+    } else if (custom?.polygon && custom.polygon.length >= 3) {
+      const yCenter = (shoulderY + tipY) / 2;
+      const spanY = shoulderY - tipY;
+      const pts = custom.polygon;
+      const [x0, y0] = pts[0];
+      s.moveTo(x0 * width, yCenter - y0 * spanY);
+      for (let i = 1; i < pts.length; i++) {
+        const [px, py] = pts[i];
+        s.lineTo(px * width, yCenter - py * spanY);
+      }
+      s.closePath();
+      if (custom.holes && custom.holes.length) {
+        for (const hole of custom.holes) {
+          if (hole.length < 3) continue;
+          const path = new THREE.Path();
+          const [hx0, hy0] = hole[0];
+          path.moveTo(hx0 * width, yCenter - hy0 * spanY);
+          for (let i = 1; i < hole.length; i++) {
+            const [px, py] = hole[i];
+            path.lineTo(px * width, yCenter - py * spanY);
+          }
+          path.closePath();
+          s.holes.push(path);
+        }
+      } else {
+        const holeR = holeDiameter / 2;
+        const hole = new THREE.Path();
+        ensureHoleWinding(hole, holeR);
+        s.holes.push(hole);
+      }
+      return s;
+    }
+  }
+
   switch (shape) {
     case "leaf": {
       s.moveTo(0, shoulderY);
@@ -457,7 +509,19 @@ export default function ChainmailWeaveTuner() {
   const [scaleWidth, setScaleWidth] = useState(9.1);
   const [scaleDrop, setScaleDrop] = useState(9.2);
   const [scaleHeight, setScaleHeight] = useState(22.2);
-  const [scaleShape, setScaleShape] = useState<ScaleShape>("teardrop");
+  // Tuner respects the user's pinned default scale shape (Save & make default
+  // in the Custom Shape Editor). If a custom Standard shape is pinned, load
+  // that; otherwise fall back to the built-in "leaf" — the elongated,
+  // pointed-both-ends silhouette that matches the physical Standard scale
+  // (the UI labels this as "Standard").
+  const [scaleShape, setScaleShape] = useState<ScaleShape>(() => {
+    const pinned = loadDefaultScaleShape();
+    if (pinned && pinned.startsWith("custom:")) return pinned as ScaleShape;
+    if (pinned === "teardrop" || pinned === "leaf" || pinned === "round" || pinned === "kite") {
+      return pinned as ScaleShape;
+    }
+    return "leaf";
+  });
   const [scaleColor, setScaleColor] = useState(DEFAULT_SCALE_COLOR);
   const [scaleOnEveryCell, setScaleOnEveryCell] = useState(true);
   const [lockScaleHolesToRingCenters, setLockScaleHolesToRingCenters] = useState(true);
@@ -466,8 +530,11 @@ export default function ChainmailWeaveTuner() {
   const [scaleGridOffsetY, setScaleGridOffsetY] = useState(0);
   const [scaleHoleOffsetY, setScaleHoleOffsetY] = useState(-6.2);
   const [scaleWeaveMode, setScaleWeaveMode] = useState<ScaleWeaveMode>("interlocked");
-  const [scaleAngleIn, setScaleAngleIn] = useState(25);
-  const [scaleAngleOut, setScaleAngleOut] = useState(-25);
+  // Scale angles default LESS than the ring angles (25° / -25°) so scales
+  // sit naturally relative to the rings. Users can "Sync to ring angles"
+  // via the button in the Tune Scales panel when they want them matched.
+  const [scaleAngleIn, setScaleAngleIn] = useState(9);
+  const [scaleAngleOut, setScaleAngleOut] = useState(-9);
   const [scalePlaneZ, setScalePlaneZ] = useState(0);
   const [scaleTipLiftDeg, setScaleTipLiftDeg] = useState(14);
   const [scaleRowClearanceZ, setScaleRowClearanceZ] = useState(1.2);
@@ -479,6 +546,34 @@ export default function ChainmailWeaveTuner() {
   const [panelOpen, setPanelOpen] = useState(true);
   const [calibrateScaleTab, setCalibrateScaleTab] = useState<"size" | "dims">("size");
   const [tuneScaleTab, setTuneScaleTab] = useState<"angles" | "depth">("angles");
+
+  // Shared custom scale shapes (created in Freeform or here).
+  const [customShapes, setCustomShapes] = useState<CustomScaleShape[]>(() =>
+    loadCustomShapes(),
+  );
+  const [shapeEditor, setShapeEditor] = useState<
+    | { mode: "add" }
+    | { mode: "edit"; initial: CustomScaleShape }
+    | null
+  >(null);
+
+  useEffect(() => {
+    const onChanged = () => setCustomShapes(loadCustomShapes());
+    window.addEventListener(CUSTOM_SHAPES_EVENT, onChanged);
+    window.addEventListener("storage", onChanged);
+    return () => {
+      window.removeEventListener(CUSTOM_SHAPES_EVENT, onChanged);
+      window.removeEventListener("storage", onChanged);
+    };
+  }, []);
+
+  // Tuner shows ALL built-in scale presets and shapes — the hide/restore that
+  // exists in the Freeform menu doesn't apply here, because calibration needs
+  // the reference shapes on hand.
+  const visiblePresets = SCALE_PRESETS;
+  // Only the Standard scale (internally "leaf" — the elongated, pointed
+  // silhouette of the physical Standard) is exposed.
+  const visibleBuiltins: BuiltinScaleShape[] = ["leaf"];
 
   const pendingSnapshotSaveRef = useRef(false);
 
@@ -507,7 +602,7 @@ export default function ChainmailWeaveTuner() {
       if (typeof last.scaleHoleDiameter === "number") setScaleHoleId(last.scaleHoleDiameter);
       if (typeof last.scaleWidth === "number") setScaleWidth(last.scaleWidth);
       if (typeof last.scaleHeight === "number") setScaleHeight(last.scaleHeight);
-      if (last.scaleShape && SCALE_SHAPES.includes(last.scaleShape)) setScaleShape(last.scaleShape);
+      if (typeof last.scaleShape === "string" && ((SCALE_SHAPES as readonly string[]).includes(last.scaleShape) || last.scaleShape.startsWith("custom:"))) setScaleShape(last.scaleShape as ScaleShape);
       if (typeof last.scaleDrop === "number") setScaleDrop(last.scaleDrop);
       if (typeof last.scaleColor === "string") setScaleColor(last.scaleColor);
       if (typeof last.scaleOnEveryCell === "boolean") setScaleOnEveryCell(last.scaleOnEveryCell);
@@ -541,7 +636,7 @@ export default function ChainmailWeaveTuner() {
       if (typeof s.scaleHoleDiameter === "number") setScaleHoleId(s.scaleHoleDiameter);
       if (typeof s.scaleWidth === "number") setScaleWidth(s.scaleWidth);
       if (typeof s.scaleHeight === "number") setScaleHeight(s.scaleHeight);
-      if (s.scaleShape && SCALE_SHAPES.includes(s.scaleShape)) setScaleShape(s.scaleShape);
+      if (typeof s.scaleShape === "string" && ((SCALE_SHAPES as readonly string[]).includes(s.scaleShape) || s.scaleShape.startsWith("custom:"))) setScaleShape(s.scaleShape as ScaleShape);
       if (typeof s.scaleDrop === "number") setScaleDrop(s.scaleDrop);
       if (typeof s.scaleColor === "string") setScaleColor(s.scaleColor);
       if (typeof s.scaleOnEveryCell === "boolean") setScaleOnEveryCell(s.scaleOnEveryCell);
@@ -571,7 +666,7 @@ export default function ChainmailWeaveTuner() {
       if (typeof s.scaleHoleDiameter === "number") setScaleHoleId(s.scaleHoleDiameter);
       if (typeof s.scaleWidth === "number") setScaleWidth(s.scaleWidth);
       if (typeof s.scaleHeight === "number") setScaleHeight(s.scaleHeight);
-      if (s.scaleShape && SCALE_SHAPES.includes(s.scaleShape)) setScaleShape(s.scaleShape);
+      if (typeof s.scaleShape === "string" && ((SCALE_SHAPES as readonly string[]).includes(s.scaleShape) || s.scaleShape.startsWith("custom:"))) setScaleShape(s.scaleShape as ScaleShape);
       if (typeof s.scaleDrop === "number") setScaleDrop(s.scaleDrop);
       if (typeof s.scaleColor === "string") setScaleColor(s.scaleColor);
       if (typeof s.scaleOnEveryCell === "boolean") setScaleOnEveryCell(s.scaleOnEveryCell);
@@ -1330,7 +1425,7 @@ if (scaleEnabled) {
                     </div>
                   </div>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                    {SCALE_PRESETS.map((p) => {
+                    {visiblePresets.map((p) => {
                       const active = nearestPreset(scaleWidth, scaleHeight) === p.id;
                       return (
                         <button
@@ -1348,11 +1443,76 @@ if (scaleEnabled) {
                     Presets based on TRL/commercial dragon scales.
                   </div>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
                   <div style={{ minWidth: 70, color: "#cbd5e1", fontWeight: 700 }}>Shape</div>
-                  <select value={scaleShape} onChange={(e) => setScaleShape(e.target.value as ScaleShape)} style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }}>
-                    {SCALE_SHAPES.map((v) => (<option key={v} value={v}>{v}</option>))}
+                  <select
+                    value={scaleShape}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v === "__add_custom__") {
+                        setShapeEditor({ mode: "add" });
+                        return;
+                      }
+                      setScaleShape(v as ScaleShape);
+                    }}
+                    style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }}
+                  >
+                    {visibleBuiltins.map((v) => (
+                      <option key={v} value={v}>
+                        {v === "leaf" || v === "teardrop" ? "Standard" : v}
+                      </option>
+                    ))}
+                    {customShapes.length > 0 && <option disabled>──────────</option>}
+                    {customShapes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.emoji} {c.label}
+                      </option>
+                    ))}
+                    <option value="__add_custom__">+ Add custom…</option>
                   </select>
+                  {typeof scaleShape === "string" && scaleShape.startsWith("custom:") && (
+                    <>
+                      <button
+                        type="button"
+                        title="Edit custom shape"
+                        onClick={() => {
+                          const c = getCustomShapeById(scaleShape);
+                          if (c) setShapeEditor({ mode: "edit", initial: c });
+                        }}
+                        style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid #334155", background: "#0f172a", color: "#cbd5e1", cursor: "pointer", fontSize: 12 }}
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        type="button"
+                        title="Set as default scale shape"
+                        onClick={() => saveDefaultScaleShape(scaleShape)}
+                        style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid #334155", background: "#0f172a", color: "#cbd5e1", cursor: "pointer", fontSize: 12 }}
+                      >
+                        ⭐
+                      </button>
+                      <button
+                        type="button"
+                        title="Delete custom shape"
+                        onClick={() => {
+                          const next = customShapes.filter((c) => c.id !== scaleShape);
+                          setCustomShapes(next);
+                          saveCustomShapes(next);
+                          notifyCustomShapesChanged();
+                          // Fall back to first visible built-in, or any remaining custom.
+                          const fallback =
+                            visibleBuiltins[0] ?? next[0]?.id ?? "teardrop";
+                          setScaleShape(fallback);
+                          if (loadDefaultScaleShape() === scaleShape) {
+                            saveDefaultScaleShape(null);
+                          }
+                        }}
+                        style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid #334155", background: "#0f172a", color: "#cbd5e1", cursor: "pointer", fontSize: 12 }}
+                      >
+                        🗑️
+                      </button>
+                    </>
+                  )}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
                   <div style={{ minWidth: 70, color: "#cbd5e1", fontWeight: 700 }}>Color</div>
@@ -1558,6 +1718,30 @@ if (scaleEnabled) {
       </DraggablePill>
 
       {showCompass && <DraggableCompassNav onNavigate={() => setShowCompass(false)} />}
+
+      {shapeEditor && (
+        <CustomShapeEditor
+          initial={shapeEditor.mode === "edit" ? shapeEditor.initial : null}
+          onCancel={() => setShapeEditor(null)}
+          onSave={(saved, makeDefault) => {
+            const idx = customShapes.findIndex((c) => c.id === saved.id);
+            const next =
+              idx === -1
+                ? [...customShapes, saved]
+                : customShapes.map((c, i) => (i === idx ? saved : c));
+            setCustomShapes(next);
+            saveCustomShapes(next);
+            notifyCustomShapesChanged();
+            const newShapeValue =
+              saved.source === "base"
+                ? (saved.baseShape ?? "teardrop")
+                : saved.id;
+            setScaleShape(newShapeValue);
+            if (makeDefault) saveDefaultScaleShape(newShapeValue);
+            setShapeEditor(null);
+          }}
+        />
+      )}
     </div>
   );
 }

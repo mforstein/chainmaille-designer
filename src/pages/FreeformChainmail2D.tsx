@@ -30,7 +30,7 @@ import {
 
 import { DraggablePill, DraggableCompassNav } from "../App";
 import type { ExportRing, PaletteAssignment } from "../types/project";
-import { IconCircle, IconSquare, IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo } from "../components/icons/ToolIcons";
+import { IconCircle, IconSquare, IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo, IconScaleMove } from "../components/icons/ToolIcons";
 import { ToolBtn } from "../components/ui/ToolBtn";
 import ShapePanel, { ShapeTool as ShapeToolId } from "../components/ShapePanel";
 import { computeShapeCells } from "../utils/shapeFill";
@@ -39,6 +39,23 @@ import defaultFreeformDesign from "../data/defaultFreeformDesign";
 import SupplierColorPalette from "../components/SupplierColorPalette";
 import SupplierColorRefreshButton from "../components/SupplierColorRefreshButton";
 import FreeformCostPanel from "../components/FreeformCostPanel";
+import CustomShapeEditor from "../components/CustomShapeEditor";
+import {
+  type CustomScaleShape,
+  type BuiltinOverrides,
+  type BuiltinScaleShape,
+  loadCustomShapes,
+  saveCustomShapes,
+  loadBuiltinOverrides,
+  saveBuiltinOverrides,
+  loadDefaultScaleShape,
+  saveDefaultScaleShape,
+  loadHiddenBuiltinShapeIds,
+  saveHiddenBuiltinShapeIds,
+  notifyCustomShapesChanged,
+  CUSTOM_SHAPES_EVENT,
+  polygonToPath2D,
+} from "../lib/customScaleShapes";
 // ⬇️ SAFETY STUB (keeps App.tsx safe if it calls this early; BOM UI removed)
 declare global {
   interface Window {
@@ -101,7 +118,51 @@ const COLOR_PALETTE_KEY = "freeform.colorPalette.v1";
 const SAVED_COLOR_PALETTES_KEY = "freeform.savedColorPalettes.v1";
 const AUTOSAVE_KEY = "freeform.autosave.v1";
 
+// Safe localStorage wrappers — Safari private mode and quota-exceeded both
+// throw on setItem/removeItem; an unwrapped throw inside a React event handler
+// or effect kills the app. These no-op on failure.
+function safeLSSet(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* private mode / quota — ignore */
+  }
+}
+function safeLSRemove(key: string) {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}
+
 type SavedColorPalettes = Record<string, string[]>;
+
+// Available scale shapes for the toolbar picker. The shape string MUST match
+// what makeScaleShapeRR / drawScaleFromExport / ScaleRenderItem.shape expect
+// ("teardrop" | "leaf" | "round" | "kite"). Emojis are picked to roughly
+// suggest the silhouette.
+type ScaleShapeName = "teardrop" | "leaf" | "round" | "kite";
+const SCALE_SHAPE_OPTIONS: Array<{
+  shape: ScaleShapeName;
+  emoji: string;
+  label: string;
+}> = [
+  // Only the Standard scale (internally "leaf" — elongated, pointed both
+  // ends, matching the physical Standard scale silhouette) is exposed to the
+  // user. Other built-in shapes remain in the type system / renderer
+  // fallbacks so older saves keep loading, but they are not selectable from
+  // the UI.
+  { shape: "leaf", emoji: "💧", label: "Standard" },
+];
+const SCALE_SHAPE_EMOJI: Record<ScaleShapeName, string> = {
+  teardrop: "💧",
+  leaf: "💧",
+  round: "💧",
+  kite: "💧",
+};
+
+const SCALE_MENU_SELECTED_KEY = "freeform.scaleMenu.selectedId.v1";
 
 function hex2(n: number) {
   return n.toString(16).padStart(2, "0");
@@ -587,9 +648,15 @@ const TUNER_LS_KEY = "chainmailMatrix";
 const AUTO_FOLLOW_KEY = "freeformAutoFollowTuner";
 const ACTIVE_SET_KEY = "freeformActiveRingSetId";
 const FREEFORM_TUNER_SNAPSHOT_KEY = "freeform.tunerSnapshot.v1";
+// User-applied slider overrides on top of the base Tuner snapshot. Persisted
+// so that sliders the user moves stay applied across reloads/restarts even
+// when no rings have been placed yet (the broader autosave only fires once a
+// design exists).
+const SCALE_SETTINGS_OVERRIDE_KEY = "freeform.scaleSettingsOverride.v1";
 const DEG = Math.PI / 180;
 
-type ScaleShape = "teardrop" | "leaf" | "round" | "kite";
+// Includes "custom:<uuid>" entries that resolve to user-defined polygons.
+type ScaleShape = "teardrop" | "leaf" | "round" | "kite" | (string & {});
 type ScaleWeaveMode = "independent" | "interlocked";
 
 type FreeformScaleSettings = {
@@ -658,6 +725,10 @@ type ExportScale = {
   planeZMm: number;
   tipLiftDeg: number;
   rowClearanceZMm: number;
+  // Optional per-scale image patch (data URL). When present, RingRenderer
+  // uses it as the scale material's texture map so the image is painted
+  // onto the scale outline instead of just a flat colour.
+  imagePatchUrl?: string | null;
 };
 
 function normalizeFreeformScaleSettings(src: Record<string, any>): FreeformScaleSettings {
@@ -667,7 +738,7 @@ function normalizeFreeformScaleSettings(src: Record<string, any>): FreeformScale
     holeIdMm: 7.94,       // 5/16 inch — matches Tuner default scaleHoleId
     widthMm: 9.1,          // matches Tuner default scaleWidth
     heightMm: 22.2,        // matches Tuner default scaleHeight
-    shape: "teardrop",
+    shape: "leaf",         // Standard silhouette (elongated, pointed ends)
     dropMm: 9.2,           // matches Tuner default scaleDrop
     colorHex: "#4dd0e1",
     onEveryCell: true,
@@ -677,8 +748,9 @@ function normalizeFreeformScaleSettings(src: Record<string, any>): FreeformScale
     gridOffsetYmm: 0,
     holeOffsetYMm: -6.2,   // matches Tuner default scaleHoleOffsetY
     weaveMode: "interlocked",
-    angleInDeg: 25,
-    angleOutDeg: -25,
+    // Scale angles default LESS than ring angles (25° / -25°). Matches Tuner.
+    angleInDeg: 9,
+    angleOutDeg: -9,
     scalePlaneZ: 0,        // matches Tuner default scalePlaneZ
     scaleTipLiftDeg: 14,   // matches Tuner default scaleTipLiftDeg
     scaleRowClearanceZ: 1.2, // matches Tuner default scaleRowClearanceZ
@@ -811,7 +883,7 @@ const FreeformChainmail2D: React.FC = () => {
   });
   const updateCanvasBg = (color: string) => {
     setCanvasBg(color);
-    localStorage.setItem("freeform.canvasBg", color);
+    safeLSSet("freeform.canvasBg", color);
   };
 
   const [assignment, setAssignment] = useState<PaletteAssignment | null>(() => {
@@ -1013,6 +1085,144 @@ const FreeformChainmail2D: React.FC = () => {
   const [showSplineTool, setShowSplineTool] = useState(false);
   const [showSupplierColors, setShowSupplierColors] = useState(false);
   const [splineResetKey, setSplineResetKey] = useState(0);
+  // Scale shape picker (toolbar): when open, shows a small popup of emoji
+  // options. Selecting one updates activeScaleSettings.shape via the override,
+  // which is the single source of truth driving every rendered scale's shape.
+  const [scaleShapePickerOpen, setScaleShapePickerOpen] = useState(false);
+  const [builtinShapeOverrides, setBuiltinShapeOverrides] =
+    useState<BuiltinOverrides>(() => loadBuiltinOverrides());
+  const [customShapeEntries, setCustomShapeEntries] = useState<CustomScaleShape[]>(
+    () => loadCustomShapes(),
+  );
+  const [selectedShapeMenuId, setSelectedShapeMenuId] = useState<string>(() => {
+    try {
+      const saved = localStorage.getItem(SCALE_MENU_SELECTED_KEY);
+      if (saved) return saved;
+    } catch {}
+    const def = loadDefaultScaleShape();
+    if (def) {
+      return def.startsWith("custom:") ? def : `builtin:${def}`;
+    }
+    return "builtin:teardrop";
+  });
+  const [hiddenBuiltinShapes, setHiddenBuiltinShapesState] = useState<
+    BuiltinScaleShape[]
+  >(() => loadHiddenBuiltinShapeIds());
+  // Editor modal state. When non-null, the modal is open.
+  const [shapeEditor, setShapeEditor] = useState<
+    | { mode: "add" }
+    | { mode: "edit"; initial: CustomScaleShape }
+    | null
+  >(null);
+  // Inline rename popover for built-ins (cheap edit, no full modal).
+  const [renamingBuiltin, setRenamingBuiltin] = useState<BuiltinScaleShape | null>(
+    null,
+  );
+  const [builtinRenameDraft, setBuiltinRenameDraft] = useState<{
+    emoji: string;
+    label: string;
+  }>({ emoji: "", label: "" });
+
+  useEffect(() => {
+    saveBuiltinOverrides(builtinShapeOverrides);
+    notifyCustomShapesChanged();
+  }, [builtinShapeOverrides]);
+  useEffect(() => {
+    saveCustomShapes(customShapeEntries);
+    notifyCustomShapesChanged();
+  }, [customShapeEntries]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(SCALE_MENU_SELECTED_KEY, selectedShapeMenuId);
+    } catch {}
+  }, [selectedShapeMenuId]);
+
+  // Listen for cross-tab/page changes (e.g. Tuner edits the same list).
+  useEffect(() => {
+    const onChanged = () => {
+      setBuiltinShapeOverrides(loadBuiltinOverrides());
+      setCustomShapeEntries(loadCustomShapes());
+      setHiddenBuiltinShapesState(loadHiddenBuiltinShapeIds());
+    };
+    window.addEventListener(CUSTOM_SHAPES_EVENT, onChanged);
+    window.addEventListener("storage", onChanged);
+    return () => {
+      window.removeEventListener(CUSTOM_SHAPES_EVENT, onChanged);
+      window.removeEventListener("storage", onChanged);
+    };
+  }, []);
+
+  const hideBuiltinShape = useCallback((s: BuiltinScaleShape) => {
+    setHiddenBuiltinShapesState((prev) => {
+      const next = [...new Set([...prev, s])];
+      saveHiddenBuiltinShapeIds(next);
+      return next;
+    });
+  }, []);
+  const restoreBuiltinShape = useCallback((s: BuiltinScaleShape) => {
+    setHiddenBuiltinShapesState((prev) => {
+      const next = prev.filter((x) => x !== s);
+      saveHiddenBuiltinShapeIds(next);
+      return next;
+    });
+  }, []);
+
+  type MergedShapeMenuEntry = {
+    id: string;
+    baseShape: ScaleShapeName;
+    emoji: string;
+    label: string;
+    builtin: boolean;
+    custom?: CustomScaleShape;
+  };
+  const mergedShapeMenu = useMemo<MergedShapeMenuEntry[]>(() => {
+    const builtins: MergedShapeMenuEntry[] = SCALE_SHAPE_OPTIONS
+      .filter((opt) => !hiddenBuiltinShapes.includes(opt.shape))
+      .map((opt) => {
+      const ov = builtinShapeOverrides[opt.shape] ?? {};
+      return {
+        id: `builtin:${opt.shape}`,
+        baseShape: opt.shape,
+        emoji: ov.emoji?.trim() || opt.emoji,
+        label: ov.label?.trim() || opt.label,
+        builtin: true,
+      };
+    });
+    const customs: MergedShapeMenuEntry[] = customShapeEntries.map((e) => ({
+      // For base-source customs we route the scale renderer at the underlying
+      // built-in geometry; for image/freehand we route at the custom id itself
+      // (RingRenderer + drawScale will look up the polygon).
+      id: e.id,
+      baseShape:
+        e.source === "base"
+          ? (e.baseShape ?? "teardrop")
+          : ("teardrop" as ScaleShapeName), // unused — see shapeForRenderer
+      emoji: e.emoji,
+      label: e.label,
+      builtin: false,
+      custom: e,
+    }));
+    return [...builtins, ...customs];
+  }, [builtinShapeOverrides, customShapeEntries, hiddenBuiltinShapes]);
+
+  // What value to push into scaleSettingsOverride.shape so the renderer picks
+  // the right geometry. Built-ins / base-source customs return the canonical
+  // ScaleShapeName; polygon-source customs return their full custom id so the
+  // renderer can find their polygon.
+  const shapeForRenderer = useCallback(
+    (entry: MergedShapeMenuEntry): string => {
+      if (entry.custom && entry.custom.source !== "base") return entry.custom.id;
+      return entry.baseShape;
+    },
+    [],
+  );
+
+  // Resolve the toolbar emoji from the currently-selected menu entry.
+  const activeShapeMenuEntry = useMemo<MergedShapeMenuEntry | null>(() => {
+    const byId = mergedShapeMenu.find((e) => e.id === selectedShapeMenuId);
+    if (byId) return byId;
+    return null;
+  }, [mergedShapeMenu, selectedShapeMenuId]);
   // ==============================
   // 📏 Studio Stats (dims + counts)
   // ==============================
@@ -1055,11 +1265,110 @@ const FreeformChainmail2D: React.FC = () => {
   const [showImageOverlay, setShowImageOverlay] = useState(false);
   const [overlay, setOverlay] = useState<OverlayState | null>(null);
   const overlayDragRef = useRef<{ x: number; y: number } | null>(null);
+  // Drag state for repositioning the on-canvas overlay (separate from the
+  // panel's preview drag).
+  const overlayCanvasDragRef = useRef<{
+    startClientX: number;
+    startClientY: number;
+    startOffsetX: number;
+    startOffsetY: number;
+  } | null>(null);
+  // Wrap dimensions for sizing the SVG overlay. Tracked via ResizeObserver
+  // below.
+  const [wrapSize, setWrapSize] = useState<{ w: number; h: number }>({
+    w: 0,
+    h: 0,
+  });
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const update = () => {
+      const r = wrap.getBoundingClientRect();
+      setWrapSize({ w: r.width, h: r.height });
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(wrap);
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, []);
 
   type OverlayScope = "all" | "selection";
   const [overlayScope, setOverlayScope] = useState<OverlayScope>("all");
   type TransferTarget = "rings" | "scales" | "both";
   const [transferTarget, setTransferTarget] = useState<TransferTarget>("rings");
+  const [isTransferring, setIsTransferring] = useState(false);
+
+  // Copy/paste clipboard for selected rings + scales. Items are stored as
+  // row/col offsets from the selection's top-left cell so paste can re-anchor
+  // anywhere. Cleared explicitly via the Copy button (replacing contents) or
+  // when the user clears the design. Survives selection clearing — copy is a
+  // snapshot, not a live reference. Multiple pastes reuse the same clipboard.
+  type ClipboardItem = {
+    deltaRow: number;
+    deltaCol: number;
+    ring?: { color: string; cluster: number };
+    scaleColor?: string;
+    scaleImagePatch?: string;
+  };
+  const [clipboard, setClipboard] = useState<{ items: ClipboardItem[]; w: number; h: number } | null>(null);
+  // When true, the next canvas click pastes the clipboard at the clicked
+  // cell. Stays on after each paste so the user can place multiple copies.
+  // Exit via Esc, the Paste toolbar button toggle, or Cmd/Ctrl+V again.
+  const [pasteMode, setPasteMode] = useState(false);
+  // Captures the cells from the most recent shape selection AND a snapshot of
+  // their ring/scale state at the moment of selection (before the selection
+  // tool's auto-paint mutates rings/scales). Without this snapshot, Copy
+  // would read the post-paint state and the clipboard would contain a slab
+  // of the active paint color instead of the original (e.g. image-transferred)
+  // ring colors.
+  type CapturedCell = {
+    row: number;
+    col: number;
+    ring?: { color: string; cluster: number };
+    scaleColor?: string;
+    scaleImagePatch?: string;
+  };
+  const lastSelectionCellsRef = useRef<Array<CapturedCell>>([]);
+  // Mirror of clipboard item count so the Copy button can show whether
+  // there's anything to copy without re-deriving from selectedKeys (which
+  // clears immediately in the existing selection flow).
+  const [lastSelectionCount2, setLastSelectionCount2] = useState(0);
+
+  // Overlay preview mode: "sampled" shows each target cell filled with the
+  // color it would receive on Transfer (matches Transfer math exactly).
+  // "raw" shows the source image clipped to the cell silhouettes.
+  type OverlayPreviewMode = "sampled" | "raw";
+  const [overlayPreviewMode, setOverlayPreviewMode] = useState<OverlayPreviewMode>("sampled");
+  // Map<"ring:row-col" | "scale:row,col", "#rrggbb"> — sampled colors for the
+  // preview. Empty when overlayPreviewMode === "raw" or no image is loaded.
+  const [previewSampledColors, setPreviewSampledColors] = useState<Map<string, string>>(new Map());
+
+  // Mount guard for async transfer — prevents setState after unmount when the
+  // image load Promise resolves on a torn-down component.
+  const transferMountedRef = useRef(true);
+  useEffect(() => {
+    transferMountedRef.current = true;
+    return () => {
+      transferMountedRef.current = false;
+    };
+  }, []);
+
+  // Per-scale image patches: data URLs keyed by "row,col". Populated by the
+  // image transfer when overlay.imageFill is on. Drives the per-scale
+  // CanvasTexture in RingRenderer so the image actually paints onto the
+  // scale's surface (clipped to its outline) rather than floating in a
+  // separate layer above the scales.
+  const [scaleImagePatches, setScaleImagePatches] = useState<Map<string, string>>(
+    () => new Map(),
+  );
+  // Mirror ref so callbacks can read the current patches synchronously
+  // without having to add scaleImagePatches to their useCallback deps.
+  const scaleImagePatchesRef = useRef(scaleImagePatches);
+  useEffect(() => { scaleImagePatchesRef.current = scaleImagePatches; }, [scaleImagePatches]);
 
   // Keys used when user chooses "selection" scope for overlay transfer
   const [overlayMaskKeys, setOverlayMaskKeys] = useState<Set<string>>(
@@ -1068,6 +1377,16 @@ const FreeformChainmail2D: React.FC = () => {
 
   // When true: next selection drag defines overlayMaskKeys instead of painting/erasing
   const overlayPickingRef = useRef(false);
+
+  // Combined highlight set for the renderer: the persistent overlay-transfer
+  // target (when scope=selection) UNION the transient drag selection. This
+  // gives the user a clear "this is what's selected" outline on scales/rings.
+  const highlightedKeys = useMemo<Set<string>>(() => {
+    const out = new Set<string>();
+    if (overlayScope === "selection") overlayMaskKeys.forEach((k) => out.add(k));
+    selectedKeys.forEach((k) => out.add(k));
+    return out;
+  }, [overlayScope, overlayMaskKeys, selectedKeys]);
 
   // ====================================================
   // GEOMETRY (synced with Tuner)
@@ -1102,7 +1421,45 @@ const FreeformChainmail2D: React.FC = () => {
   }, [tunerSnapshot, ringSets, activeRingSetId]);
 
   const [scaleSettingsOverride, setScaleSettingsOverride] =
-    useState<Partial<FreeformScaleSettings>>({});
+    useState<Partial<FreeformScaleSettings>>(() => {
+      try {
+        const raw = localStorage.getItem(SCALE_SETTINGS_OVERRIDE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") return {};
+        // The override is recorded against the Tuner snapshot it was applied
+        // ON TOP of. If the Tuner has since been re-saved (different snapshot
+        // key), discard the stale override so the new Tuner values propagate
+        // into Freeform instead of being shadowed.
+        const storedKey: string | null = parsed.__snapshotKey ?? null;
+        const currentSnap = loadFreeformTunerSnapshot();
+        const currentKey = currentSnap
+          ? JSON.stringify(currentSnap.scaleSettings ?? null)
+          : null;
+        if (storedKey !== currentKey) return {};
+        const { __snapshotKey, ...rest } = parsed;
+        return rest as Partial<FreeformScaleSettings>;
+      } catch {
+        return {};
+      }
+    });
+
+  // Persist slider overrides + the Tuner snapshot key they were applied
+  // against. Lets a Tuner re-save invalidate the persisted override on next
+  // load so Tuner adjustments propagate to Freeform across restarts.
+  useEffect(() => {
+    try {
+      const snapshotKey = tunerSnapshot
+        ? JSON.stringify(tunerSnapshot.scaleSettings ?? null)
+        : null;
+      localStorage.setItem(
+        SCALE_SETTINGS_OVERRIDE_KEY,
+        JSON.stringify({ ...scaleSettingsOverride, __snapshotKey: snapshotKey }),
+      );
+    } catch {
+      // QuotaExceededError / Safari private mode — best effort.
+    }
+  }, [scaleSettingsOverride, tunerSnapshot]);
 
   // (axis selectors removed — Z rotation and depth handled in RingRenderer directly)
 
@@ -1110,7 +1467,11 @@ const FreeformChainmail2D: React.FC = () => {
   // not just the object reference. loadFreeformTunerSnapshot() always
   // JSON.parses a new object, so comparing stringified content stops
   // slider values from being wiped on every focus or unrelated state update.
-  const lastSnapshotKeyRef = useRef<string | null>(null);
+  // Seeded with the initial snapshot key so the first effect run does NOT
+  // wipe the persisted overrides we just hydrated above.
+  const lastSnapshotKeyRef = useRef<string | null>(
+    tunerSnapshot ? JSON.stringify(tunerSnapshot.scaleSettings ?? null) : null,
+  );
   useEffect(() => {
     const key = tunerSnapshot
       ? JSON.stringify(tunerSnapshot.scaleSettings ?? null)
@@ -1125,6 +1486,25 @@ const FreeformChainmail2D: React.FC = () => {
     () => ({ ...baseScaleSettings, ...scaleSettingsOverride }),
     [baseScaleSettings, scaleSettingsOverride],
   );
+  // Always-current ref for drag handlers (avoids stale closures in pointer events).
+  const activeScaleSettingsRef = useRef(activeScaleSettings);
+  activeScaleSettingsRef.current = activeScaleSettings;
+
+  // Scale-plane drag mode: click+drag in the canvas to translate the entire
+  // scale grid relative to the rings (writes to gridOffsetXmm/gridOffsetYmm
+  // via scaleSettingsOverride). Throttled via RAF to keep drags smooth.
+  const [scalePlaneDragMode, setScalePlaneDragMode] = useState(false);
+  const scaleDragRef = useRef<{
+    screenX: number;
+    screenY: number;
+    gridX: number;
+    gridY: number;
+  } | null>(null);
+  const scaleDragRafRef = useRef<number | null>(null);
+  const scaleDragPendingRef = useRef<{
+    gridOffsetXmm: number;
+    gridOffsetYmm: number;
+  } | null>(null);
 
   useEffect(() => {
     const refreshTunerSnapshot = () => setTunerSnapshot(loadFreeformTunerSnapshot());
@@ -1382,7 +1762,9 @@ const FreeformChainmail2D: React.FC = () => {
   //   aligned under floating-origin recentering.
   // ====================================================
   const transferOverlayToRings = useCallback(async () => {
-    if (!overlay) return;
+    if (!overlay || isTransferring) return;
+    if (!transferMountedRef.current) return; // already unmounted
+    setIsTransferring(true);
 
     const targetKeys = overlayScope === "selection" ? overlayMaskKeys : null;
     if (targetKeys && targetKeys.size === 0) return;
@@ -1406,6 +1788,20 @@ const FreeformChainmail2D: React.FC = () => {
 
     const doRings = transferTarget === "rings" || transferTarget === "both";
     const doScales = transferTarget === "scales" || transferTarget === "both";
+
+    // Diagnostic — TEMP: log what the transfer actually ran with so we can
+    // tell if `transferTarget` is being misread vs. UI/state mismatch.
+    // eslint-disable-next-line no-console
+    console.log("[Transfer]", {
+      transferTarget,
+      doRings,
+      doScales,
+      overlayScope,
+      useImageFill: !!(overlay as any)?.imageFill,
+      ringCount: rings.size,
+      scaleCount: scaleColorsRef.current.size,
+      patchCountBefore: scaleImagePatches.size,
+    });
 
     // Current behavior: recolor only existing cells.
     if (doRings && rings.size === 0 && !doScales) return;
@@ -1463,16 +1859,30 @@ const FreeformChainmail2D: React.FC = () => {
 
     const wrap01 = (t: number) => ((t % 1) + 1) % 1;
 
-    const img: HTMLImageElement = await new Promise((resolve, reject) => {
-      const im = new Image();
-      im.crossOrigin = "anonymous";
-      im.onload = () => resolve(im);
-      im.onerror = reject;
-      im.src = src;
-    });
+    let img: HTMLImageElement;
+    try {
+      img = await new Promise((resolve, reject) => {
+        const im = new Image();
+        // Only set crossOrigin for http/https — setting it on data: or blob: URLs
+        // causes Android WebView to fail the load silently (the #1 cause of
+        // "Transfer to Rings does nothing" on Android).
+        if (/^https?:\/\//i.test(src)) im.crossOrigin = "anonymous";
+        im.onload = () => resolve(im);
+        im.onerror = () => reject(new Error("Image failed to load"));
+        im.src = src;
+      });
+    } catch {
+      if (transferMountedRef.current) setIsTransferring(false);
+      return;
+    }
+
+    // After the async image load, the component may have unmounted (route
+    // change). Bail before doing any setState work.
+    if (!transferMountedRef.current) return;
 
     const iW = img.naturalWidth || img.width;
     const iH = img.naturalHeight || img.height;
+    if (!iW || !iH) { setIsTransferring(false); return; }
 
     // ---------------------------
     // Compute WORLD bounds of the target cells (rings or scales)
@@ -1496,6 +1906,24 @@ const FreeformChainmail2D: React.FC = () => {
       });
     }
     if (doScales) {
+      // Pre-compute body-offset terms from active scale settings so the
+      // transfer bounds match the visible scale silhouettes (same convention
+      // as overlayAutoBounds). This is what keeps the mask outline and the
+      // painted result aligned.
+      const useInterlockedTx =
+        activeScaleSettings.lockScaleHolesToRingCenters ||
+        activeScaleSettings.weaveMode === "interlocked";
+      const holeShoulderInsetTx = Math.max(
+        activeScaleSettings.holeIdMm * 0.54,
+        activeScaleSettings.heightMm * 0.15,
+      );
+      const bodyDyTx =
+        -holeShoulderInsetTx +
+        activeScaleSettings.dropMm +
+        (useInterlockedTx ? 0 : activeScaleSettings.holeOffsetYMm);
+      const sWmm = activeScaleSettings.widthMm;
+      const sHmm = activeScaleSettings.heightMm;
+
       for (const [k] of scaleColorsRef.current.entries()) {
         const [rowStr, colStr] = k.split(",");
         const row = Number(rowStr);
@@ -1506,28 +1934,70 @@ const FreeformChainmail2D: React.FC = () => {
         if (targetKeys && !targetKeys.has(dashKey)) continue;
 
         const { x: lx, y: ly } = rcToLogical(row, col);
-        const { wx, wy } = logicalToWorldLocal(lx, ly);
-
-        minX = Math.min(minX, wx);
-        maxX = Math.max(maxX, wx);
-        minY = Math.min(minY, wy);
-        maxY = Math.max(maxY, wy);
+        const bodyLx = lx;
+        // 3D mesh convention: shoulder at hole + (0.08*h - bodyOff) in
+        // logical Y DOWN, tip at hole + (h - bodyOff). bodyOff = drop -
+        // shoulderInset. Matches overlayAutoBounds and the actual rendered
+        // body position in RingRenderer.
+        const bodyOff = activeScaleSettings.dropMm - holeShoulderInsetTx;
+        const topRel = sHmm * 0.08 - bodyOff;
+        const tipRel = sHmm - bodyOff;
+        const corners: Array<[number, number]> = [
+          [bodyLx - sWmm / 2, ly + topRel],
+          [bodyLx + sWmm / 2, ly + topRel],
+          [bodyLx - sWmm / 2, ly + tipRel],
+          [bodyLx + sWmm / 2, ly + tipRel],
+        ];
+        for (const [lxx, lyy] of corners) {
+          const { wx, wy } = logicalToWorldLocal(lxx, lyy);
+          minX = Math.min(minX, wx);
+          maxX = Math.max(maxX, wx);
+          minY = Math.min(minY, wy);
+          maxY = Math.max(maxY, wy);
+        }
       }
     }
 
     if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) return;
 
-    const worldW = Math.max(1e-6, maxX - minX);
-    const worldH = Math.max(1e-6, maxY - minY);
-    const worldCenterX = (minX + maxX) * 0.5;
-    const worldCenterY = (minY + maxY) * 0.5;
+    // If the user has dragged the mask outline to a custom rectangle, use
+    // that as the image's target area instead of the auto-computed cell
+    // bounding box. Guarantees "what you outline is what gets painted".
+    const maskOverride = overlayMaskOverrideRef.current;
+    const worldW = maskOverride
+      ? Math.max(1e-6, maskOverride.worldW)
+      : Math.max(1e-6, maxX - minX);
+    const worldH = maskOverride
+      ? Math.max(1e-6, maskOverride.worldH)
+      : Math.max(1e-6, maxY - minY);
+    const worldCenterX = maskOverride
+      ? maskOverride.worldCenterX
+      : (minX + maxX) * 0.5;
+    const worldCenterY = maskOverride
+      ? maskOverride.worldCenterY
+      : (minY + maxY) * 0.5;
+
+    // Cell-inside-mask predicate. The mask defines BOTH the image-mapping
+    // rectangle AND which cells get painted: anything outside the mask is
+    // left untouched (no colour change, no patch). Without this, the mask
+    // only moved the image position, never the paint area.
+    const maskMinX = worldCenterX - worldW / 2;
+    const maskMaxX = worldCenterX + worldW / 2;
+    const maskMinY = worldCenterY - worldH / 2;
+    const maskMaxY = worldCenterY + worldH / 2;
+    const isInsideMask = (wx: number, wy: number) =>
+      wx >= maskMinX && wx <= maskMaxX && wy >= maskMinY && wy <= maskMaxY;
 
     // Preview panel: 360px wide, 14px padding each side → 332px content, 180px tall.
     const PREVIEW_W = 332;
     const PREVIEW_H = 180;
     // Height the image occupies in the preview at scale=1 (fills PREVIEW_W, height auto)
     const imageDisplayH = (PREVIEW_W * iH) / iW;
-    const imgCanvasH = Math.max(1, Math.ceil(imageDisplayH));
+    // Cap canvas height to keep drawImage fast on Android — large source images
+    // can freeze the main thread for seconds when drawn at full height.
+    // Sampling uses normalized coords so reducing resolution doesn't affect color accuracy.
+    const MAX_CANVAS_H = 800;
+    const imgCanvasH = Math.max(1, Math.min(MAX_CANVAS_H, Math.ceil(imageDisplayH)));
 
     const isTiled = (overlay as any)?.repeat === "tile";
     const patternScaleVal = Number((overlay as any)?.patternScale ?? 100);
@@ -1537,12 +2007,13 @@ const FreeformChainmail2D: React.FC = () => {
     const offCtx = offCanvas.getContext("2d", {
       willReadFrequently: true,
     } as CanvasRenderingContext2DSettings) as CanvasRenderingContext2D | null;
-    if (!offCtx) return;
+    if (!offCtx) { setIsTransferring(false); return; }
 
     let offData: Uint8ClampedArray;
     let offW: number;
     let offH: number;
 
+    try {
     if (isTiled) {
       // Tile mode: full preview canvas, tiles always cover everything.
       offCanvas.width = PREVIEW_W;
@@ -1580,6 +2051,11 @@ const FreeformChainmail2D: React.FC = () => {
       offH = imgCanvasH;
       offCtx.drawImage(img, 0, 0, PREVIEW_W, imgCanvasH);
       offData = offCtx.getImageData(0, 0, offW, offH).data;
+    }
+    } catch {
+      // Canvas security error (tainted canvas) or other draw failure
+      setIsTransferring(false);
+      return;
     }
 
     // Base blend against white
@@ -1644,6 +2120,9 @@ const FreeformChainmail2D: React.FC = () => {
         const { x: lx, y: ly } = rcToLogical(r.row, r.col);
         const { wx, wy } = logicalToWorldLocal(lx, ly);
 
+        // Mask defines the paint area: skip rings outside the rectangle.
+        if (!isInsideMask(wx, wy)) return;
+
         const sampled = sampleAtWorld(wx, wy);
         if (!sampled) return;
 
@@ -1656,34 +2135,253 @@ const FreeformChainmail2D: React.FC = () => {
       setRings(next);
     }
 
+    // Defensive: when the target does NOT include scales, do nothing to
+    // scaleColors / scaleImagePatches. The if-block below is already gated
+    // on doScales, but this comment + a no-op early exit make the intent
+    // explicit so any future code added to this function can't accidentally
+    // wipe scale state during a rings-only transfer.
+    if (!doScales) {
+      setIsTransferring(false);
+      return;
+    }
+
     if (doScales) {
       // ---------------------------
       // Apply to scales
+      //
+      // Two paths:
+      //   1. Legacy flat colour — sample one pixel at the body centre (now
+      //      correctly at the body, not at the hole) and fill the scale with
+      //      that colour. Fast, but ignores image detail.
+      //   2. Image Fill — for each target scale, generate a per-scale canvas
+      //      patch containing the image region that maps to its body bbox.
+      //      The patch is converted to a data URL and stored in
+      //      scaleImagePatches; RingRenderer applies it as a CanvasTexture
+      //      so the image is painted INTO the scale outline (clipped by the
+      //      mesh) instead of floating above it.
+      //
+      // The boundaryPct slider insets the image inside the scale outline,
+      // leaving a coloured frame around the image.
       // ---------------------------
-      setScaleColors((prev) => {
-        const next = new Map(prev);
+      const useImageFill = !!(overlay as any)?.imageFill;
+      const boundaryPct = Math.max(
+        0,
+        Math.min(50, Number((overlay as any)?.boundaryPct ?? 0)),
+      );
+      const inset01 = boundaryPct / 100; // 0–0.5
 
-        for (const [k] of prev.entries()) {
-          const [rowStr, colStr] = k.split(",");
-          const row = Number(rowStr);
-          const col = Number(colStr);
-          if (!Number.isFinite(row) || !Number.isFinite(col)) continue;
+      // Scale body geometry (mm) — matches exportScales mapping.
+      const sWidthMm = activeScaleSettings.widthMm;
+      const sHeightMm = activeScaleSettings.heightMm;
+      const sDropMm = activeScaleSettings.dropMm;
+      const sHoleShoulderInset = Math.max(
+        activeScaleSettings.holeIdMm * 0.54,
+        sHeightMm * 0.15,
+      );
+      // bodyCenter is the scale's body geometric centre. The 3D mesh
+      // constructs the body around bodyOffY = drop - shoulderInset, with
+      // shoulder at +(bodyOff - 0.08*h) above hole and tip at -(h - bodyOff)
+      // below hole. Body span = 0.92*h, half-span = 0.46*h. Body centre =
+      // half-way between shoulder and tip:
+      //   shoulder_world_Y_offset = +(bodyOff - 0.08*h)
+      //   tip_world_Y_offset      = -(h - bodyOff)
+      //   centre_world_Y_offset   = (shoulder + tip)/2 = bodyOff - 0.54*h
+      // bodyCenterDyMm is the offset FROM hole DOWN to body centre in world
+      // (positive = body below hole). The centre is bodyOff - 0.54*h ABOVE
+      // hole in mesh terms; below hole when negative. So:
+      //   bodyCenterDyMm = -(bodyOff - 0.54*h) = 0.54*h - bodyOff
+      const sBodyOff = sDropMm - sHoleShoulderInset;
+      const bodyCenterDyMm = sHeightMm * 0.54 - sBodyOff;
 
-          const dashKey = `${row}-${col}`;
-          if (targetKeys && !targetKeys.has(dashKey)) continue;
+      // For Image Fill: compute the (sx,sy) of an arbitrary world point in
+      // the already-rendered offCanvas. Mirrors sampleAtWorld's inverse
+      // transform but returns the coordinate instead of the colour.
+      const worldToOffCanvas = (wx: number, wy: number) => {
+        const nxWorld = (wx - worldCenterX) / worldW;
+        const nyWorld = (wy - worldCenterY) / worldH;
+        if (isTiled) {
+          return {
+            sx: PREVIEW_W * (0.5 + nxWorld),
+            sy: PREVIEW_H * (0.5 - nyWorld),
+          };
+        }
+        let dx = PREVIEW_W * nxWorld - offsetX;
+        let dy = -PREVIEW_H * nyWorld - offsetY;
+        dx /= scale;
+        dy /= scale;
+        const rdx = dx * cosR + dy * sinR;
+        const rdy = -dx * sinR + dy * cosR;
+        return {
+          sx: rdx + PREVIEW_W / 2,
+          sy: rdy + imageDisplayH / 2,
+        };
+      };
 
-          const { x: lx, y: ly } = rcToLogical(row, col);
-          const { wx, wy } = logicalToWorldLocal(lx, ly);
+      // Patch canvas dimensions: keep the scale's BB aspect so the texture
+      // doesn't stretch when mapped through ShapeGeometry's default UVs.
+      const PATCH_LONG = 128;
+      const aspect = sWidthMm / Math.max(1e-3, sHeightMm);
+      const patchW = aspect >= 1
+        ? PATCH_LONG
+        : Math.max(8, Math.round(PATCH_LONG * aspect));
+      const patchH = aspect >= 1
+        ? Math.max(8, Math.round(PATCH_LONG / aspect))
+        : PATCH_LONG;
 
-          const sampled = sampleAtWorld(wx, wy);
-          if (!sampled) continue;
+      // Compute the next colour map AND patch map up front, in a single
+      // synchronous pass — then commit both with concrete values. This
+      // avoids the previous pattern of mutating `nextPatches` from inside
+      // a setState updater (a closure mutation that fires lazily during
+      // commit and is hard to reason about, especially in React 18 strict
+      // mode where updaters are double-invoked).
+      const prevColors = scaleColorsRef.current;
+      const nextColors = new Map(prevColors);
+      const nextPatches = new Map(scaleImagePatches);
 
-          next.set(k, normalizeColor6(sampled));
+      for (const [k] of prevColors.entries()) {
+        const [rowStr, colStr] = k.split(",");
+        const row = Number(rowStr);
+        const col = Number(colStr);
+        if (!Number.isFinite(row) || !Number.isFinite(col)) continue;
+
+        const dashKey = `${row}-${col}`;
+        if (targetKeys && !targetKeys.has(dashKey)) continue;
+
+        const { x: lx, y: ly } = rcToLogical(row, col);
+        const { wx: holeWx, wy: holeWy } = logicalToWorldLocal(lx, ly);
+        // Body centre in world coords. Logical Y maps to world Y inverted
+        // (see logicalToWorldLocal above), so a positive logical Y offset
+        // becomes a negative world Y offset.
+        const bodyWx = holeWx;
+        const bodyWy = holeWy - bodyCenterDyMm;
+
+        // Mask defines the paint area: skip scales whose body centre falls
+        // outside the rectangle. Leave their previous colour/patch alone.
+        if (!isInsideMask(bodyWx, bodyWy)) continue;
+
+        if (!useImageFill) {
+          // Legacy: single sample at the BODY centre (was hole — fixed).
+          const sampled = sampleAtWorld(bodyWx, bodyWy);
+          if (sampled) nextColors.set(k, normalizeColor6(sampled));
+          // Drop any stale patch from a previous Image Fill run.
+          nextPatches.delete(k);
+          continue;
         }
 
-        return next;
-      });
+        // Image Fill: compute the average colour AND build a per-scale
+        // canvas patch with the image region drawn into it.
+        const halfW = sWidthMm / 2;
+        // 3D mesh body span = h - 0.08*h = 0.92*h vertically (shoulder at
+        // +(bodyOff - 0.08*h), tip at -(h - bodyOff) → span 0.92*h).
+        // Half-extent from body centre = 0.46*h. Matches the mesh exactly so
+        // the patch covers the full visible body when stretched via UV.
+        const halfH = sHeightMm * 0.46;
+
+        // World-space bounds of this scale's body bbox. We sample the patch
+        // per-pixel via sampleAtWorld below (which clamps to the rendered
+        // image) instead of drawImage'ing the offCanvas region — drawImage
+        // silently clips when the source rect falls outside the canvas,
+        // which was leaving patches filled with only the averaged colour.
+        const wxL = bodyWx - halfW;
+        const wxR = bodyWx + halfW;
+        const wyT = bodyWy + halfH; // top of body (larger world Y)
+        const wyB = bodyWy - halfH; // bottom (smaller world Y)
+
+        // Average colour for the framed area (and as a fallback when the
+        // patch fails). Sampled inside the inset region.
+        const halfWi = halfW * (1 - inset01 * 2);
+        const halfHi = halfH * (1 - inset01 * 2);
+        const N = 5;
+        const denom = N - 1;
+        let rSum = 0, gSum = 0, bSum = 0, cnt = 0;
+        for (let iy = 0; iy < N; iy++) {
+          const ty = iy / denom;
+          const dyMm = (ty - 0.5) * halfHi * 2;
+          const sampleWy = bodyWy - dyMm;
+          for (let ix = 0; ix < N; ix++) {
+            const tx = ix / denom;
+            const dxMm = (tx - 0.5) * halfWi * 2;
+            const sampleWx = bodyWx + dxMm;
+            const hex = sampleAtWorld(sampleWx, sampleWy);
+            if (!hex) continue;
+            const m = /^#([0-9a-f]{6})$/i.exec(hex);
+            if (!m) continue;
+            const n = parseInt(m[1], 16);
+            rSum += (n >> 16) & 0xff;
+            gSum += (n >> 8) & 0xff;
+            bSum += n & 0xff;
+            cnt++;
+          }
+        }
+        const avgHex = cnt > 0
+          ? normalizeColor6(
+              `#${hex2(Math.round(rSum / cnt))}${hex2(Math.round(gSum / cnt))}${hex2(Math.round(bSum / cnt))}`,
+            )
+          : normalizeColor6(prevColors.get(k) || activeScaleSettings.colorHex);
+        nextColors.set(k, avgHex);
+
+        // Build the patch canvas: fill with avg colour (frame), then
+        // drawImage the inset region.
+        try {
+          const patch = document.createElement("canvas");
+          patch.width = patchW;
+          patch.height = patchH;
+          const pCtx = patch.getContext("2d");
+          if (!pCtx) {
+            nextPatches.delete(k);
+            continue;
+          }
+          // Background: averaged scale colour — fills the boundary frame.
+          pCtx.fillStyle = avgHex;
+          pCtx.fillRect(0, 0, patchW, patchH);
+
+          // Destination rectangle inside the patch (inset by boundary).
+          const insetX = Math.round(patchW * inset01);
+          const insetY = Math.round(patchH * inset01);
+          const dstW = Math.max(1, patchW - insetX * 2);
+          const dstH = Math.max(1, patchH - insetY * 2);
+
+          // Build patch by sampling the SAME source image used for legacy
+          // colour transfer. sampleAtWorld() clamps to the rendered image
+          // bounds, so every pixel of the patch gets a valid colour even
+          // when the scale's body extends outside the design bbox.
+          const pImage = pCtx.createImageData(dstW, dstH);
+          const pData = pImage.data;
+          for (let py = 0; py < dstH; py++) {
+            const ty = dstH > 1 ? py / (dstH - 1) : 0.5;
+            // top of patch (py=0) → top of body (wyT); bottom → wyB
+            const sampleWy = wyT + (wyB - wyT) * ty;
+            for (let px = 0; px < dstW; px++) {
+              const tx = dstW > 1 ? px / (dstW - 1) : 0.5;
+              const sampleWx = wxL + (wxR - wxL) * tx;
+              const hex = sampleAtWorld(sampleWx, sampleWy);
+              if (!hex) continue;
+              const m = /^#([0-9a-f]{6})$/i.exec(hex);
+              if (!m) continue;
+              const n = parseInt(m[1], 16);
+              const di = (py * dstW + px) * 4;
+              pData[di] = (n >> 16) & 0xff;
+              pData[di + 1] = (n >> 8) & 0xff;
+              pData[di + 2] = n & 0xff;
+              pData[di + 3] = 255;
+            }
+          }
+          pCtx.putImageData(pImage, insetX, insetY);
+
+          nextPatches.set(k, patch.toDataURL("image/png"));
+        } catch {
+          // Tainted-canvas or quota — fall back to flat colour by dropping
+          // the patch entry.
+          nextPatches.delete(k);
+        }
+      }
+
+      // Commit both maps with concrete values in one synchronous batch.
+      setScaleColors(nextColors);
+      setScaleImagePatches(nextPatches);
     }
+
+    setIsTransferring(false);
   }, [
     overlay,
     overlayScope,
@@ -1692,6 +2390,9 @@ const FreeformChainmail2D: React.FC = () => {
     rings,
     rcToLogical,
     logicalOrigin,
+    isTransferring,
+    activeScaleSettings,
+    scaleImagePatches,
   ]);
 
   useEffect(() => {
@@ -1820,6 +2521,179 @@ const FreeformChainmail2D: React.FC = () => {
     if (!sel) return;
     setSelectedKeys(computeSelectionKeys(sel, selectionMode));
   }, [selectionMode, computeSelectionKeys]);
+
+  // ====================================================
+  // COPY / PASTE: rings + scales
+  // ====================================================
+  // Snapshot the current selection into the clipboard. Captures each cell's
+  // ring (color + cluster) AND scale (color + image patch) if present. The
+  // selection's top-left cell becomes the (0,0) anchor — paste re-anchors at
+  // the target click position.
+  const copySelectionToClipboard = useCallback(() => {
+    // Prefer the captured snapshot from the most recent selection — it has
+    // the PRE-PAINT ring/scale state, which is what users actually want to
+    // copy (the original image colors, not the slab of paint that the
+    // selection tool dropped on top). Fall back to live selectedKeys when
+    // there's no snapshot yet but a selection is still highlighted (some
+    // alternative future flow). Either path produces the same Clipboard.
+    let captured: CapturedCell[] = [];
+    if (lastSelectionCellsRef.current.length > 0) {
+      captured = lastSelectionCellsRef.current;
+    } else if (selectedKeys.size > 0) {
+      selectedKeys.forEach((key) => {
+        const dash = key.indexOf("-");
+        if (dash < 0) return;
+        const row = Number(key.slice(0, dash));
+        const col = Number(key.slice(dash + 1));
+        if (!Number.isFinite(row) || !Number.isFinite(col)) return;
+        const ring = rings.get(key);
+        const scaleKey = `${row},${col}`;
+        captured.push({
+          row,
+          col,
+          ring: ring ? { color: ring.color, cluster: ring.cluster } : undefined,
+          scaleColor: scaleColors.get(scaleKey),
+          scaleImagePatch: scaleImagePatches.get(scaleKey),
+        });
+      });
+    }
+    if (captured.length === 0) return;
+
+    let minRow = Infinity;
+    let minCol = Infinity;
+    let maxRow = -Infinity;
+    let maxCol = -Infinity;
+    for (const c of captured) {
+      if (c.row < minRow) minRow = c.row;
+      if (c.col < minCol) minCol = c.col;
+      if (c.row > maxRow) maxRow = c.row;
+      if (c.col > maxCol) maxCol = c.col;
+    }
+    if (!Number.isFinite(minRow)) return;
+    const items: ClipboardItem[] = [];
+    for (const c of captured) {
+      if (!c.ring && c.scaleColor === undefined && c.scaleImagePatch === undefined) continue;
+      items.push({
+        deltaRow: c.row - minRow,
+        deltaCol: c.col - minCol,
+        ring: c.ring,
+        scaleColor: c.scaleColor,
+        scaleImagePatch: c.scaleImagePatch,
+      });
+    }
+    if (items.length === 0) return;
+    setClipboard({
+      items,
+      w: maxCol - minCol + 1,
+      h: maxRow - minRow + 1,
+    });
+  }, [selectedKeys, rings, scaleColors, scaleImagePatches]);
+
+  // Paste the clipboard onto the design with its (0,0) anchor at the given
+  // target row/col. Overwrites existing rings/scales at the destination cells
+  // (matches paint semantics — last write wins). Pushes one history entry so
+  // each paste can be undone independently.
+  const pasteClipboardAt = useCallback(
+    (targetRow: number, targetCol: number) => {
+      if (!clipboard || clipboard.items.length === 0) return;
+      pushToHistory(rings, scaleColorsRef.current);
+      setRings((prev) => {
+        const next: RingMap = new Map(prev);
+        for (const it of clipboard.items) {
+          if (!it.ring) continue;
+          const r = targetRow + it.deltaRow;
+          const c = targetCol + it.deltaCol;
+          next.set(`${r}-${c}`, {
+            row: r,
+            col: c,
+            color: it.ring.color,
+            cluster: it.ring.cluster,
+          });
+        }
+        return next;
+      });
+      // Build scaleColors and scaleImagePatches changes in lockstep so a
+      // pasted solid-color scale wipes any old image patch at the destination
+      // (same overwrite semantics as paint).
+      setScaleColors((prev) => {
+        const next = new Map(prev);
+        for (const it of clipboard.items) {
+          if (it.scaleColor === undefined) continue;
+          const r = targetRow + it.deltaRow;
+          const c = targetCol + it.deltaCol;
+          next.set(`${r},${c}`, it.scaleColor);
+        }
+        return next;
+      });
+      setScaleImagePatches((prev) => {
+        // Iterate the clipboard once: set the new patch when present, delete
+        // any prior patch at the destination key when the clipboard cell has
+        // no patch (so a solid-color paste over an image-filled scale clears
+        // the image — matching paint behavior).
+        let changed = false;
+        const next = new Map(prev);
+        for (const it of clipboard.items) {
+          const r = targetRow + it.deltaRow;
+          const c = targetCol + it.deltaCol;
+          const sk = `${r},${c}`;
+          if (it.scaleImagePatch !== undefined) {
+            next.set(sk, it.scaleImagePatch);
+            changed = true;
+          } else if (it.scaleColor !== undefined && next.has(sk)) {
+            next.delete(sk);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    },
+    [clipboard, rings, scaleColorsRef, pushToHistory],
+  );
+
+  // Refs mirror state for the keydown handler so we don't re-bind on every
+  // render and don't capture stale state in the closure.
+  const selectedKeysRef = useRef(selectedKeys);
+  const clipboardRef = useRef(clipboard);
+  const pasteModeRef = useRef(pasteMode);
+  useEffect(() => { selectedKeysRef.current = selectedKeys; }, [selectedKeys]);
+  useEffect(() => { clipboardRef.current = clipboard; }, [clipboard]);
+  useEffect(() => { pasteModeRef.current = pasteMode; }, [pasteMode]);
+
+  // Cmd/Ctrl+C copies the current selection; Cmd/Ctrl+V toggles paste mode;
+  // Escape exits paste mode. Skipped when the focused element is a text input
+  // so typing in fields still does native copy/paste.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const tag = t?.tagName;
+      const isTyping =
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        !!(t && (t as HTMLElement).isContentEditable);
+      if (isTyping) return;
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === "c") {
+        if (selectedKeysRef.current && selectedKeysRef.current.size > 0) {
+          e.preventDefault();
+          copySelectionToClipboard();
+        }
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "v") {
+        if (!clipboardRef.current) return;
+        e.preventDefault();
+        setPasteMode((v) => !v);
+        return;
+      }
+      if (e.key === "Escape" && pasteModeRef.current) {
+        e.preventDefault();
+        setPasteMode(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [copySelectionToClipboard]);
 
   // ====================================================
   // ✅ Viewport rect
@@ -1982,66 +2856,77 @@ const FreeformChainmail2D: React.FC = () => {
   // ====================================================
   // ✅ ONE-PASS DERIVED DATA (Rings3D + Paint + Stats + Lazy Export)
   // ====================================================
-// ====================================================
-// ✅ ONE-PASS DERIVED DATA (Rings3D + Paint + Stats + Lazy Export)
-// ====================================================
+
+  // Tracks the previous structural state so color-only ring changes don't
+  // force a full rings3D rebuild. The stable rings3D reference also prevents
+  // the 3D renderer's rebuild useEffect from firing (React dep comparison).
+  const prevDerivedStructRef = useRef<{
+    size: number;
+    checksum: number;
+    geomKey: string;
+    rings3D: any[];
+  }>({ size: -1, checksum: 0, geomKey: "", rings3D: [] });
+
 const derived = useMemo(() => {
-  const rings3D: any[] = [];
-  const paintMap = new Map<string, string>();
-
-  // ✅ Stats should remain on STORED (true) colors, not calibrated render colors
-  const colorCountsStored = new Map<string, number>();
-
   const outerRadiusMm = (innerIDmm + 2 * wireMm) / 2;
-
-  // Lazy: only build export list when needed (Finalize panel)
   const wantExport = finalizeOpen;
+
+  // Structural signature: ring count + fast XOR checksum of ring positions +
+  // geometry/origin params. Changing any of these requires a full rings3D rebuild.
+  const geomKey = `${innerIDmm.toFixed(3)}|${wireMm.toFixed(3)}|${centerSpacing.toFixed(3)}|${angleIn}|${angleOut}|${logicalOrigin.ox.toFixed(3)}|${logicalOrigin.oy.toFixed(3)}`;
+  const newSize = rings.size;
+  let checksum = 0;
+  rings.forEach((r) => {
+    // XOR-based hash: order-independent, detects position changes (add/erase/undo)
+    checksum ^= ((r.row * 31337 + r.col) | 0);
+  });
+
+  const prev = prevDerivedStructRef.current;
+  const isStructural =
+    newSize !== prev.size ||
+    checksum !== prev.checksum ||
+    geomKey !== prev.geomKey ||
+    wantExport; // export needs real x_mm/y_mm positions, always do full build
+
+  const paintMap = new Map<string, string>();
+  const colorCountsStored = new Map<string, number>();
   const exportRings: ExportRing[] = [];
 
-  rings.forEach((r: PlacedRing) => {
-    const { x: baseX, y: baseY } = rcToLogical(r.row, r.col);
+  let rings3D: any[];
 
-    // Apply origin shift for stable rendering coordinates
-    const shiftedX = baseX - logicalOrigin.ox;
-    const shiftedY = baseY - logicalOrigin.oy;
+  if (isStructural) {
+    rings3D = [];
+    rings.forEach((r: PlacedRing) => {
+      const { x: baseX, y: baseY } = rcToLogical(r.row, r.col);
+      const shiftedX = baseX - logicalOrigin.ox;
+      const shiftedY = baseY - logicalOrigin.oy;
+      const tiltDeg = r.row % 2 === 0 ? angleIn : angleOut;
+      const tiltRad = THREE.MathUtils.degToRad(tiltDeg);
+      const storedColor = normalizeColor6((r as any).color ?? "#ffffff");
+      const renderColor = applyCalibrationHex(storedColor);
+      const key = `${r.row},${r.col}`;
 
-    const tiltDeg = r.row % 2 === 0 ? angleIn : angleOut;
-    const tiltRad = THREE.MathUtils.degToRad(tiltDeg);
-
-    // ✅ STORED physical color (#rrggbb)
-    const storedColor = normalizeColor6((r as any).color ?? "#ffffff");
-
-    // ✅ RENDER color (calibrated) for display only
-    const renderColor = applyCalibrationHex(storedColor);
-
-    const key = `${r.row},${r.col}`;
-
-    rings3D.push({
-      id: key,
-      row: r.row,
-      col: r.col,
-      x: shiftedX,
-      y: shiftedY,
-      z: 0,
-      innerDiameter: innerIDmm,
-      wireDiameter: wireMm,
-      radius: outerRadiusMm,
-      centerSpacing,
-      tilt: tiltDeg,
-      tiltRad,
-      color: renderColor,
+      rings3D.push({
+        id: key,
+        row: r.row,
+        col: r.col,
+        x: shiftedX,
+        y: shiftedY,
+        z: 0,
+        innerDiameter: innerIDmm,
+        wireDiameter: wireMm,
+        radius: outerRadiusMm,
+        centerSpacing,
+        tilt: tiltDeg,
+        tiltRad,
+        color: renderColor,
       });
 
       paintMap.set(key, renderColor);
-
-      // ✅ Stats should reflect true chosen colors
-      colorCountsStored.set(
-        storedColor,
-        (colorCountsStored.get(storedColor) ?? 0) + 1,
-      );
+      colorCountsStored.set(storedColor, (colorCountsStored.get(storedColor) ?? 0) + 1);
       if (wantExport) {
         exportRings.push({
-          key, // ✅ now matches every other key in the app
+          key,
           x_mm: baseX,
           y_mm: baseY,
           innerDiameter_mm: innerIDmm,
@@ -2051,16 +2936,30 @@ const derived = useMemo(() => {
       }
     });
 
-    const byColor = Array.from(colorCountsStored.entries()).sort(
-      (a, b) => b[1] - a[1],
-    );
-    const ringStats = {
-      total: rings.size,
-      byColor,
-      uniqueColors: byColor.length,
-    };
+    prevDerivedStructRef.current = { size: newSize, checksum, geomKey, rings3D };
+  } else {
+    // Color-only change: reuse the previous rings3D array reference unchanged.
+    // This avoids allocating ~N new JS objects and keeps the same array identity,
+    // so the 3D renderer's rebuild useEffect won't fire (React sees same dep).
+    rings3D = prev.rings3D;
+    rings.forEach((r: PlacedRing) => {
+      const storedColor = normalizeColor6((r as any).color ?? "#ffffff");
+      const renderColor = applyCalibrationHex(storedColor);
+      const key = `${r.row},${r.col}`;
+      paintMap.set(key, renderColor);
+      colorCountsStored.set(storedColor, (colorCountsStored.get(storedColor) ?? 0) + 1);
+      // wantExport is always false here (wantExport forces isStructural above)
+    });
+  }
 
-    return { rings3D, paintMap, ringStats, exportRings };
+  const byColor = Array.from(colorCountsStored.entries()).sort((a, b) => b[1] - a[1]);
+  const ringStats = {
+    total: rings.size,
+    byColor,
+    uniqueColors: byColor.length,
+  };
+
+  return { rings3D, paintMap, ringStats, exportRings };
   }, [
     rings,
     rcToLogical,
@@ -2104,6 +3003,13 @@ const derived = useMemo(() => {
   // Creates a composited 2D canvas (opaque) from the live renderer.
   // Works whether RingRenderer is WebGL or 2D; prevents black/transparent PNGs.
   const getRendererCanvas = useCallback((): HTMLCanvasElement | null => {
+    // Force a synchronous render so the WebGL back buffer is populated.
+    // preserveDrawingBuffer is off, so without this drawImage on the WebGL
+    // canvas yields a blank frame and the thumbnail comes out white.
+    try {
+      (ringRendererRef.current as any)?.renderNow?.();
+    } catch {}
+
     // 1) Prefer the renderer canvas directly
     const fromRef =
       (ringRendererRef.current as any)?.getCanvas?.() ??
@@ -2263,6 +3169,7 @@ const derived = useMemo(() => {
     },
     [innerIDmm],
   );
+
   // ====================================================
   // SCALES DRAWING: hole + position-based stacking
   // ====================================================
@@ -2296,44 +3203,93 @@ const derived = useMemo(() => {
     const halfW = w / 2;
 
     const outer = new Path2D();
-    switch (scale.shape) {
-      case "leaf":
-        outer.moveTo(0, topY);
-        outer.bezierCurveTo(halfW * 0.95, h * 0.08 + dy, halfW * 1.05, midY, halfW * 0.34, h * 0.76 + dy);
-        outer.bezierCurveTo(halfW * 0.18, h * 0.9 + dy, halfW * 0.08, h * 0.96 + dy, 0, tipY);
-        outer.bezierCurveTo(-halfW * 0.08, h * 0.96 + dy, -halfW * 0.18, h * 0.9 + dy, -halfW * 0.34, h * 0.76 + dy);
-        outer.bezierCurveTo(-halfW * 1.05, midY, -halfW * 0.95, h * 0.08 + dy, 0, topY);
-        outer.closePath();
-        break;
-      case "round":
-        outer.moveTo(0, topY);
-        outer.bezierCurveTo(halfW * 0.95, topY, halfW * 1.05, h * 0.46 + dy, 0, tipY);
-        outer.bezierCurveTo(-halfW * 1.05, h * 0.46 + dy, -halfW * 0.95, topY, 0, topY);
-        outer.closePath();
-        break;
-      case "kite":
-        outer.moveTo(0, topY);
-        outer.lineTo(halfW * 0.96, h * 0.2 + dy);
-        outer.lineTo(halfW * 0.56, h * 0.78 + dy);
-        outer.lineTo(0, tipY);
-        outer.lineTo(-halfW * 0.56, h * 0.78 + dy);
-        outer.lineTo(-halfW * 0.96, h * 0.2 + dy);
-        outer.closePath();
-        break;
-      case "teardrop":
-      default:
-        outer.moveTo(0, topY);
-        outer.bezierCurveTo(halfW, h * 0.16 + dy, halfW, midY, 0, tipY);
-        outer.bezierCurveTo(-halfW, midY, -halfW, h * 0.16 + dy, 0, topY);
-        outer.closePath();
-        break;
+    const customHolePaths: Path2D[] = [];
+    // Custom polygon: shape is a "custom:<id>" reference. Look up its polygon
+    // and place it in the same vertical span as the built-in shapes (center
+    // of the bbox sits at y ≈ 0.45*h + dy so it covers the topY..tipY span).
+    const customShape =
+      typeof scale.shape === "string" && scale.shape.startsWith("custom:")
+        ? customShapeEntries.find((e) => e.id === scale.shape)
+        : null;
+    const customPoly =
+      customShape && customShape.source !== "base"
+        ? customShape.polygon
+        : null;
+
+    if (customPoly && customPoly.length >= 3) {
+      const yCenter = 0.45 * h + dy;
+      const [x0, y0] = customPoly[0];
+      outer.moveTo(x0 * w, y0 * h + yCenter);
+      for (let i = 1; i < customPoly.length; i++) {
+        const [px, py] = customPoly[i];
+        outer.lineTo(px * w, py * h + yCenter);
+      }
+      outer.closePath();
+      // Cut traced inner holes (e.g. the scale's ring hole) out of the shape.
+      const customHoles = customShape?.holes ?? [];
+      for (const hole of customHoles) {
+        if (hole.length < 3) continue;
+        const hp = new Path2D();
+        const [hx0, hy0] = hole[0];
+        hp.moveTo(hx0 * w, hy0 * h + yCenter);
+        for (let i = 1; i < hole.length; i++) {
+          const [px, py] = hole[i];
+          hp.lineTo(px * w, py * h + yCenter);
+        }
+        hp.closePath();
+        customHolePaths.push(hp);
+      }
+    } else {
+      // Base-source custom shapes fall through to the underlying built-in
+      // geometry via customShape?.baseShape; otherwise use scale.shape directly.
+      const baseName =
+        customShape?.source === "base"
+          ? (customShape.baseShape ?? "teardrop")
+          : (scale.shape as string);
+      switch (baseName) {
+        case "leaf":
+          outer.moveTo(0, topY);
+          outer.bezierCurveTo(halfW * 0.95, h * 0.08 + dy, halfW * 1.05, midY, halfW * 0.34, h * 0.76 + dy);
+          outer.bezierCurveTo(halfW * 0.18, h * 0.9 + dy, halfW * 0.08, h * 0.96 + dy, 0, tipY);
+          outer.bezierCurveTo(-halfW * 0.08, h * 0.96 + dy, -halfW * 0.18, h * 0.9 + dy, -halfW * 0.34, h * 0.76 + dy);
+          outer.bezierCurveTo(-halfW * 1.05, midY, -halfW * 0.95, h * 0.08 + dy, 0, topY);
+          outer.closePath();
+          break;
+        case "round":
+          outer.moveTo(0, topY);
+          outer.bezierCurveTo(halfW * 0.95, topY, halfW * 1.05, h * 0.46 + dy, 0, tipY);
+          outer.bezierCurveTo(-halfW * 1.05, h * 0.46 + dy, -halfW * 0.95, topY, 0, topY);
+          outer.closePath();
+          break;
+        case "kite":
+          outer.moveTo(0, topY);
+          outer.lineTo(halfW * 0.96, h * 0.2 + dy);
+          outer.lineTo(halfW * 0.56, h * 0.78 + dy);
+          outer.lineTo(0, tipY);
+          outer.lineTo(-halfW * 0.56, h * 0.78 + dy);
+          outer.lineTo(-halfW * 0.96, h * 0.2 + dy);
+          outer.closePath();
+          break;
+        case "teardrop":
+        default:
+          outer.moveTo(0, topY);
+          outer.bezierCurveTo(halfW, h * 0.16 + dy, halfW, midY, 0, tipY);
+          outer.bezierCurveTo(-halfW, midY, -halfW, h * 0.16 + dy, 0, topY);
+          outer.closePath();
+          break;
+      }
     }
 
     const holePath = new Path2D();
     holePath.arc(0, 0, holeR, 0, Math.PI * 2);
     const shape = new Path2D();
     shape.addPath(outer);
-    shape.addPath(holePath);
+    if (customHolePaths.length) {
+      // Custom polygon brought its own traced inner holes — use those.
+      for (const p of customHolePaths) shape.addPath(p);
+    } else {
+      shape.addPath(holePath);
+    }
 
     ctx.globalAlpha = 0.95;
     ctx.fillStyle = scale.colorHex;
@@ -2354,9 +3310,13 @@ const derived = useMemo(() => {
     ctx.stroke(outer);
 
     ctx.globalAlpha = 0.8;
-    ctx.beginPath();
-    ctx.arc(0, 0, holeR, 0, Math.PI * 2);
-    ctx.stroke();
+    if (customHolePaths.length) {
+      for (const p of customHolePaths) ctx.stroke(p);
+    } else {
+      ctx.beginPath();
+      ctx.arc(0, 0, holeR, 0, Math.PI * 2);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 
@@ -2389,16 +3349,20 @@ const derived = useMemo(() => {
     let holeX = ringP.x;
     let holeY = ringP.y;
 
+    // gridOffsetXmm/Ymm are part of the NON-interlocked grid recompute. In
+    // interlocked mode scales MUST stay pinned to ring centres for the
+    // weave alignment to hold — applying the drag-tool offset there would
+    // separate scales from their rings.
     if (!useInterlocked) {
+      const gx = Number.isFinite(activeScaleSettings.gridOffsetXmm)
+        ? activeScaleSettings.gridOffsetXmm
+        : 0;
+      const gy = Number.isFinite(activeScaleSettings.gridOffsetYmm)
+        ? activeScaleSettings.gridOffsetYmm
+        : 0;
       const rowOffset = row & 1 ? activeScaleSettings.centerSpacingMm / 2 : 0;
-      holeX =
-        col * activeScaleSettings.centerSpacingMm +
-        rowOffset +
-        activeScaleSettings.gridOffsetXmm;
-
-      holeY =
-        row * activeScaleSettings.centerSpacingMm * 0.866 +
-        activeScaleSettings.gridOffsetYmm;
+      holeX = col * activeScaleSettings.centerSpacingMm + rowOffset + gx;
+      holeY = row * activeScaleSettings.centerSpacingMm * 0.866 + gy;
     }
 
     const holeShoulderInset = Math.max(
@@ -2438,10 +3402,536 @@ const derived = useMemo(() => {
         planeZMm: activeScaleSettings.scalePlaneZ,
         tipLiftDeg,
         rowClearanceZMm: activeScaleSettings.scaleRowClearanceZ,
+        imagePatchUrl: scaleImagePatches.get(key) ?? null,
       },
     ];
   });
-}, [scaleColors, activeScaleSettings, rcToLogical]); 
+}, [scaleColors, activeScaleSettings, rcToLogical, scaleImagePatches]);
+
+  // ====================================================
+  // IMAGE OVERLAY GEOMETRY (shared by preview + transfer)
+  // ====================================================
+  // User-adjustable mask. When set, this rectangle is the world-space target
+  // for the image overlay (and what the Transfer paints into). When null, the
+  // bounds are auto-computed from the current rings/scales matching the
+  // transferTarget (and selection scope, if any).
+  const [overlayMaskOverride, setOverlayMaskOverride] = useState<null | {
+    worldW: number;
+    worldH: number;
+    worldCenterX: number;
+    worldCenterY: number;
+  }>(null);
+
+  // Auto bounds: matches the Transfer's per-ring/per-scale loop. Returns null
+  // if there's nothing to paint on (no rings/scales for the selected target).
+  const overlayAutoBounds = useMemo(() => {
+    const doRings = (transferTarget === "rings" || transferTarget === "both") && rings.size > 0;
+    const doScales = (transferTarget === "scales" || transferTarget === "both") && exportScales.length > 0;
+    if (!doRings && !doScales) return null;
+
+    const useSelection = overlayScope === "selection" && overlayMaskKeys.size > 0;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let n = 0;
+
+    if (doRings) {
+      for (const [key, r] of rings) {
+        if (useSelection && !overlayMaskKeys.has(key)) continue;
+        const { x: lx, y: ly } = rcToLogical(r.row, r.col);
+        const w = logicalToWorld(lx, ly);
+        if (w.wx < minX) minX = w.wx;
+        if (w.wx > maxX) maxX = w.wx;
+        if (w.wy < minY) minY = w.wy;
+        if (w.wy > maxY) maxY = w.wy;
+        n++;
+      }
+    }
+    if (doScales) {
+      for (const s of exportScales) {
+        const k1 = `${s.row}-${s.col}`;
+        const k2 = `${s.row},${s.col}`;
+        if (useSelection && !overlayMaskKeys.has(k1) && !overlayMaskKeys.has(k2)) continue;
+        // Bound matches the 3D MESH body extent (what the user actually
+        // sees rendered), NOT the 2D path which uses a different convention.
+        // In mesh Y-UP relative to hole: shoulder at (bodyOffY - 0.08*h)
+        // ABOVE hole, tip at (bodyOffY - h) (which is below hole when
+        // bodyOffY < h). bodyOffY = drop - shoulderInset.
+        //
+        // In logical Y DOWN relative to hole:
+        //   top = -(bodyOffY - 0.08*h) = 0.08*h - bodyOffY (negative → above)
+        //   tip = -(bodyOffY - h) = h - bodyOffY (positive → below)
+        const bodyLx = s.bodyX_mm;
+        const hW = s.widthMm;
+        const hH = s.heightMm;
+        const shoulderInset = Math.max(s.holeIdMm * 0.54, hH * 0.15);
+        const bodyOff = s.dropMm - shoulderInset;
+        const topRel = hH * 0.08 - bodyOff;  // logical Y offset of shoulder from hole
+        const tipRel = hH - bodyOff;          // logical Y offset of tip from hole
+        const holeLogical = rcToLogical(s.row, s.col);
+        const bodyTopLy = holeLogical.y + topRel;
+        const bodyTipLy = holeLogical.y + tipRel;
+        const corners: Array<[number, number]> = [
+          [bodyLx - hW / 2, bodyTopLy],
+          [bodyLx + hW / 2, bodyTopLy],
+          [bodyLx - hW / 2, bodyTipLy],
+          [bodyLx + hW / 2, bodyTipLy],
+        ];
+        for (const [lxx, lyy] of corners) {
+          const w = logicalToWorld(lxx, lyy);
+          if (w.wx < minX) minX = w.wx;
+          if (w.wx > maxX) maxX = w.wx;
+          if (w.wy < minY) minY = w.wy;
+          if (w.wy > maxY) maxY = w.wy;
+        }
+        n++;
+      }
+    }
+    if (n === 0) return null;
+    return {
+      worldW: Math.max(1e-6, maxX - minX),
+      worldH: Math.max(1e-6, maxY - minY),
+      worldCenterX: (minX + maxX) * 0.5,
+      worldCenterY: (minY + maxY) * 0.5,
+    };
+  }, [transferTarget, overlayScope, overlayMaskKeys, rings, exportScales, rcToLogical, logicalToWorld]);
+
+  // Effective bounds: user mask if set, else auto. Falls back to a unit box
+  // when nothing is paintable — the preview render condition gates this so it
+  // shouldn't matter visually.
+  const overlayWorldBounds = useMemo(() => {
+    if (overlayMaskOverride) return overlayMaskOverride;
+    if (overlayAutoBounds) return overlayAutoBounds;
+    return { worldW: 1, worldH: 1, worldCenterX: 0, worldCenterY: 0 };
+  }, [overlayMaskOverride, overlayAutoBounds]);
+
+  // Reset the user mask whenever the underlying paintable target changes
+  // (new image, transferTarget switch, selection change). The next render will
+  // fall back to auto bounds. Keeps the outline meaningful instead of stuck
+  // somewhere unrelated.
+  useEffect(() => {
+    setOverlayMaskOverride(null);
+  }, [overlay?.dataUrl, transferTarget, overlayScope, overlayMaskKeys]);
+
+  // Screen pixels per logical mm at the current camera. Derived from the
+  // distance between two world points 1 unit apart. Camera state lives in
+  // RingRenderer's THREE camera, which is driven by externalViewState in a
+  // useEffect. A cameraTick is bumped after that effect runs so this memo
+  // recomputes against the up-to-date camera.
+  const [overlayCameraTick, setOverlayCameraTick] = useState(0);
+  const overlayPxPerMm = useMemo(() => {
+    const a = worldToScreen(0, 0);
+    const b = worldToScreen(1, 0);
+    return Math.max(1e-6, Math.abs(b.sx - a.sx));
+    // overlayCameraTick is intentionally in deps; worldToScreen reads THREE
+    // camera state that React doesn't track.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [worldToScreen, overlayCameraTick]);
+
+  // Bump after RingRenderer's effect applies the new camera. The parent's
+  // useEffect runs *after* children's effects, so by this point the THREE
+  // camera reflects the latest pan/zoom React state.
+  useEffect(() => {
+    setOverlayCameraTick((t) => (t + 1) & 0xFF);
+  }, [zoom, panWorldX, panWorldY]);
+
+  // Refs mirror the memo values so the (stable) drag handler closure and the
+  // transfer callback can read current geometry without being recreated every
+  // render.
+  const overlayWorldBoundsRef = useRef(overlayWorldBounds);
+  const overlayPxPerMmRef = useRef(overlayPxPerMm);
+  const overlayMaskOverrideRef = useRef(overlayMaskOverride);
+  useEffect(() => { overlayWorldBoundsRef.current = overlayWorldBounds; }, [overlayWorldBounds]);
+  useEffect(() => { overlayPxPerMmRef.current = overlayPxPerMm; }, [overlayPxPerMm]);
+  useEffect(() => { overlayMaskOverrideRef.current = overlayMaskOverride; }, [overlayMaskOverride]);
+
+  // Natural pixel dimensions of the loaded overlay image. Used for the
+  // imageDisplayH calculation in the canvas preview (mirrors the same value
+  // the transfer code computes from `img.naturalWidth/Height`).
+  const [overlayNatural, setOverlayNatural] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    if (!overlay?.dataUrl) { setOverlayNatural(null); return; }
+    let cancelled = false;
+    const img = new Image();
+    img.onload = () => {
+      if (!cancelled) setOverlayNatural({ w: img.naturalWidth || 1, h: img.naturalHeight || 1 });
+    };
+    img.onerror = () => { if (!cancelled) setOverlayNatural(null); };
+    img.src = overlay.dataUrl;
+    return () => { cancelled = true; };
+  }, [overlay?.dataUrl]);
+
+  // ====================================================
+  // IMAGE OVERLAY CLIP SHAPES (SVG)
+  // ====================================================
+  // Builds the SVG <clipPath> children that clip the on-canvas image overlay
+  // to the union of selected ring circles and/or scale silhouettes.
+  const overlayClipShapes = useMemo(() => {
+    if (!overlay?.dataUrl) return [] as React.ReactNode[];
+    // Visual preview clips to the same target(s) the Transfer button will
+    // write to, so the user sees exactly where the image will land. Matches
+    // the doRings/doScales logic in the transfer handler.
+    const doRings = (transferTarget === "rings" || transferTarget === "both") && rings.size > 0;
+    const doScales = (transferTarget === "scales" || transferTarget === "both") && exportScales.length > 0;
+    const useSelection = overlayScope === "selection" && overlayMaskKeys.size > 0;
+    const shapes: React.ReactNode[] = [];
+
+    // Mask-area filter (same predicate the Transfer uses). The mask outline
+    // decides which cells get painted, not just how the image is positioned.
+    const mb = overlayWorldBounds;
+    const mMinX = mb.worldCenterX - mb.worldW / 2;
+    const mMaxX = mb.worldCenterX + mb.worldW / 2;
+    const mMinY = mb.worldCenterY - mb.worldH / 2;
+    const mMaxY = mb.worldCenterY + mb.worldH / 2;
+    const insideMask = (wx: number, wy: number) =>
+      wx >= mMinX && wx <= mMaxX && wy >= mMinY && wy <= mMaxY;
+
+    if (doRings && rings.size > 0) {
+      const outerR = (innerIDmm + 2 * wireMm) / 2;
+      const innerR = innerIDmm / 2;
+      const midR = (innerR + outerR) / 2;
+      for (const [key, r] of rings) {
+        if (useSelection && !overlayMaskKeys.has(key)) continue;
+        const { x, y } = rcToLogical(r.row, r.col);
+        const { wx, wy } = logicalToWorld(x, y);
+        if (!insideMask(wx, wy)) continue;
+        const sp = worldToScreen(wx, wy);
+        const outerPx = projectRingRadiusPx(x, y, outerR);
+        const fill = previewSampledColors.get(`ring:${key}`) ?? "transparent";
+        if (overlayPreviewMode === "sampled") {
+          // Sampled-color preview: draw the ring as an open band (matches the
+          // real torus geometry) so adjacent rings don't merge into a solid
+          // patch that visually reads as scale silhouettes.
+          const midPx = projectRingRadiusPx(x, y, midR);
+          const innerPx = projectRingRadiusPx(x, y, innerR);
+          const wirePx = Math.max(1, outerPx - innerPx);
+          shapes.push(
+            <circle
+              key={`ring:${key}`}
+              cx={sp.sx}
+              cy={sp.sy}
+              r={Math.max(1, midPx)}
+              fill="none"
+              stroke={fill}
+              strokeWidth={wirePx}
+            />,
+          );
+        } else {
+          // Raw mode: filled disc — used as <clipPath> geometry so the source
+          // image is clipped to the full ring footprint.
+          shapes.push(
+            <circle
+              key={`ring:${key}`}
+              cx={sp.sx}
+              cy={sp.sy}
+              r={Math.max(2, outerPx)}
+              fill={fill}
+            />,
+          );
+        }
+      }
+    }
+
+    if (doScales && exportScales.length > 0) {
+      const w0 = logicalToWorld(0, 0);
+      const w1 = logicalToWorld(1, 0);
+      const o1 = worldToScreen(w0.wx, w0.wy);
+      const o2 = worldToScreen(w1.wx, w1.wy);
+      const pxPerMm = Math.abs(o2.sx - o1.sx) || 1;
+      const project = (xMm: number, yMm: number) => {
+        const w = logicalToWorld(xMm, yMm);
+        const sp = worldToScreen(w.wx, w.wy);
+        return { x: sp.sx, y: sp.sy };
+      };
+      const mmToPx = (mm: number) => mm * pxPerMm;
+      for (const scale of exportScales) {
+        const scaleKey = `${scale.row}-${scale.col}`;
+        const altKey = `${scale.row},${scale.col}`;
+        if (useSelection && !overlayMaskKeys.has(scaleKey) && !overlayMaskKeys.has(altKey)) continue;
+        // Body centre in world coords for the mask test.
+        const bodyW = logicalToWorld(scale.bodyX_mm, scale.bodyY_mm);
+        if (!insideMask(bodyW.wx, bodyW.wy)) continue;
+        const hole = project(scale.x_mm, scale.y_mm);
+        const body = project(scale.bodyX_mm, scale.bodyY_mm);
+        const w = Math.max(2, mmToPx(scale.widthMm));
+        const h = Math.max(2, mmToPx(scale.heightMm));
+        const dx = body.x - hole.x;
+        const dy = body.y - hole.y;
+        const tilt = scale.tiltRad ?? 0;
+        const tipLiftRad = (scale.tipLiftDeg ?? 0) * (Math.PI / 180);
+        const sx = Math.cos(tilt);
+        const sy = Math.cos(tipLiftRad);
+        // Match the 3D mesh body construction (makeScaleShapeRR). In mesh
+        // Y-UP relative to hole: shoulder at (bodyOff - 0.08*h), tip at
+        // (bodyOff - h). In path-local Y DOWN we negate to get above/below
+        // hole correctly:
+        //   topY (shoulder above hole) = 0.08*h - dy
+        //   tipY (tip below hole)      = h - dy
+        //   midY (belly)               = 0.45*h - dy
+        // where dy = body.y_screen - hole.y_screen = bodyOff * pxPerMm.
+        const topY = h * 0.08 - dy;
+        const midY = h * 0.45 - dy;
+        const tipY = h - dy;
+        const halfW = w / 2;
+        const shapeStr = String(scale.shape);
+        // Build the SVG path data for this scale's outer silhouette.
+        let d = "";
+        switch (shapeStr) {
+          case "leaf":
+            // Control-point Y values mirror the 3D mesh leaf path (negated
+            // for Y DOWN): bodyOff - 0.16*h, bodyOff - 0.78*h, bodyOff -
+            // 0.9*h, bodyOff - 0.96*h → in path Y DOWN: 0.16*h - dy etc.
+            d = `M 0 ${topY} ` +
+                `C ${halfW * 0.95} ${h * 0.16 - dy}, ${halfW * 1.05} ${midY}, ${halfW * 0.34} ${h * 0.78 - dy} ` +
+                `C ${halfW * 0.18} ${h * 0.9 - dy}, ${halfW * 0.08} ${h * 0.96 - dy}, 0 ${tipY} ` +
+                `C ${-halfW * 0.08} ${h * 0.96 - dy}, ${-halfW * 0.18} ${h * 0.9 - dy}, ${-halfW * 0.34} ${h * 0.78 - dy} ` +
+                `C ${-halfW * 1.05} ${midY}, ${-halfW * 0.95} ${h * 0.16 - dy}, 0 ${topY} Z`;
+            break;
+          case "round":
+            // 3D mesh round: control at (hw*1.05, bodyOff - 0.52*h)
+            d = `M 0 ${topY} ` +
+                `C ${halfW * 0.95} ${topY}, ${halfW * 1.05} ${h * 0.52 - dy}, 0 ${tipY} ` +
+                `C ${-halfW * 1.05} ${h * 0.52 - dy}, ${-halfW * 0.95} ${topY}, 0 ${topY} Z`;
+            break;
+          case "kite":
+            // 3D mesh kite: corners at h*0.3 and h*0.78 in mesh, negated.
+            d = `M 0 ${topY} L ${halfW * 0.96} ${h * 0.3 - dy} L ${halfW * 0.56} ${h * 0.78 - dy} L 0 ${tipY} L ${-halfW * 0.56} ${h * 0.78 - dy} L ${-halfW * 0.96} ${h * 0.3 - dy} Z`;
+            break;
+          default:
+            // Built-in teardrop (default branch in 3D mesh).
+            d = `M 0 ${topY} ` +
+                `C ${halfW * 1.08} ${h * 0.14 - dy}, ${halfW * 1.16} ${midY}, ${halfW * 0.36} ${h * 0.78 - dy} ` +
+                `C ${halfW * 0.18} ${h * 0.88 - dy}, ${halfW * 0.08} ${h * 0.95 - dy}, 0 ${tipY} ` +
+                `C ${-halfW * 0.08} ${h * 0.95 - dy}, ${-halfW * 0.18} ${h * 0.88 - dy}, ${-halfW * 0.36} ${h * 0.78 - dy} ` +
+                `C ${-halfW * 1.16} ${midY}, ${-halfW * 1.08} ${h * 0.14 - dy}, 0 ${topY} Z`;
+        }
+        // Translate to hole.x/hole.y and apply the same x/y squash as the 2D
+        // draw so the clip matches the visible scale exactly.
+        const transform = `translate(${hole.x} ${hole.y}) scale(${sx} ${sy})`;
+        const fill = previewSampledColors.get(`scale:${scaleKey}`) ?? "transparent";
+        shapes.push(<path key={`scale:${scaleKey}`} d={d} transform={transform} fill={fill} />);
+      }
+    }
+    return shapes;
+  }, [
+    overlay?.dataUrl,
+    transferTarget,
+    overlayScope,
+    overlayMaskKeys,
+    overlayWorldBounds,
+    rings,
+    exportScales,
+    rcToLogical,
+    logicalToWorld,
+    worldToScreen,
+    projectRingRadiusPx,
+    innerIDmm,
+    wireMm,
+    panWorldX,
+    panWorldY,
+    zoom,
+    previewSampledColors,
+    overlayPreviewMode,
+  ]);
+
+  // ====================================================
+  // OVERLAY PREVIEW SAMPLER (sampled-color preview)
+  // ====================================================
+  // Mirrors transferOverlayToRings' image-sampling math so the on-canvas
+  // preview shows each target cell as the color it would become on Transfer
+  // — not the raw image clipped to cell silhouettes. Loads the overlay image
+  // into an offscreen canvas with the same transform the transfer uses, then
+  // samples once per ring/scale center. Keys match overlayClipShapes:
+  //   rings:  `ring:${rowKey}`  (rowKey is the "row-col" id used in `rings`)
+  //   scales: `scale:${row}-${col}`
+  useEffect(() => {
+    if (overlayPreviewMode !== "sampled" || !overlay?.dataUrl) {
+      setPreviewSampledColors((prev) => (prev.size === 0 ? prev : new Map()));
+      return;
+    }
+    let cancelled = false;
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      if (cancelled) return;
+      const iW = img.naturalWidth || 1;
+      const iH = img.naturalHeight || 1;
+      const PREVIEW_W = 332;
+      const PREVIEW_H = 180;
+      const imageDisplayH = (PREVIEW_W * iH) / iW;
+      const MAX_CANVAS_H = 800;
+      const imgCanvasH = Math.max(1, Math.min(MAX_CANVAS_H, Math.ceil(imageDisplayH)));
+
+      const isTiled = (overlay as any)?.repeat === "tile";
+      const patternScaleVal = Number((overlay as any)?.patternScale ?? 100);
+      const rotationDeg = Number((overlay as any)?.rotation ?? 0);
+      const offsetX = Number((overlay as any)?.offsetX ?? 0);
+      const offsetY = Number((overlay as any)?.offsetY ?? 0);
+      const scl = Math.max(1e-6, Number((overlay as any)?.scale ?? 1));
+      const opacityVal = Math.max(0, Math.min(1, Number((overlay as any)?.opacity ?? 1)));
+
+      const offCanvas = document.createElement("canvas");
+      const offCtx = offCanvas.getContext("2d", {
+        willReadFrequently: true,
+      } as CanvasRenderingContext2DSettings) as CanvasRenderingContext2D | null;
+      if (!offCtx) return;
+      let offData: Uint8ClampedArray;
+      let offW: number;
+      let offH: number;
+      try {
+        if (isTiled) {
+          offCanvas.width = PREVIEW_W;
+          offCanvas.height = PREVIEW_H;
+          offW = PREVIEW_W;
+          offH = PREVIEW_H;
+          const tilePx = Math.max(1, PREVIEW_W * (patternScaleVal / 100));
+          const tilePy = Math.max(1, tilePx * iH / iW);
+          const tileCanvas = document.createElement("canvas");
+          tileCanvas.width = Math.ceil(tilePx);
+          tileCanvas.height = Math.ceil(tilePy);
+          const tileCtx = tileCanvas.getContext("2d") as CanvasRenderingContext2D | null;
+          if (tileCtx) tileCtx.drawImage(img, 0, 0, tileCanvas.width, tileCanvas.height);
+          const pattern = offCtx.createPattern(tileCanvas, "repeat");
+          if (pattern) {
+            pattern.setTransform(new DOMMatrix().translate(offsetX, offsetY));
+            offCtx.fillStyle = pattern;
+          }
+          offCtx.save();
+          offCtx.translate(PREVIEW_W / 2, PREVIEW_H / 2);
+          offCtx.rotate(rotationDeg * (Math.PI / 180));
+          offCtx.translate(-PREVIEW_W / 2, -PREVIEW_H / 2);
+          offCtx.fillRect(0, 0, PREVIEW_W, PREVIEW_H);
+          offCtx.restore();
+        } else {
+          offCanvas.width = PREVIEW_W;
+          offCanvas.height = imgCanvasH;
+          offW = PREVIEW_W;
+          offH = imgCanvasH;
+          offCtx.drawImage(img, 0, 0, PREVIEW_W, imgCanvasH);
+        }
+        offData = offCtx.getImageData(0, 0, offW, offH).data;
+      } catch {
+        return;
+      }
+
+      const baseR = 255, baseG = 255, baseB = 255;
+      const rotRad = rotationDeg * (Math.PI / 180);
+      const cosR = Math.cos(rotRad);
+      const sinR = Math.sin(rotRad);
+
+      const mb = overlayWorldBounds;
+      const worldCenterX = mb.worldCenterX;
+      const worldCenterY = mb.worldCenterY;
+      const worldW = Math.max(1e-6, mb.worldW);
+      const worldH = Math.max(1e-6, mb.worldH);
+      const maskMinX = worldCenterX - worldW / 2;
+      const maskMaxX = worldCenterX + worldW / 2;
+      const maskMinY = worldCenterY - worldH / 2;
+      const maskMaxY = worldCenterY + worldH / 2;
+      const insideMask = (wx: number, wy: number) =>
+        wx >= maskMinX && wx <= maskMaxX && wy >= maskMinY && wy <= maskMaxY;
+
+      const sampleAtWorld = (wx: number, wy: number): string | null => {
+        const nxWorld = (wx - worldCenterX) / worldW;
+        const nyWorld = (wy - worldCenterY) / worldH;
+        let sx: number;
+        let sy: number;
+        if (isTiled) {
+          sx = Math.max(0, Math.min(offW - 1, Math.floor(PREVIEW_W * (0.5 + nxWorld))));
+          sy = Math.max(0, Math.min(offH - 1, Math.floor(PREVIEW_H * (0.5 - nyWorld))));
+        } else {
+          let dx = PREVIEW_W * nxWorld - offsetX;
+          let dy = -PREVIEW_H * nyWorld - offsetY;
+          dx /= scl;
+          dy /= scl;
+          const rdx = dx * cosR + dy * sinR;
+          const rdy = -dx * sinR + dy * cosR;
+          sx = Math.max(0, Math.min(offW - 1, Math.round(rdx + PREVIEW_W / 2)));
+          sy = Math.max(0, Math.min(offH - 1, Math.round(rdy + imageDisplayH / 2)));
+        }
+        const idx = (sy * offW + sx) * 4;
+        const r = offData[idx];
+        const g = offData[idx + 1];
+        const b = offData[idx + 2];
+        const a255 = offData[idx + 3];
+        if (a255 <= 2) return null;
+        const t = Math.max(0, Math.min(1, (a255 / 255) * opacityVal));
+        const outR = Math.round(baseR * (1 - t) + r * t);
+        const outG = Math.round(baseG * (1 - t) + g * t);
+        const outB = Math.round(baseB * (1 - t) + b * t);
+        return `#${hex2(outR)}${hex2(outG)}${hex2(outB)}`;
+      };
+
+      const doRings = (transferTarget === "rings" || transferTarget === "both") && rings.size > 0;
+      const doScales = (transferTarget === "scales" || transferTarget === "both") && exportScales.length > 0;
+      const useSelection = overlayScope === "selection" && overlayMaskKeys.size > 0;
+
+      const out = new Map<string, string>();
+      if (doRings) {
+        for (const [key, r] of rings) {
+          if (useSelection && !overlayMaskKeys.has(key)) continue;
+          const { x: lx, y: ly } = rcToLogical(r.row, r.col);
+          const { wx, wy } = logicalToWorld(lx, ly);
+          if (!insideMask(wx, wy)) continue;
+          const hex = sampleAtWorld(wx, wy);
+          if (hex) out.set(`ring:${key}`, hex);
+        }
+      }
+      if (doScales) {
+        // Sample at scale BODY center (matches transferOverlayToRings, which
+        // samples bodyWx/bodyWy — bodyCenter is bodyOff - 0.54*h above hole).
+        const sHeightMm = activeScaleSettings.heightMm;
+        const sDropMm = activeScaleSettings.dropMm;
+        const sHoleShoulderInset = Math.max(
+          activeScaleSettings.holeIdMm * 0.54,
+          sHeightMm * 0.15,
+        );
+        const sBodyOff = sDropMm - sHoleShoulderInset;
+        const bodyCenterDyMm = sHeightMm * 0.54 - sBodyOff;
+        for (const s of exportScales) {
+          const k1 = `${s.row}-${s.col}`;
+          const k2 = `${s.row},${s.col}`;
+          if (useSelection && !overlayMaskKeys.has(k1) && !overlayMaskKeys.has(k2)) continue;
+          const holeLogical = rcToLogical(s.row, s.col);
+          const holeW = logicalToWorld(holeLogical.x, holeLogical.y);
+          const bodyWx = holeW.wx;
+          const bodyWy = holeW.wy - bodyCenterDyMm;
+          if (!insideMask(bodyWx, bodyWy)) continue;
+          const hex = sampleAtWorld(bodyWx, bodyWy);
+          if (hex) out.set(`scale:${k1}`, hex);
+        }
+      }
+      if (!cancelled) setPreviewSampledColors(out);
+    };
+    img.onerror = () => {
+      if (!cancelled) setPreviewSampledColors(new Map());
+    };
+    img.src = overlay.dataUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    overlayPreviewMode,
+    overlay?.dataUrl,
+    (overlay as any)?.scale,
+    (overlay as any)?.rotation,
+    (overlay as any)?.offsetX,
+    (overlay as any)?.offsetY,
+    (overlay as any)?.opacity,
+    (overlay as any)?.repeat,
+    (overlay as any)?.patternScale,
+    transferTarget,
+    overlayScope,
+    overlayMaskKeys,
+    overlayWorldBounds,
+    rings,
+    exportScales,
+    rcToLogical,
+    logicalToWorld,
+    activeScaleSettings.heightMm,
+    activeScaleSettings.dropMm,
+    activeScaleSettings.holeIdMm,
+  ]);
+
   // ====================================================
   // HIT CIRCLE DRAWING (WORLD SPACE → SCREEN SPACE)
   // ✅ FIX: RAF-throttle + viewport cull (keeps huge counts responsive)
@@ -2456,48 +3946,59 @@ const derived = useMemo(() => {
     } as CanvasRenderingContext2DSettings);
     if (!ctx) return;
 
-    // Clear in CSS pixel space (since you setTransform(dpr,...) in resize)
     const rect = wrap.getBoundingClientRect();
     ctx.clearRect(0, 0, rect.width, rect.height);
 
-    if (hideCircles) {
-      return;
-    }
+    if (hideCircles) return;
 
     ctx.strokeStyle = "rgba(20,184,166,0.8)";
     ctx.lineWidth = 1;
 
     const margin = 60;
 
-    rings.forEach((r) => {
-      const { x, y } = rcToLogical(r.row, r.col);
+    // Compute viewport bounds in logical space to limit iteration to visible rings.
+    // This converts O(totalRings) transforms into O(visibleRings) — critical for
+    // large grids (e.g. 200×200 = 40k rings where only ~2k may be visible).
+    const tl = screenToWorld(-margin, -margin);
+    const br = screenToWorld(rect.width + margin, rect.height + margin);
 
-      const lx = x + circleOffsetX;
-      const ly = y + circleOffsetY;
+    const rcTL = logicalToRowColApprox(tl.lx - circleOffsetX, tl.ly - circleOffsetY);
+    const rcBR = logicalToRowColApprox(br.lx - circleOffsetX, br.ly - circleOffsetY);
 
-      const { wx, wy } = logicalToWorld(lx, ly);
-      const { sx, sy } = worldToScreen(wx, wy);
+    const rowMin = Math.min(rcTL.row, rcBR.row) - 2;
+    const rowMax = Math.max(rcTL.row, rcBR.row) + 2;
+    const colMin = Math.min(rcTL.col, rcBR.col) - 3;
+    const colMax = Math.max(rcTL.col, rcBR.col) + 3;
 
-      if (
-        sx < -margin ||
-        sx > rect.width + margin ||
-        sy < -margin ||
-        sy > rect.height + margin
-      )
-        return;
+    // Direct key lookup — only processes rings in the visible row/col window.
+    ctx.beginPath();
+    for (let row = rowMin; row <= rowMax; row++) {
+      for (let col = colMin; col <= colMax; col++) {
+        const r = rings.get(`${row}-${col}`);
+        if (!r) continue;
 
-      const effInner = getEffectiveInnerRadiusMm(r.row);
-      const rPx = projectRingRadiusPx(lx, ly, effInner) * circleScale;
+        const { x, y } = rcToLogical(row, col);
+        const lx = x + circleOffsetX;
+        const ly = y + circleOffsetY;
 
-      ctx.beginPath();
-      ctx.arc(sx, sy, rPx, 0, Math.PI * 2);
-      ctx.stroke();
-    });
+        const { wx, wy } = logicalToWorld(lx, ly);
+        const { sx, sy } = worldToScreen(wx, wy);
+
+        const effInner = getEffectiveInnerRadiusMm(row);
+        const rPx = projectRingRadiusPx(lx, ly, effInner) * circleScale;
+
+        ctx.moveTo(sx + rPx, sy);
+        ctx.arc(sx, sy, rPx, 0, Math.PI * 2);
+      }
+    }
+    ctx.stroke();
   }, [
     rings,
     rcToLogical,
     logicalToWorld,
     worldToScreen,
+    screenToWorld,
+    logicalToRowColApprox,
     projectRingRadiusPx,
     getEffectiveInnerRadiusMm,
     circleScale,
@@ -2730,6 +4231,17 @@ const derived = useMemo(() => {
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      // Scale plane drag mode — start dragging the scale grid
+      if (scalePlaneDragMode) {
+        scaleDragRef.current = {
+          screenX: e.clientX,
+          screenY: e.clientY,
+          gridX: activeScaleSettingsRef.current.gridOffsetXmm,
+          gridY: activeScaleSettingsRef.current.gridOffsetYmm,
+        };
+        return;
+      }
+
       if (selectionMode !== "none" && !panMode) {
         const { sx, sy } = getCanvasPoint(e);
         const { lx, ly } = screenToWorld(sx, sy);
@@ -2774,6 +4286,7 @@ const derived = useMemo(() => {
       };
     },
     [
+      scalePlaneDragMode,
       selectionMode,
       panMode,
       getCanvasPoint,
@@ -2871,6 +4384,32 @@ const derived = useMemo(() => {
         return;
       }
 
+      // Scale plane drag — translate the grid by the world-space delta
+      if (scalePlaneDragMode && scaleDragRef.current) {
+        e.preventDefault();
+        const rect = getViewRect();
+        const sx = e.clientX - rect.left;
+        const sy = e.clientY - rect.top;
+        const startSx = scaleDragRef.current.screenX - rect.left;
+        const startSy = scaleDragRef.current.screenY - rect.top;
+        const { lx: curLx, ly: curLy } = screenToWorld(sx, sy);
+        const { lx: startLx, ly: startLy } = screenToWorld(startSx, startSy);
+        const newX = scaleDragRef.current.gridX + (curLx - startLx);
+        const newY = scaleDragRef.current.gridY + (curLy - startLy);
+        scaleDragPendingRef.current = { gridOffsetXmm: newX, gridOffsetYmm: newY };
+        if (scaleDragRafRef.current == null) {
+          scaleDragRafRef.current = requestAnimationFrame(() => {
+            scaleDragRafRef.current = null;
+            const pending = scaleDragPendingRef.current;
+            if (!pending) return;
+            scaleDragPendingRef.current = null;
+            setAutoFollowTuner(false);
+            setScaleSettingsOverride((prev) => ({ ...prev, ...pending }));
+          });
+        }
+        return;
+      }
+
       // Pan drag
       if (!panMode || !isPanning || !panStart.current) return;
 
@@ -2886,11 +4425,13 @@ const derived = useMemo(() => {
       setPanWorldY(panStart.current.panY + dyLogical);
     },
     [
+      scalePlaneDragMode,
       isSelecting,
       selectionMode,
       panMode,
       isPanning,
       getCanvasPoint,
+      getViewRect,
       screenToWorld,
       logicalToRowColApprox,
       rcToLogical,
@@ -3022,6 +4563,30 @@ const derived = useMemo(() => {
       // Stable order (row-major) for deterministic placement & cluster behavior
       cells.sort((a, b) => a.row - b.row || a.col - b.col);
 
+      // Capture each cell's PRE-PAINT state synchronously. The selection
+      // auto-paints rings + scales below (and clears scale image patches),
+      // so reading rings/scales from a later Copy click would only see the
+      // active paint color. By snapshotting now (before any setState),
+      // Copy can restore the original ring colors and scale image patches
+      // — e.g. preserving an image previously transferred onto the heart.
+      const curScaleColors = scaleColorsRef.current;
+      const curScalePatches = scaleImagePatchesRef.current;
+      lastSelectionCellsRef.current = cells.map((c) => {
+        const ringKey = `${c.row}-${c.col}`;
+        const scaleKey = `${c.row},${c.col}`;
+        const ring = rings.get(ringKey);
+        const scaleColor = curScaleColors.get(scaleKey);
+        const scaleImagePatch = curScalePatches.get(scaleKey);
+        return {
+          row: c.row,
+          col: c.col,
+          ring: ring ? { color: ring.color, cluster: ring.cluster } : undefined,
+          scaleColor,
+          scaleImagePatch,
+        };
+      });
+      setLastSelectionCount2(cells.length);
+
       // Highlight selected cells (for render feedback)
       setSelectedKeys(new Set(cells.map((c) => `${c.row}-${c.col}`)));
 
@@ -3037,6 +4602,21 @@ const derived = useMemo(() => {
             for (const cell of cells) next.set(`${cell.row},${cell.col}`, col);
           }
           return next;
+        });
+        // Painting OR erasing must also drop any image-overlay patches at
+        // those keys: a new paint color must take visual precedence over a
+        // prior Image Fill transfer (overwrite), and erasing clears the patch
+        // so a freshly placed scale at the same row/col doesn't silently
+        // inherit the previous transfer.
+        setScaleImagePatches((prev) => {
+          if (prev.size === 0) return prev;
+          const next = new Map(prev);
+          let changed = false;
+          for (const cell of cells) {
+            const k = `${cell.row},${cell.col}`;
+            if (next.delete(k)) changed = true;
+          }
+          return changed ? next : prev;
         });
         setLastSelectionCount(cells.length);
         setSelectedKeys(new Set());
@@ -3095,6 +4675,11 @@ const derived = useMemo(() => {
   const applySelectionToRings = applySelectionToActiveLayer;
 
   const handleMouseUp = useCallback(() => {
+    // Finish scale-plane drag — without clearing scaleDragRef, the next
+    // mouseMove would keep translating the scale layer as the pointer
+    // wanders the canvas after release.
+    scaleDragRef.current = null;
+
     // Finish selection drag
     if (isSelecting && selectionMode !== "none") {
       const sel = selectionRef.current;
@@ -3252,6 +4837,19 @@ const derived = useMemo(() => {
         return;
       }
 
+      // Scale plane drag (single finger)
+      if (scalePlaneDragMode && e.touches.length === 1) {
+        e.preventDefault();
+        const t = e.touches[0];
+        scaleDragRef.current = {
+          screenX: t.clientX,
+          screenY: t.clientY,
+          gridX: activeScaleSettingsRef.current.gridOffsetXmm,
+          gridY: activeScaleSettingsRef.current.gridOffsetYmm,
+        };
+        return;
+      }
+
       // Pan mode (single finger)
       if (!panMode || e.touches.length !== 1) return;
 
@@ -3277,6 +4875,7 @@ const derived = useMemo(() => {
       };
     },
     [
+      scalePlaneDragMode,
       selectionMode,
       panMode,
       getViewRect,
@@ -3353,6 +4952,34 @@ const derived = useMemo(() => {
         return;
       }
 
+      // Scale plane drag (single finger)
+      if (scalePlaneDragMode && scaleDragRef.current && e.touches.length === 1) {
+        e.preventDefault();
+        const t = e.touches[0];
+        const rect = canvasRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const sx = t.clientX - rect.left;
+        const sy = t.clientY - rect.top;
+        const startSx = scaleDragRef.current.screenX - rect.left;
+        const startSy = scaleDragRef.current.screenY - rect.top;
+        const { lx: curLx, ly: curLy } = screenToWorld(sx, sy);
+        const { lx: startLx, ly: startLy } = screenToWorld(startSx, startSy);
+        const newX = scaleDragRef.current.gridX + (curLx - startLx);
+        const newY = scaleDragRef.current.gridY + (curLy - startLy);
+        scaleDragPendingRef.current = { gridOffsetXmm: newX, gridOffsetYmm: newY };
+        if (scaleDragRafRef.current == null) {
+          scaleDragRafRef.current = requestAnimationFrame(() => {
+            scaleDragRafRef.current = null;
+            const pending = scaleDragPendingRef.current;
+            if (!pending) return;
+            scaleDragPendingRef.current = null;
+            setAutoFollowTuner(false);
+            setScaleSettingsOverride((prev) => ({ ...prev, ...pending }));
+          });
+        }
+        return;
+      }
+
       // Pan drag (single finger)
       if (!panMode || !isPanning || !panStart.current || e.touches.length !== 1)
         return;
@@ -3375,6 +5002,7 @@ const derived = useMemo(() => {
       setPanWorldY(panStart.current.panY + dyLogical);
     },
     [
+      scalePlaneDragMode,
       panMode,
       isPanning,
       screenToWorld,
@@ -3390,6 +5018,10 @@ const derived = useMemo(() => {
   const handleTouchEndNative = useCallback(() => {
     // Always end pinch state on touch end/cancel
     pinchStateRef.current = { active: false, lastDist: 0 };
+
+    // Finish scale-plane drag (same fix as mouseUp — without this, the
+    // next touchmove keeps translating the scale layer).
+    scaleDragRef.current = null;
 
     // Finish selection drag
     if (isSelecting && selectionMode !== "none") {
@@ -3477,10 +5109,22 @@ const derived = useMemo(() => {
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       if (panMode) return;
+      if (scalePlaneDragMode) return; // drag mode owns the canvas
       if (selectionMode !== "none") return; // selection tool uses drag, not click
 
       const { sx, sy } = getCanvasPoint(e);
       const { lx, ly } = screenToWorld(sx, sy);
+
+      // Paste mode: place the clipboard at the clicked cell. Stays in paste
+      // mode so the user can place multiple copies; exit via Esc, the toolbar
+      // toggle, or Cmd/Ctrl+V again.
+      if (pasteMode && clipboard) {
+        const adjLxP = lx - circleOffsetX;
+        const adjLyP = ly - circleOffsetY;
+        const { row: pRow, col: pCol } = logicalToRowColApprox(adjLxP, adjLyP);
+        pasteClipboardAt(pRow, pCol);
+        return;
+      }
 
       // ✅ Debug markers ONLY when diagnostics is enabled
       if (showDiagnostics) {
@@ -3502,6 +5146,16 @@ const derived = useMemo(() => {
           const next = new Map(prev);
           if (eraseModeRef.current) next.delete(key);
           else next.set(key, normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex));
+          return next;
+        });
+        // Painting OR erasing must drop any prior image-overlay patch at
+        // this key. Paint = the new solid color must overwrite the image
+        // patch. Erase = a freshly placed scale here doesn't auto-inherit
+        // the previous Image Fill.
+        setScaleImagePatches((prev) => {
+          if (!prev.has(key)) return prev;
+          const next = new Map(prev);
+          next.delete(key);
           return next;
         });
         return;
@@ -3577,6 +5231,7 @@ const derived = useMemo(() => {
     },
     [
       panMode,
+      scalePlaneDragMode,
       selectionMode,
       getCanvasPoint,
       screenToWorld,
@@ -3598,6 +5253,9 @@ const derived = useMemo(() => {
       activeLayer,
       activeScaleSettings,
       pushToHistoryDebounced,
+      pasteMode,
+      clipboard,
+      pasteClipboardAt,
     ],
   );
 
@@ -3614,6 +5272,15 @@ const derived = useMemo(() => {
     // ✅ Clear scales (state + ref cache)
     setScaleColors(new Map());
     scaleColorsRef.current?.clear();
+
+    // ✅ Clear any image-overlay patches that were transferred onto scales.
+    // Without this, a fresh design that re-uses the same row/col coordinates
+    // would silently inherit the previous Image Fill texture.
+    setScaleImagePatches(new Map());
+
+    // ✅ Reset the user-adjusted image-overlay mask so the next overlay
+    // starts from the new design's auto bounds.
+    setOverlayMaskOverride(null);
 
     // ✅ Clear selection / overlay selection
     setSelectedKeys(new Set());
@@ -3632,6 +5299,8 @@ const derived = useMemo(() => {
     setRings,
     setnextClusterId,
     setScaleColors,
+    setScaleImagePatches,
+    setOverlayMaskOverride,
     setSelectedKeys,
     setOverlayMaskKeys,
     clearInteractionCanvas,
@@ -3796,11 +5465,11 @@ const derived = useMemo(() => {
   }, [ringSets, autoFollowTuner, activeRingSetId, applyRingSet]);
 
   useEffect(() => {
-    localStorage.setItem(AUTO_FOLLOW_KEY, autoFollowTuner ? "true" : "false");
+    safeLSSet(AUTO_FOLLOW_KEY, autoFollowTuner ? "true" : "false");
   }, [autoFollowTuner]);
 
   useEffect(() => {
-    if (activeRingSetId) localStorage.setItem(ACTIVE_SET_KEY, activeRingSetId);
+    if (activeRingSetId) safeLSSet(ACTIVE_SET_KEY, activeRingSetId);
   }, [activeRingSetId]);
 
   // Prevent panning inside RingRenderer; we own pan/zoom here
@@ -3968,7 +5637,7 @@ const derived = useMemo(() => {
 
       if (data.paletteAssignment) {
         setAssignment(data.paletteAssignment);
-        localStorage.setItem(
+        safeLSSet(
           "freeform.paletteAssignment",
           JSON.stringify(data.paletteAssignment),
         );
@@ -3988,7 +5657,7 @@ const derived = useMemo(() => {
       // Restore scale settings via tuner snapshot
       if (data.scaleSettings && typeof data.scaleSettings === "object") {
         const newSnapshot: TunerSnapshot = { ...data, scaleSettings: data.scaleSettings };
-        localStorage.setItem(FREEFORM_TUNER_SNAPSHOT_KEY, JSON.stringify(newSnapshot));
+        safeLSSet(FREEFORM_TUNER_SNAPSHOT_KEY, JSON.stringify(newSnapshot));
         setTunerSnapshot(newSnapshot);
       }
 
@@ -4097,7 +5766,7 @@ const derived = useMemo(() => {
 
           if (hasScaleFields) {
             const newSnapshot: TunerSnapshot = { ...data, scaleSettings: scaleSrc };
-            localStorage.setItem(FREEFORM_TUNER_SNAPSHOT_KEY, JSON.stringify(newSnapshot));
+            safeLSSet(FREEFORM_TUNER_SNAPSHOT_KEY, JSON.stringify(newSnapshot));
             setTunerSnapshot(newSnapshot);
           }
 
@@ -4237,6 +5906,10 @@ const scales3D = useMemo(() => {
       tipLiftDeg: s.tipLiftDeg,
       rowClearanceZMm: 0,  // stacking already baked into stackedZ above
       dropMm: s.dropMm,
+      // Forward the optional per-scale image patch (set when the user
+      // transferred an image with Image Fill on). RingRenderer attaches it
+      // as a CanvasTexture so the image is painted onto the scale outline.
+      imagePatchUrl: s.imagePatchUrl ?? null,
     };
   });
 }, [
@@ -4390,7 +6063,6 @@ const scales3D = useMemo(() => {
                   setActiveLayer((prev) => {
                     const next = prev === "rings" ? "scales" : "rings";
                     activeLayerRef.current = next;
-                    console.log("[Freeform][toggle] activeLayer ->", next);
                     return next;
                   });
                   setPanMode(false);
@@ -4400,6 +6072,432 @@ const scales3D = useMemo(() => {
               >
                 {activeLayer === "rings" ? "R" : "S"}
               </ToolBtn>
+
+              {/* Scale shape picker — shows the currently-active scale shape
+                  as an emoji; opens a popup with built-in + custom shapes.
+                  Selecting one changes ALL rendered scales at once via the
+                  scaleSettingsOverride. */}
+              <div style={{ position: "relative", display: "inline-flex" }} data-nondrag>
+                <ToolBtn
+                  active={scaleShapePickerOpen}
+                  onClick={() => setScaleShapePickerOpen((v) => !v)}
+                  title={`Scale shape: ${activeShapeMenuEntry?.label ?? activeScaleSettings.shape ?? "teardrop"} — click to change all scales`}
+                >
+                  {activeShapeMenuEntry?.emoji ??
+                    SCALE_SHAPE_EMOJI[
+                      (activeScaleSettings.shape ?? "teardrop") as ScaleShapeName
+                    ] ??
+                    "💧"}
+                </ToolBtn>
+                {scaleShapePickerOpen && (
+                  <div
+                    role="menu"
+                    aria-label="Scale shape"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 52, // sit just right of the 44px ToolBtn
+                      background: "#0f172a",
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      borderRadius: 12,
+                      boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+                      padding: 6,
+                      display: "grid",
+                      gap: 4,
+                      zIndex: 10000,
+                      minWidth: 200,
+                      maxWidth: 260,
+                    }}
+                  >
+                    {mergedShapeMenu.map((entry) => {
+                      const selected = selectedShapeMenuId === entry.id;
+                      const isRenamingThis =
+                        entry.builtin && renamingBuiltin === entry.baseShape;
+
+                      if (isRenamingThis) {
+                        return (
+                          <div
+                            key={entry.id}
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "44px 1fr",
+                              gap: 6,
+                              padding: 6,
+                              background: "rgba(255,255,255,0.04)",
+                              border: "1px solid rgba(255,255,255,0.10)",
+                              borderRadius: 8,
+                            }}
+                          >
+                            <input
+                              value={builtinRenameDraft.emoji}
+                              onChange={(e) =>
+                                setBuiltinRenameDraft((d) => ({
+                                  ...d,
+                                  emoji: e.target.value,
+                                }))
+                              }
+                              maxLength={4}
+                              placeholder="🟦"
+                              style={{
+                                width: "100%",
+                                padding: "4px 6px",
+                                borderRadius: 6,
+                                border: "1px solid rgba(255,255,255,0.14)",
+                                background: "rgba(255,255,255,0.06)",
+                                color: "#f8fafc",
+                                fontSize: 16,
+                                textAlign: "center",
+                              }}
+                            />
+                            <input
+                              value={builtinRenameDraft.label}
+                              onChange={(e) =>
+                                setBuiltinRenameDraft((d) => ({
+                                  ...d,
+                                  label: e.target.value,
+                                }))
+                              }
+                              maxLength={20}
+                              placeholder="Label"
+                              style={{
+                                width: "100%",
+                                padding: "4px 6px",
+                                borderRadius: 6,
+                                border: "1px solid rgba(255,255,255,0.14)",
+                                background: "rgba(255,255,255,0.06)",
+                                color: "#f8fafc",
+                                fontSize: 13,
+                              }}
+                            />
+                            <div
+                              style={{
+                                gridColumn: "1 / span 2",
+                                display: "flex",
+                                gap: 4,
+                                justifyContent: "flex-end",
+                              }}
+                            >
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBuiltinShapeOverrides((prev) => {
+                                    const next = { ...prev };
+                                    delete next[entry.baseShape];
+                                    return next;
+                                  });
+                                  setRenamingBuiltin(null);
+                                }}
+                                title="Reset to default"
+                                style={{
+                                  padding: "4px 8px",
+                                  borderRadius: 6,
+                                  border: "1px solid rgba(255,255,255,0.14)",
+                                  background: "transparent",
+                                  color: "#9ca3af",
+                                  cursor: "pointer",
+                                  fontSize: 11,
+                                }}
+                              >
+                                Reset
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setRenamingBuiltin(null)}
+                                style={{
+                                  padding: "4px 8px",
+                                  borderRadius: 6,
+                                  border: "1px solid rgba(255,255,255,0.14)",
+                                  background: "transparent",
+                                  color: "#9ca3af",
+                                  cursor: "pointer",
+                                  fontSize: 11,
+                                }}
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const emoji = builtinRenameDraft.emoji.trim();
+                                  const label = builtinRenameDraft.label.trim();
+                                  setBuiltinShapeOverrides((prev) => ({
+                                    ...prev,
+                                    [entry.baseShape]: {
+                                      emoji: emoji || undefined,
+                                      label: label || undefined,
+                                    },
+                                  }));
+                                  setRenamingBuiltin(null);
+                                }}
+                                style={{
+                                  padding: "4px 8px",
+                                  borderRadius: 6,
+                                  border: "1px solid rgba(255,255,255,0.14)",
+                                  cursor: "pointer",
+                                  fontSize: 11,
+                                  background: "rgba(37,99,235,0.9)",
+                                  color: "#f8fafc",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                Save
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div
+                          key={entry.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 4,
+                            background: selected ? "#2563eb" : "transparent",
+                            border: "1px solid rgba(255,255,255,0.05)",
+                            borderRadius: 8,
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setScaleSettingsOverride((prev) => ({
+                                ...prev,
+                                shape: shapeForRenderer(entry),
+                              }));
+                              setSelectedShapeMenuId(entry.id);
+                              setScaleShapePickerOpen(false);
+                            }}
+                            title={`Set all scales to ${entry.label}`}
+                            style={{
+                              flex: 1,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              background: "transparent",
+                              color: selected ? "#f9fafb" : "#d1d5db",
+                              border: "none",
+                              padding: "6px 10px",
+                              cursor: "pointer",
+                              fontSize: 14,
+                              textAlign: "left",
+                            }}
+                          >
+                            <span style={{ fontSize: 18, lineHeight: 1 }}>
+                              {entry.emoji}
+                            </span>
+                            <span>{entry.label}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (entry.builtin) {
+                                setBuiltinRenameDraft({
+                                  emoji: entry.emoji,
+                                  label: entry.label,
+                                });
+                                setRenamingBuiltin(entry.baseShape);
+                              } else if (entry.custom) {
+                                setShapeEditor({
+                                  mode: "edit",
+                                  initial: entry.custom,
+                                });
+                              }
+                            }}
+                            title={entry.builtin ? "Rename" : "Edit shape"}
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              color: selected ? "#f9fafb" : "#9ca3af",
+                              cursor: "pointer",
+                              fontSize: 12,
+                              padding: "4px 6px",
+                            }}
+                          >
+                            ✏️
+                          </button>
+                          {entry.builtin && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                hideBuiltinShape(entry.baseShape);
+                                if (selectedShapeMenuId === entry.id) {
+                                  const remainingBuiltin = SCALE_SHAPE_OPTIONS.find(
+                                    (o) =>
+                                      o.shape !== entry.baseShape &&
+                                      !hiddenBuiltinShapes.includes(o.shape),
+                                  );
+                                  if (remainingBuiltin) {
+                                    setSelectedShapeMenuId(
+                                      `builtin:${remainingBuiltin.shape}`,
+                                    );
+                                    setScaleSettingsOverride((prev) => ({
+                                      ...prev,
+                                      shape: remainingBuiltin.shape,
+                                    }));
+                                  } else if (customShapeEntries[0]) {
+                                    setSelectedShapeMenuId(
+                                      customShapeEntries[0].id,
+                                    );
+                                  }
+                                }
+                              }}
+                              title="Hide this built-in from the menu"
+                              style={{
+                                background: "transparent",
+                                border: "none",
+                                color: selected ? "#f9fafb" : "#9ca3af",
+                                cursor: "pointer",
+                                fontSize: 12,
+                                padding: "4px 6px",
+                              }}
+                            >
+                              🗑️
+                            </button>
+                          )}
+                          {!entry.builtin && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCustomShapeEntries((prev) =>
+                                  prev.filter((e) => e.id !== entry.id),
+                                );
+                                if (selectedShapeMenuId === entry.id) {
+                                  setSelectedShapeMenuId("builtin:teardrop");
+                                  setScaleSettingsOverride((prev) => ({
+                                    ...prev,
+                                    shape: "teardrop",
+                                  }));
+                                }
+                              }}
+                              title="Delete custom shape"
+                              style={{
+                                background: "transparent",
+                                border: "none",
+                                color: selected ? "#f9fafb" : "#9ca3af",
+                                cursor: "pointer",
+                                fontSize: 12,
+                                padding: "4px 6px",
+                              }}
+                            >
+                              🗑️
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    <div
+                      style={{
+                        height: 1,
+                        background: "rgba(255,255,255,0.08)",
+                        margin: "2px 0",
+                      }}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => setShapeEditor({ mode: "add" })}
+                      style={{
+                        background: "transparent",
+                        color: "#9ca3af",
+                        border: "1px dashed rgba(255,255,255,0.18)",
+                        borderRadius: 8,
+                        padding: "6px 10px",
+                        cursor: "pointer",
+                        fontSize: 12,
+                        textAlign: "center",
+                      }}
+                    >
+                      + Add custom shape
+                    </button>
+
+                    {hiddenBuiltinShapes.length > 0 && (
+                      <div
+                        style={{
+                          marginTop: 4,
+                          paddingTop: 4,
+                          borderTop: "1px solid rgba(255,255,255,0.06)",
+                          display: "grid",
+                          gap: 2,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 10,
+                            color: "#64748b",
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                          }}
+                        >
+                          Hidden built-ins
+                        </div>
+                        {hiddenBuiltinShapes.map((s) => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => restoreBuiltinShape(s)}
+                            style={{
+                              background: "transparent",
+                              color: "#94a3b8",
+                              border: "1px solid rgba(255,255,255,0.08)",
+                              borderRadius: 6,
+                              padding: "4px 8px",
+                              cursor: "pointer",
+                              fontSize: 11,
+                              textAlign: "left",
+                            }}
+                          >
+                            + restore {s}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {shapeEditor && (
+                <CustomShapeEditor
+                  initial={
+                    shapeEditor.mode === "edit" ? shapeEditor.initial : null
+                  }
+                  onCancel={() => setShapeEditor(null)}
+                  onSave={(saved, makeDefault) => {
+                    // Persist to localStorage IMMEDIATELY in addition to
+                    // setting React state. If we don't, the
+                    // saveDefaultScaleShape() call below dispatches
+                    // CUSTOM_SHAPES_EVENT and the listener at line 1140
+                    // re-hydrates customShapeEntries from localStorage —
+                    // which would wipe the freshly-saved shape (it wasn't
+                    // there yet). Matches the Tuner's handler.
+                    setCustomShapeEntries((prev) => {
+                      const idx = prev.findIndex((e) => e.id === saved.id);
+                      const next =
+                        idx === -1
+                          ? [...prev, saved]
+                          : prev.map((e, i) => (i === idx ? saved : e));
+                      saveCustomShapes(next);
+                      return next;
+                    });
+                    // Auto-select the just-saved entry and apply geometry.
+                    setSelectedShapeMenuId(saved.id);
+                    const rendererShape =
+                      saved.source === "base"
+                        ? (saved.baseShape ?? "teardrop")
+                        : saved.id;
+                    setScaleSettingsOverride((prev) => ({
+                      ...prev,
+                      shape: rendererShape,
+                    }));
+                    if (makeDefault) saveDefaultScaleShape(rendererShape);
+                    setShapeEditor(null);
+                  }}
+                />
+              )}
 
               <ShapePanel
                 open={shapePanelOpen}
@@ -4437,6 +6535,113 @@ const scales3D = useMemo(() => {
               >
                 ✋
               </ToolBtn>
+
+              {/* Drag scale plane — repositions the scale grid relative to rings.
+                  Only has visible effect when scales are NOT locked to ring
+                  centers (interlocked mode pins them). On activation we
+                  auto-disable the lock so the user actually sees movement;
+                  they can re-enable it from the scale settings panel. */}
+              <ToolBtn
+                active={scalePlaneDragMode}
+                onClick={() => {
+                  const turningOn = !scalePlaneDragMode;
+                  if (turningOn) {
+                    const interlocked =
+                      activeScaleSettings.lockScaleHolesToRingCenters ||
+                      activeScaleSettings.weaveMode === "interlocked";
+                    if (interlocked) {
+                      const ok = window.confirm(
+                        "The Scale-Plane drag tool moves scales relative to rings.\n\n" +
+                        "Your scales are currently LOCKED to ring centers (interlocked mode), so dragging won't have any visible effect.\n\n" +
+                        "Turn off Lock-to-ring-centers and switch to Independent weave so the drag tool can move scales?",
+                      );
+                      if (!ok) return;
+                      setAutoFollowTuner(false);
+                      setScaleSettingsOverride((p) => ({
+                        ...p,
+                        lockScaleHolesToRingCenters: false,
+                        weaveMode: "independent",
+                        // Sync the scale grid spacing to the ring spacing so
+                        // scales don't suddenly jump to a much larger grid
+                        // (the default 19.6mm vs typical ~6.2mm ring spacing).
+                        // Without this sync the scales end up far off-screen
+                        // and the drag tool appears to do nothing.
+                        centerSpacingMm: centerSpacing,
+                        gridOffsetXmm: 0,
+                        gridOffsetYmm: 0,
+                      }));
+                    }
+                  }
+                  setScalePlaneDragMode((v) => !v);
+                  setPanMode(false);
+                  setSelectionMode("none");
+                  clearSelectionState();
+                  scaleDragRef.current = null;
+                  if (isSelecting) {
+                    setIsSelecting(false);
+                    selectionRef.current = null;
+                    clearInteractionCanvas();
+                  }
+                }}
+                title="Drag scale plane — moves scales relative to rings (auto-disables lock-to-ring-centers when activated)"
+              >
+                <IconScaleMove size={18} />
+              </ToolBtn>
+
+              {/* Copy selection (rings + scales) — Cmd/Ctrl+C */}
+              <ToolBtn
+                onClick={copySelectionToClipboard}
+                title={(() => {
+                  // Source matches copySelectionToClipboard: prefer live
+                  // selectedKeys, else fall back to last-applied selection.
+                  const n = selectedKeys.size > 0 ? selectedKeys.size : lastSelectionCount2;
+                  if (n === 0) return "Copy (Cmd/Ctrl+C) — pick a shape tool and drag on the canvas first";
+                  return `Copy ${n} cell${n === 1 ? "" : "s"} (Cmd/Ctrl+C)`;
+                })()}
+                style={{
+                  opacity:
+                    selectedKeys.size === 0 && lastSelectionCount2 === 0 ? 0.45 : 1,
+                  position: "relative",
+                }}
+              >
+                📋
+                {clipboard && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      bottom: 1,
+                      right: 2,
+                      fontSize: 8,
+                      lineHeight: 1,
+                      color: "#22c55e",
+                      fontWeight: 800,
+                    }}
+                    title={`${clipboard.items.length} on clipboard`}
+                  >
+                    {clipboard.items.length}
+                  </span>
+                )}
+              </ToolBtn>
+
+              {/* Paste mode toggle — Cmd/Ctrl+V then click on the canvas */}
+              <ToolBtn
+                active={pasteMode}
+                onClick={() => {
+                  if (!clipboard) return;
+                  setPasteMode((v) => !v);
+                }}
+                title={
+                  !clipboard
+                    ? "Paste (Cmd/Ctrl+V) — copy something first"
+                    : pasteMode
+                      ? "Exit paste mode (Esc)"
+                      : `Paste ${clipboard.items.length} cell${clipboard.items.length === 1 ? "" : "s"} — click on canvas to place (Cmd/Ctrl+V)`
+                }
+                style={{ opacity: !clipboard ? 0.45 : 1 }}
+              >
+                📌
+              </ToolBtn>
+
               {/* Image Overlay — Studio only */}
               <ToolBtn
                 active={showImageOverlay}
@@ -4621,10 +6826,8 @@ const scales3D = useMemo(() => {
             padding: 8,
             boxShadow: "0 6px 18px rgba(0,0,0,0.45)",
             userSelect: "none",
+            cursor: "grab",
           }}
-          onPointerDown={(e) => e.stopPropagation()}
-          onMouseDown={(e) => e.stopPropagation()}
-          onTouchStart={(e) => e.stopPropagation()}
         >
           <div
             style={{
@@ -5299,6 +7502,12 @@ const scales3D = useMemo(() => {
           <div
             style={{
               width: "min(360px, calc(100vw - 32px))",
+              // Cap the panel at the viewport height and scroll the inner
+              // content when it overflows — without this, the Transfer button
+              // at the bottom falls off-screen on shorter windows.
+              maxHeight: "calc(100vh - 140px)",
+              overflowY: "auto",
+              overscrollBehavior: "contain",
               background: "rgba(17,24,39,0.97)",
               border: "1px solid #1f2937",
               borderRadius: 18,
@@ -5334,7 +7543,19 @@ const scales3D = useMemo(() => {
                   const reader = new FileReader();
                   reader.onload = (ev) => {
                     const dataUrl = String(ev.target?.result || "");
-                    setOverlay((p) => ({ ...(p ?? { rotation: 0, repeat: "none", patternScale: 100 } as OverlayState), dataUrl, scale: p?.scale ?? 1, opacity: p?.opacity ?? 0.8, offsetX: 0, offsetY: 0 }));
+                    setOverlay((p) => ({
+                      // Default to imageFill on so a fresh upload transfers the
+                      // actual image pattern onto scales — not a flat sampled
+                      // colour. User can uncheck "Image Fill on Scales" to get
+                      // the legacy single-colour-per-scale behaviour.
+                      ...((p ?? { rotation: 0, repeat: "none", patternScale: 100, imageFill: true } as OverlayState)),
+                      dataUrl,
+                      scale: p?.scale ?? 1,
+                      opacity: p?.opacity ?? 0.8,
+                      offsetX: 0,
+                      offsetY: 0,
+                      imageFill: p?.imageFill ?? true,
+                    }));
                   };
                   reader.readAsDataURL(file);
                 }
@@ -5363,7 +7584,19 @@ const scales3D = useMemo(() => {
                   const reader = new FileReader();
                   reader.onload = (ev) => {
                     const dataUrl = String(ev.target?.result || "");
-                    setOverlay((p) => ({ ...(p ?? { rotation: 0, repeat: "none", patternScale: 100 } as OverlayState), dataUrl, scale: p?.scale ?? 1, opacity: p?.opacity ?? 0.8, offsetX: 0, offsetY: 0 }));
+                    setOverlay((p) => ({
+                      // Default to imageFill on so a fresh upload transfers the
+                      // actual image pattern onto scales — not a flat sampled
+                      // colour. User can uncheck "Image Fill on Scales" to get
+                      // the legacy single-colour-per-scale behaviour.
+                      ...((p ?? { rotation: 0, repeat: "none", patternScale: 100, imageFill: true } as OverlayState)),
+                      dataUrl,
+                      scale: p?.scale ?? 1,
+                      opacity: p?.opacity ?? 0.8,
+                      offsetX: 0,
+                      offsetY: 0,
+                      imageFill: p?.imageFill ?? true,
+                    }));
                   };
                   reader.readAsDataURL(file);
                   e.target.value = "";
@@ -5374,32 +7607,22 @@ const scales3D = useMemo(() => {
               </div>
             </div>
 
-            {/* Preview — drag to pan */}
+            {/* Source preview — STABLE. Shows the image content (scale +
+                rotation applied) so the user knows what will be painted.
+                pan/zoom of the on-canvas overlay does NOT shift this view —
+                use the canvas overlay drag or Pan X/Y sliders for positioning.
+                "What you see here is the subject; what you drag on the canvas
+                decides where it lands." */}
             {overlay?.dataUrl && (
               <div
-                style={{ position: "relative", width: "100%", height: 180, borderRadius: 8, overflow: "hidden", background: "#000", display: "flex", justifyContent: "center", alignItems: "center", boxShadow: "inset 0 0 12px rgba(0,0,0,0.4)", cursor: overlayDragRef.current ? "grabbing" : "grab", touchAction: "none" }}
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  overlayDragRef.current = { x: e.clientX, y: e.clientY };
-                  (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-                }}
-                onPointerMove={(e) => {
-                  if (!overlayDragRef.current) return;
-                  const dx = e.clientX - overlayDragRef.current.x;
-                  const dy = e.clientY - overlayDragRef.current.y;
-                  overlayDragRef.current = { x: e.clientX, y: e.clientY };
-                  setOverlay((p) => p ? { ...p, offsetX: (p.offsetX ?? 0) + dx, offsetY: (p.offsetY ?? 0) + dy } : p);
-                }}
-                onPointerUp={() => { overlayDragRef.current = null; }}
-                onPointerCancel={() => { overlayDragRef.current = null; }}
+                style={{ position: "relative", width: "100%", height: 180, borderRadius: 8, overflow: "hidden", background: "#000", display: "flex", justifyContent: "center", alignItems: "center", boxShadow: "inset 0 0 12px rgba(0,0,0,0.4)", touchAction: "none" }}
               >
                 <img
                   src={overlay.dataUrl}
                   alt="Overlay preview"
                   style={{
                     position: "absolute",
-                    transform: `translate(${overlay.offsetX ?? 0}px, ${overlay.offsetY ?? 0}px) scale(${overlay.scale ?? 1}) rotate(${overlay.rotation ?? 0}deg)`,
+                    transform: `scale(${overlay.scale ?? 1}) rotate(${overlay.rotation ?? 0}deg)`,
                     transformOrigin: "center",
                     width: "100%", height: "auto",
                     objectFit: "contain",
@@ -5454,6 +7677,110 @@ const scales3D = useMemo(() => {
               <span>Tile (repeat)</span>
             </label>
 
+            {/* Pattern Scale — % of design bounding box per tile. Mirrors the
+                Designer page's Image Overlay panel. Lower % = more, smaller
+                tiles; 100% = one tile fills the design. */}
+            {overlay?.repeat === "tile" && (
+              <label style={{ display: "grid", gap: 4 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <span title="Tile width as a percentage of the design's bounding box. Lower = smaller, more numerous tiles.">
+                    Pattern Scale (%)
+                  </span>
+                  <span style={{ fontVariantNumeric: "tabular-nums", color: "#94a3b8", minWidth: 32, textAlign: "right" }}>
+                    {Math.round(Number((overlay as any)?.patternScale ?? 100))}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={5}
+                  max={200}
+                  step={1}
+                  value={Math.round(Number((overlay as any)?.patternScale ?? 100))}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    setOverlay((p) => p ? ({ ...(p as any), patternScale: Math.max(5, Math.min(200, n)) }) : p);
+                  }}
+                />
+              </label>
+            )}
+
+            {/* Image Fill on Scales — paints the actual image region into each
+                scale (CanvasTexture) instead of just sampling one flat colour.
+                The boundary slider insets the image inside the scale outline. */}
+            <div style={{ display: "grid", gap: 6, padding: 10, borderRadius: 12, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(2,6,23,0.75)" }}>
+              <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }} title="When on, the actual image region is drawn onto each scale, clipped to the scale outline. When off, scales get a single sampled colour (legacy behaviour).">
+                <input
+                  type="checkbox"
+                  checked={!!(overlay as any)?.imageFill}
+                  onChange={(e) =>
+                    setOverlay((p) =>
+                      p ? ({ ...p, imageFill: e.target.checked } as any) : p,
+                    )
+                  }
+                />
+                <span style={{ fontWeight: 700 }}>Image Fill on Scales</span>
+              </label>
+              <label style={{ display: "grid", gap: 4 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <span title="0 = image fills the scale edge-to-edge. Higher values leave a coloured frame around the image.">
+                    Image Boundary (%)
+                  </span>
+                  <span style={{ fontVariantNumeric: "tabular-nums", color: "#94a3b8", minWidth: 28, textAlign: "right" }}>
+                    {Math.round(((overlay as any)?.boundaryPct ?? 0))}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={50}
+                  step={1}
+                  value={Math.round(((overlay as any)?.boundaryPct ?? 0))}
+                  onChange={(e) => {
+                    const n = parseFloat(e.target.value);
+                    setOverlay((p) =>
+                      p
+                        ? ({
+                            ...p,
+                            boundaryPct: Number.isFinite(n)
+                              ? Math.max(0, Math.min(50, n))
+                              : 0,
+                          } as any)
+                        : p,
+                    );
+                  }}
+                  style={{ width: "100%" }}
+                />
+              </label>
+            </div>
+
+            {/* Mask Outline controls — let the user snap the mask back to
+                the auto-bounds of all current scales/rings, in case they've
+                dragged it to an unintended position. */}
+            <div style={{ display: "flex", gap: 8, padding: 10, borderRadius: 12, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(2,6,23,0.75)", alignItems: "center", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ fontWeight: 800 }}>Mask Outline</div>
+                <div style={{ fontSize: 10, color: "#94a3b8" }}>
+                  {overlayMaskOverride ? "Custom (dragged)" : "Auto (matches scales/rings)"}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setOverlayMaskOverride(null)}
+                disabled={!overlayMaskOverride}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 10,
+                  border: "1px solid rgba(255,255,255,0.14)",
+                  background: overlayMaskOverride ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.10)",
+                  color: overlayMaskOverride ? "#0b1220" : "#475569",
+                  cursor: overlayMaskOverride ? "pointer" : "default",
+                  fontWeight: 800,
+                  fontSize: 12,
+                }}
+                title="Snap the mask outline back to auto-bounds of the current scales/rings"
+              >Reset</button>
+            </div>
+
             {/* Transfer Scope */}
             <div style={{ display: "grid", gap: 8, padding: 10, borderRadius: 12, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(2,6,23,0.75)" }}>
               <div style={{ fontWeight: 800 }}>Transfer Scope</div>
@@ -5498,15 +7825,29 @@ const scales3D = useMemo(() => {
               </div>
             </div>
 
+            {/* Preview Mode */}
+            <div style={{ display: "grid", gap: 6, padding: 10, borderRadius: 12, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(2,6,23,0.75)" }}>
+              <div style={{ fontWeight: 800, fontSize: 11, color: "#94a3b8" }} title="Sampled: each target cell shows the color it will become on Transfer. Raw: shows the source image clipped to the cell silhouettes.">PREVIEW</div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {(["sampled", "raw"] as const).map((m) => (
+                  <label key={m} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, cursor: "pointer", padding: "5px 4px", borderRadius: 8, border: `1px solid ${overlayPreviewMode === m ? "rgba(34,197,94,0.65)" : "rgba(255,255,255,0.10)"}`, background: overlayPreviewMode === m ? "rgba(34,197,94,0.22)" : "rgba(255,255,255,0.04)" }}>
+                    <input type="radio" name="overlayPreviewMode" style={{ display: "none" }} checked={overlayPreviewMode === m} onChange={() => setOverlayPreviewMode(m)} />
+                    <span style={{ fontSize: 11, fontWeight: 700, color: overlayPreviewMode === m ? "#86efac" : "#94a3b8", textTransform: "capitalize" }}>{m === "sampled" ? "Sampled Colors" : "Raw Image"}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
             {/* Transfer button */}
             <button type="button" onClick={transferOverlayToRings}
-              disabled={!overlay?.dataUrl || (overlayScope === "selection" && overlayMaskKeys.size === 0)}
+              disabled={isTransferring || !overlay?.dataUrl || (overlayScope === "selection" && overlayMaskKeys.size === 0)}
               style={{
                 width: "100%", padding: "10px 12px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.14)",
-                background: "#22c55e", color: "#052e16", cursor: "pointer", fontWeight: 900,
-                opacity: !overlay?.dataUrl || (overlayScope === "selection" && overlayMaskKeys.size === 0) ? 0.6 : 1,
+                background: "#22c55e", color: "#052e16", fontWeight: 900,
+                cursor: isTransferring || !overlay?.dataUrl ? "not-allowed" : "pointer",
+                opacity: isTransferring || !overlay?.dataUrl || (overlayScope === "selection" && overlayMaskKeys.size === 0) ? 0.6 : 1,
               }}
-            >{transferTarget === "rings" ? "Transfer to Rings" : transferTarget === "scales" ? "Transfer to Scales" : "Transfer to Rings + Scales"}</button>
+            >{isTransferring ? "Transferring…" : transferTarget === "rings" ? "Transfer to Rings" : transferTarget === "scales" ? "Transfer to Scales" : "Transfer to Rings + Scales"}</button>
           </div>
         </DraggablePill>
       )}
@@ -5632,8 +7973,98 @@ const scales3D = useMemo(() => {
             scales3D={scales3D}
             showScales={scales3D.length > 0}
             scalesBehindRings={activeScaleSettings.behindRings}
+            // Selection feedback: highlight cells that are either the active
+            // overlay-transfer target (persistent picked set) OR the in-progress
+            // selection drag set. RingRenderer accepts "row-col" or "row,col";
+            // we forward both as-is.
+            highlightedScaleKeys={highlightedKeys}
+            highlightedRingKeys={highlightedKeys}
           />
         </div>
+
+        {/* ============================================================
+            IMAGE OVERLAY (SVG, clipped to target geometry)
+            ============================================================
+            Renders the uploaded reference image clipped to ring circles and/or
+            scale silhouettes — depending on transferTarget and overlayScope.
+            Using SVG <clipPath> instead of canvas destination-in: it never
+            paints opaque pixels outside the clip, so rings/scales underneath
+            stay fully visible.
+
+            Gated on `showImageOverlay` so the preview disappears when the
+            Image Overlay panel is closed — otherwise the SVG layer keeps
+            rendering and looks like the image was transferred to the design
+            even though the user never clicked the Transfer button. */}
+        {/* Image overlay + mask outline only render when something paintable
+            exists (rings or scales matching the current transferTarget). No
+            chainmail in scope -> no mask, no image overlay. */}
+        {overlay?.dataUrl && wrapSize.w > 0 && wrapSize.h > 0 && overlayAutoBounds && showImageOverlay && (
+          <OverlayClipped
+            overlay={overlay}
+            wrapW={wrapSize.w}
+            wrapH={wrapSize.h}
+            worldBounds={overlayWorldBounds}
+            pxPerMm={overlayPxPerMm}
+            worldToScreen={worldToScreen}
+            naturalImg={overlayNatural}
+            // While the user is making a selection (e.g. "Pick selection area"
+            // for a partial-image overlay), OR while the Scale-Plane drag
+            // tool is active (moves scales relative to rings via canvas
+            // drag), release pointer events on the overlay SVG so the canvas
+            // can capture the drag.
+            interactive={showImageOverlay && selectionMode === "none" && !scalePlaneDragMode}
+            clipShapes={overlayClipShapes}
+            mode={overlayPreviewMode}
+            onDragStart={(e) => {
+              if (!showImageOverlay) return;
+              overlayCanvasDragRef.current = {
+                startClientX: e.clientX,
+                startClientY: e.clientY,
+                startOffsetX: overlay.offsetX ?? 0,
+                startOffsetY: overlay.offsetY ?? 0,
+              };
+            }}
+            onDragMove={(e) => {
+              const s = overlayCanvasDragRef.current;
+              if (!s) return;
+              // Convert the screen-pixel drag delta into preview-pixel units
+              // (the same units the Transfer code expects in overlay.offsetX /
+              // offsetY). One preview-pixel == one PREVIEW_W-th of the design's
+              // world-bounding-box width, projected to screen.
+              const PREVIEW_W = 332;
+              const PREVIEW_H = 180;
+              const bounds = overlayWorldBoundsRef.current;
+              const px = overlayPxPerMmRef.current;
+              const denomX = px * bounds.worldW;
+              const denomY = px * bounds.worldH;
+              const dx_screen = e.clientX - s.startClientX;
+              const dy_screen = e.clientY - s.startClientY;
+              const dx = denomX > 0 ? dx_screen * (PREVIEW_W / denomX) : dx_screen;
+              const dy = denomY > 0 ? dy_screen * (PREVIEW_H / denomY) : dy_screen;
+              setOverlay((p) =>
+                p ? { ...p, offsetX: s.startOffsetX + dx, offsetY: s.startOffsetY + dy } : p,
+              );
+            }}
+            onDragEnd={() => {
+              overlayCanvasDragRef.current = null;
+            }}
+          />
+        )}
+
+        {/* Adjustable mask outline. Shown while the Image Overlay panel is open
+            and the chainmail has cells in scope. Defines the world rectangle
+            the image is painted into — same rectangle the preview uses. Hidden
+            while the Scale-Plane drag tool owns the canvas. */}
+        {overlay?.dataUrl && wrapSize.w > 0 && wrapSize.h > 0 && overlayAutoBounds && showImageOverlay && selectionMode === "none" && !scalePlaneDragMode && (
+          <OverlayMaskOutline
+            wrapW={wrapSize.w}
+            wrapH={wrapSize.h}
+            bounds={overlayWorldBounds}
+            pxPerMm={overlayPxPerMm}
+            worldToScreen={worldToScreen}
+            onBoundsChange={(next) => setOverlayMaskOverride(next)}
+          />
+        )}
 
         {/* Preview mode — block all canvas interaction */}
         {isPreviewOnly && (
@@ -5659,7 +8090,9 @@ const scales3D = useMemo(() => {
             position: "absolute",
             inset: 0,
             cursor:
-              selectionMode !== "none"
+              pasteMode && clipboard
+                ? "copy"
+                : selectionMode !== "none"
                 ? "crosshair"
                 : panMode
                   ? "grab"
@@ -6014,6 +8447,23 @@ const scales3D = useMemo(() => {
                 <SliderRow label="Scale Row Clearance Z (mm)" value={activeScaleSettings.scaleRowClearanceZ}
                   setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, scaleRowClearanceZ: v })); }}
                   min={-5} max={5} step={0.01} unit="mm" />
+                <div style={{ borderTop: "1px solid rgba(148,163,184,0.2)", paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span>Scale Plane Offset (drag tool)</span>
+                    <button
+                      type="button"
+                      style={{ ...smallBtn, padding: "2px 8px", fontSize: 10 }}
+                      onClick={() => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, gridOffsetXmm: 0, gridOffsetYmm: 0 })); }}
+                      title="Reset scale plane offset to zero"
+                    >Reset</button>
+                  </div>
+                  <SliderRow label="Offset X (mm)" value={activeScaleSettings.gridOffsetXmm}
+                    setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, gridOffsetXmm: v })); }}
+                    min={-50} max={50} step={0.1} unit="mm" />
+                  <SliderRow label="Offset Y (mm)" value={activeScaleSettings.gridOffsetYmm}
+                    setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, gridOffsetYmm: v })); }}
+                    min={-50} max={50} step={0.1} unit="mm" />
+                </div>
               </div>
             )}
 
@@ -6095,7 +8545,7 @@ const scales3D = useMemo(() => {
                 <button
                   type="button"
                   onClick={() => {
-                    localStorage.removeItem(AUTOSAVE_KEY);
+                    safeLSRemove(AUTOSAVE_KEY);
                     setShowResumeDialog(false);
                   }}
                   style={{
@@ -6117,3 +8567,419 @@ const scales3D = useMemo(() => {
 };
 
 export default FreeformChainmail2D;
+
+// ===================================================================
+// Image-overlay mask outline (SVG)
+// ===================================================================
+// User-adjustable bounding rectangle over the chainmail. Same world-space
+// rectangle the image is painted into, so dragging this outline directly
+// changes where Transfer will paint. Move by dragging the body, resize by
+// dragging a corner handle.
+interface OverlayMaskOutlineProps {
+  wrapW: number;
+  wrapH: number;
+  bounds: { worldW: number; worldH: number; worldCenterX: number; worldCenterY: number };
+  pxPerMm: number;
+  worldToScreen: (wx: number, wy: number) => { sx: number; sy: number };
+  onBoundsChange: (next: { worldW: number; worldH: number; worldCenterX: number; worldCenterY: number }) => void;
+}
+function OverlayMaskOutline({
+  wrapW,
+  wrapH,
+  bounds,
+  pxPerMm,
+  worldToScreen,
+  onBoundsChange,
+}: OverlayMaskOutlineProps) {
+  type DragMode = "move" | "tl" | "tr" | "bl" | "br";
+  const dragRef = useRef<{
+    mode: DragMode;
+    clientX: number;
+    clientY: number;
+    startBounds: { worldW: number; worldH: number; worldCenterX: number; worldCenterY: number };
+  } | null>(null);
+
+  const { worldCenterX, worldCenterY, worldW, worldH } = bounds;
+  // Project the four corners. Screen-y inverts world-y (worldToScreen handles
+  // the flip), so "top" in world = "top" on screen.
+  const cornerTL = worldToScreen(worldCenterX - worldW / 2, worldCenterY + worldH / 2);
+  const cornerTR = worldToScreen(worldCenterX + worldW / 2, worldCenterY + worldH / 2);
+  const cornerBL = worldToScreen(worldCenterX - worldW / 2, worldCenterY - worldH / 2);
+  const cornerBR = worldToScreen(worldCenterX + worldW / 2, worldCenterY - worldH / 2);
+  const minSX = Math.min(cornerTL.sx, cornerBR.sx);
+  const maxSX = Math.max(cornerTL.sx, cornerBR.sx);
+  const minSY = Math.min(cornerTL.sy, cornerBR.sy);
+  const maxSY = Math.max(cornerTL.sy, cornerBR.sy);
+  const rectX = minSX;
+  const rectY = minSY;
+  const rectW = Math.max(0, maxSX - minSX);
+  const rectH = Math.max(0, maxSY - minSY);
+
+  const beginDrag = (mode: DragMode, e: React.PointerEvent<SVGElement>) => {
+    e.stopPropagation();
+    e.preventDefault();
+    (e.currentTarget as SVGElement).setPointerCapture?.(e.pointerId);
+    dragRef.current = {
+      mode,
+      clientX: e.clientX,
+      clientY: e.clientY,
+      startBounds: { ...bounds },
+    };
+  };
+
+  const handleMove = (e: React.PointerEvent<SVGElement>) => {
+    const s = dragRef.current;
+    if (!s) return;
+    const dxScreen = e.clientX - s.clientX;
+    const dyScreen = e.clientY - s.clientY;
+    if (pxPerMm <= 0) return;
+    const dxWorld = dxScreen / pxPerMm;
+    // Screen +Y is down; world +Y is up. So a positive dy on screen means a
+    // negative dy in world.
+    const dyWorld = -dyScreen / pxPerMm;
+
+    const sb = s.startBounds;
+    if (s.mode === "move") {
+      onBoundsChange({
+        worldW: sb.worldW,
+        worldH: sb.worldH,
+        worldCenterX: sb.worldCenterX + dxWorld,
+        worldCenterY: sb.worldCenterY + dyWorld,
+      });
+      return;
+    }
+
+    // Corner resize: keep the opposite corner fixed, move the dragged corner
+    // by (dxWorld, dyWorld), then derive a new bounds from the two corners.
+    const oldHalfW = sb.worldW / 2;
+    const oldHalfH = sb.worldH / 2;
+    let cornerX: number, cornerY: number, fixedX: number, fixedY: number;
+    switch (s.mode) {
+      case "tl":
+        cornerX = sb.worldCenterX - oldHalfW;
+        cornerY = sb.worldCenterY + oldHalfH;
+        fixedX = sb.worldCenterX + oldHalfW;
+        fixedY = sb.worldCenterY - oldHalfH;
+        break;
+      case "tr":
+        cornerX = sb.worldCenterX + oldHalfW;
+        cornerY = sb.worldCenterY + oldHalfH;
+        fixedX = sb.worldCenterX - oldHalfW;
+        fixedY = sb.worldCenterY - oldHalfH;
+        break;
+      case "bl":
+        cornerX = sb.worldCenterX - oldHalfW;
+        cornerY = sb.worldCenterY - oldHalfH;
+        fixedX = sb.worldCenterX + oldHalfW;
+        fixedY = sb.worldCenterY + oldHalfH;
+        break;
+      case "br":
+      default:
+        cornerX = sb.worldCenterX + oldHalfW;
+        cornerY = sb.worldCenterY - oldHalfH;
+        fixedX = sb.worldCenterX - oldHalfW;
+        fixedY = sb.worldCenterY + oldHalfH;
+        break;
+    }
+    const newCornerX = cornerX + dxWorld;
+    const newCornerY = cornerY + dyWorld;
+    const newW = Math.max(1e-3, Math.abs(newCornerX - fixedX));
+    const newH = Math.max(1e-3, Math.abs(newCornerY - fixedY));
+    onBoundsChange({
+      worldW: newW,
+      worldH: newH,
+      worldCenterX: (newCornerX + fixedX) / 2,
+      worldCenterY: (newCornerY + fixedY) / 2,
+    });
+  };
+
+  const endDrag = (e: React.PointerEvent<SVGElement>) => {
+    if (dragRef.current) {
+      try { (e.currentTarget as SVGElement).releasePointerCapture?.(e.pointerId); } catch {}
+    }
+    dragRef.current = null;
+  };
+
+  const HANDLE_R = 7;
+  const stroke = "rgba(59,130,246,0.95)";
+  const strokeDimmer = "rgba(59,130,246,0.55)";
+  const handleFill = "rgba(255,255,255,0.95)";
+
+  return (
+    <svg
+      width={wrapW}
+      height={wrapH}
+      viewBox={`0 0 ${wrapW} ${wrapH}`}
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 5,
+        pointerEvents: "none",
+        touchAction: "none",
+      }}
+    >
+      {/* Outline rectangle — visual only. Pointer events pass through so the
+          image overlay underneath can still be dragged to pan. Move/resize
+          are handled by the center & corner handles. */}
+      <rect
+        x={rectX}
+        y={rectY}
+        width={rectW}
+        height={rectH}
+        fill="rgba(59,130,246,0.05)"
+        stroke={stroke}
+        strokeWidth={1.5}
+        strokeDasharray="6 4"
+        style={{ pointerEvents: "none" }}
+      />
+      {/* Inner cross hair to telegraph the centre */}
+      <line
+        x1={rectX + rectW / 2}
+        y1={rectY}
+        x2={rectX + rectW / 2}
+        y2={rectY + rectH}
+        stroke={strokeDimmer}
+        strokeWidth={0.75}
+        strokeDasharray="2 4"
+        style={{ pointerEvents: "none" }}
+      />
+      <line
+        x1={rectX}
+        y1={rectY + rectH / 2}
+        x2={rectX + rectW}
+        y2={rectY + rectH / 2}
+        stroke={strokeDimmer}
+        strokeWidth={0.75}
+        strokeDasharray="2 4"
+        style={{ pointerEvents: "none" }}
+      />
+      {/* Center handle: drag to move the whole mask */}
+      <circle
+        cx={rectX + rectW / 2}
+        cy={rectY + rectH / 2}
+        r={HANDLE_R + 2}
+        fill="rgba(59,130,246,0.85)"
+        stroke="#fff"
+        strokeWidth={1.5}
+        style={{ pointerEvents: "auto", cursor: "move" }}
+        onPointerDown={(e) => beginDrag("move", e)}
+        onPointerMove={handleMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+      />
+      <line
+        x1={rectX + rectW / 2 - 5}
+        y1={rectY + rectH / 2}
+        x2={rectX + rectW / 2 + 5}
+        y2={rectY + rectH / 2}
+        stroke="#fff"
+        strokeWidth={2}
+        style={{ pointerEvents: "none" }}
+      />
+      <line
+        x1={rectX + rectW / 2}
+        y1={rectY + rectH / 2 - 5}
+        x2={rectX + rectW / 2}
+        y2={rectY + rectH / 2 + 5}
+        stroke="#fff"
+        strokeWidth={2}
+        style={{ pointerEvents: "none" }}
+      />
+      {/* Corner handles */}
+      {([
+        ["tl", cornerTL.sx, cornerTL.sy, "nwse-resize"],
+        ["tr", cornerTR.sx, cornerTR.sy, "nesw-resize"],
+        ["bl", cornerBL.sx, cornerBL.sy, "nesw-resize"],
+        ["br", cornerBR.sx, cornerBR.sy, "nwse-resize"],
+      ] as const).map(([mode, cx, cy, cursor]) => (
+        <circle
+          key={mode}
+          cx={cx}
+          cy={cy}
+          r={HANDLE_R}
+          fill={handleFill}
+          stroke={stroke}
+          strokeWidth={1.5}
+          style={{ pointerEvents: "auto", cursor }}
+          onPointerDown={(e) => beginDrag(mode as DragMode, e)}
+          onPointerMove={handleMove}
+          onPointerUp={endDrag}
+          onPointerCancel={endDrag}
+        />
+      ))}
+    </svg>
+  );
+}
+
+// ===================================================================
+// Image-overlay clipped renderer (SVG)
+// ===================================================================
+// Drawn over the rings/scales but clipped to the supplied shapes so the
+// image only appears WHERE rings/scales are. The host SVG is sized to the
+// wrap, captures pointer events when interactive, and supports drag.
+interface OverlayClippedProps {
+  overlay: OverlayState;
+  wrapW: number;
+  wrapH: number;
+  // World-space bounding box of the rings — image is mapped onto this region
+  // exactly the way the Transfer code does, so what the user previews is what
+  // gets painted.
+  worldBounds: { worldW: number; worldH: number; worldCenterX: number; worldCenterY: number };
+  // Screen pixels per logical mm at the current camera (tracks zoom/pan).
+  pxPerMm: number;
+  // Project a world point to screen pixel coordinates.
+  worldToScreen: (wx: number, wy: number) => { sx: number; sy: number };
+  // Natural pixel dimensions of the loaded image — used for imageDisplayH.
+  naturalImg: { w: number; h: number } | null;
+  interactive: boolean;
+  clipShapes: React.ReactNode[];
+  // "sampled": draw clipShapes directly using their per-shape sampled fill.
+  // "raw" (default): use clipShapes as a clipPath for the raw image.
+  mode?: "sampled" | "raw";
+  onDragStart: (e: React.PointerEvent) => void;
+  onDragMove: (e: React.PointerEvent) => void;
+  onDragEnd: () => void;
+}
+function OverlayClipped({
+  overlay,
+  wrapW,
+  wrapH,
+  worldBounds,
+  pxPerMm,
+  worldToScreen,
+  naturalImg,
+  interactive,
+  clipShapes,
+  mode = "raw",
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+}: OverlayClippedProps) {
+  // Stable id per mount so multiple overlays (HMR / strict mode) don't collide.
+  const clipId = useMemo(
+    () => `overlayClip-${Math.random().toString(36).slice(2, 9)}`,
+    [],
+  );
+  const offsetX = overlay.offsetX ?? 0;
+  const offsetY = overlay.offsetY ?? 0;
+  const scl = overlay.scale ?? 1;
+  const rot = overlay.rotation ?? 0;
+  // While the Image Overlay panel is open (interactive), cap opacity so the
+  // rings/scales beneath remain visible — the user needs to see them to
+  // position the image. Cap is loose enough that the preview is still clearly
+  // visible against a dark 3D canvas. When the panel is closed, render at the
+  // user's full slider opacity.
+  const rawOpacity = overlay.opacity ?? 0.8;
+  const opacity = interactive ? Math.min(rawOpacity, 0.55) : rawOpacity;
+
+  // Match the Transfer math exactly so preview = transfer result.
+  //
+  // Transfer maps world (wx, wy) -> image pixel (sx, sy) inside a conceptual
+  // preview-canvas sized PREVIEW_W x imageDisplayH:
+  //   nxWorld = (wx - worldCenterX) / worldW
+  //   nyWorld = (wy - worldCenterY) / worldH
+  //   sx = PREVIEW_W * nxWorld - offsetX  (then /scale, rotate, + PREVIEW_W/2)
+  //   sy = -PREVIEW_H * nyWorld - offsetY (then /scale, rotate, + imageDisplayH/2)
+  //
+  // To draw the image on the chainmail canvas:
+  //   - Its on-screen footprint must equal the *projected* world bounding box
+  //     stretched so the X axis spans worldW mm and the Y axis spans worldH *
+  //     (imageDisplayH / PREVIEW_H) mm (the Transfer's asymmetric Y mapping).
+  //   - offsetX / offsetY (stored in preview-pixel units) convert to screen
+  //     pixels by the same per-axis ratio.
+  const PREVIEW_W = 332;
+  const PREVIEW_H = 180;
+  const { worldW, worldH, worldCenterX, worldCenterY } = worldBounds;
+  const iW = naturalImg?.w ?? 1;
+  const iH = naturalImg?.h ?? 1;
+  const imageDisplayH = (PREVIEW_W * iH) / iW;
+
+  // Image footprint in screen pixels.
+  const imgW = pxPerMm * worldW;
+  const imgH = pxPerMm * worldH * (imageDisplayH / PREVIEW_H);
+
+  // Center of the design's world bounding box, projected to screen.
+  const centerProj = worldToScreen(worldCenterX, worldCenterY);
+  const cx = centerProj.sx;
+  const cy = centerProj.sy;
+
+  // Convert preview-pixel offsets to screen pixels. Per-axis because the
+  // Y mapping uses PREVIEW_H, not imageDisplayH (mirrors Transfer math).
+  const offX_screen = imgW > 0 ? offsetX * (imgW / PREVIEW_W) : 0;
+  const offY_screen = (pxPerMm * worldH) > 0 ? offsetY * ((pxPerMm * worldH) / PREVIEW_H) : 0;
+
+  // SVG transform applied around the image centre. Order matches the panel
+  // preview: translate (pan), then scale, then rotate. Note: panel preview
+  // applies scale/rotate AFTER translate, around image center.
+  const transform = `translate(${cx + offX_screen} ${cy + offY_screen}) rotate(${rot}) scale(${scl}) translate(${-imgW / 2} ${-imgH / 2})`;
+
+  return (
+    <svg
+      width={wrapW}
+      height={wrapH}
+      viewBox={`0 0 ${wrapW} ${wrapH}`}
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 4,
+        pointerEvents: interactive ? "auto" : "none",
+        cursor: interactive ? "grab" : "default",
+        touchAction: "none",
+      }}
+      onPointerDown={(e) => {
+        if (!interactive) return;
+        (e.currentTarget as SVGElement).setPointerCapture?.(e.pointerId);
+        onDragStart(e);
+      }}
+      onPointerMove={onDragMove}
+      onPointerUp={onDragEnd}
+      onPointerCancel={onDragEnd}
+    >
+      <defs>
+        <clipPath id={clipId}>{clipShapes}</clipPath>
+      </defs>
+      {mode === "sampled" ? (
+        // Sampled preview: each shape is rendered with its own fill (color
+        // each cell would receive on Transfer). No raw image is drawn.
+        <g opacity={opacity}>{clipShapes}</g>
+      ) : overlay.repeat === "tile" ? (
+        <g clipPath={`url(#${clipId})`} opacity={opacity}>
+          <defs>
+            <pattern
+              id={`${clipId}-pat`}
+              patternUnits="userSpaceOnUse"
+              width={imgW * ((overlay.patternScale ?? 100) / 100)}
+              height={imgH * ((overlay.patternScale ?? 100) / 100)}
+              patternTransform={`translate(${cx + offX_screen} ${cy + offY_screen}) rotate(${rot} ${-imgW * ((overlay.patternScale ?? 100) / 100) / 2} ${-imgH * ((overlay.patternScale ?? 100) / 100) / 2})`}
+            >
+              <image
+                href={overlay.dataUrl ?? undefined}
+                x={0}
+                y={0}
+                width={imgW * ((overlay.patternScale ?? 100) / 100)}
+                height={imgH * ((overlay.patternScale ?? 100) / 100)}
+                preserveAspectRatio="xMidYMid slice"
+              />
+            </pattern>
+          </defs>
+          <rect x={0} y={0} width={wrapW} height={wrapH} fill={`url(#${clipId}-pat)`} />
+        </g>
+      ) : (
+        // Wrap image in a <g> with clipPath so the clip is applied in
+        // screen-space (after the image's transform), not in image-local space.
+        <g clipPath={`url(#${clipId})`}>
+          <image
+            href={overlay.dataUrl ?? undefined}
+            x={0}
+            y={0}
+            width={imgW}
+            height={imgH}
+            preserveAspectRatio="xMidYMid meet"
+            opacity={opacity}
+            transform={transform}
+          />
+        </g>
+      )}
+    </svg>
+  );
+}

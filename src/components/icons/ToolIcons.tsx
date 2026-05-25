@@ -98,3 +98,23 @@ export function IconSquare({ size = 16 }: { size?: number }) {
     </svg>
   );
 }
+
+// 4-directional arrow — used for "drag scale plane" mode
+export function IconScaleMove({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={{ display: "block" }}>
+      {/* up */}
+      <path d="M12 4l-2.5 3h5L12 4z" fill="currentColor" />
+      <line x1="12" y1="4" x2="12" y2="10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      {/* down */}
+      <path d="M12 20l2.5-3h-5L12 20z" fill="currentColor" />
+      <line x1="12" y1="20" x2="12" y2="14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      {/* left */}
+      <path d="M4 12l3-2.5v5L4 12z" fill="currentColor" />
+      <line x1="4" y1="12" x2="10" y2="12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      {/* right */}
+      <path d="M20 12l-3 2.5v-5L20 12z" fill="currentColor" />
+      <line x1="20" y1="12" x2="14" y2="12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}

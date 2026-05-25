@@ -57,13 +57,10 @@ const HomeWovenRainbows: React.FC = () => {
 
   // Load Designer features
   useEffect(() => {
-    fetch("/wovenrainbows_listings_featured.json")
+    fetch("/designer_features.json")
       .then((res) => res.json())
-      .then((data) => {
-        console.log("✅ Loaded Etsy items:", data);
-        setItems(Array.isArray(data) ? data : data.items || []);
-      })
-      .catch((err) => console.error("❌ Failed to load Etsy listings:", err));
+      .then((data) => setFeatures(Array.isArray(data) ? data : []))
+      .catch((err) => console.error("Failed to load Designer features:", err));
   }, []);
 
   // Load Blog Entries

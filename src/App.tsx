@@ -401,6 +401,7 @@ function ChainmailDesigner() {
   const { tier } = useAuth();
   const canUseOverlay = tierAtLeast(tier, "crafter");
   // 🧩 All your useState hooks go here — top level
+  const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
   const [showOverlayPanel, setShowOverlayPanel] = useState(false);
   const [debugVisible, setDebugVisible] = useState(false);
   const [debugMessage, setDebugMessage] = useState("");
@@ -572,6 +573,22 @@ function ChainmailDesigner() {
       );
     } catch {}
   }, [paint]);
+
+  // Show "new project?" dialog on mount when there's existing saved state
+  useEffect(() => {
+    const hasPaint = (() => {
+      try {
+        const raw = localStorage.getItem("cmd.paint");
+        if (!raw) return false;
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) && parsed.length > 0;
+      } catch { return false; }
+    })();
+    const hasNonDefaultGrid = params.rows !== 20 || params.cols !== 20;
+    if (hasPaint || hasNonDefaultGrid) setShowNewProjectDialog(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
 type ScreenPt = { x: number; y: number };
 
 function pointInPoly(x: number, y: number, poly: ScreenPt[]): boolean {
@@ -1871,6 +1888,7 @@ onChange={(e) => {
         >
           <ImageOverlayPanel
             gridAspect={gridAspect}
+            hideScaleControls
             onClose={() => setShowOverlayPanel(false)}
             onApply={async (overlay) => {
               setOverlayState(overlay);
@@ -2057,6 +2075,72 @@ onChange={(e) => {
       >
         Reset UI
       </button>
+
+      {/* ✅ New Project Dialog */}
+      {showNewProjectDialog && (
+        <div style={{
+          position: "fixed", inset: 0,
+          background: "rgba(0,0,0,0.75)",
+          backdropFilter: "blur(8px)",
+          zIndex: 100000,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <div style={{
+            background: "#0f172a",
+            border: "1px solid rgba(148,163,184,0.25)",
+            borderRadius: 20,
+            padding: 32,
+            maxWidth: 420,
+            width: "calc(100vw - 40px)",
+            boxShadow: "0 24px 64px rgba(0,0,0,0.75)",
+            display: "flex", flexDirection: "column", gap: 18,
+            color: "#e5e7eb",
+          }}>
+            <div style={{ fontSize: 20, fontWeight: 800 }}>New project?</div>
+            <div style={{ fontSize: 13, opacity: 0.85, lineHeight: 1.6 }}>
+              You have a saved design ({params.rows}×{params.cols} grid
+              {paint.size > 0 ? `, ${paint.size.toLocaleString()} painted rings` : ""}).
+              <br />
+              Start fresh with a blank 20×20 grid, or continue where you left off?
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setParams(prev => ({ ...prev, rows: 20, cols: 20 }));
+                  setPaint(new Map());
+                  paintHistoryRef.current = [new Map()];
+                  paintHistoryIdxRef.current = 0;
+                  setCanUndo(false);
+                  setCanRedo(false);
+                  try { localStorage.removeItem("cmd.paint"); } catch {}
+                  setShowNewProjectDialog(false);
+                }}
+                style={{
+                  flex: 1, padding: "13px 0", borderRadius: 12,
+                  background: "rgba(59,130,246,0.30)",
+                  border: "1px solid rgba(59,130,246,0.60)",
+                  color: "#e5e7eb", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                }}
+              >
+                New project
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowNewProjectDialog(false)}
+                style={{
+                  flex: 1, padding: "13px 0", borderRadius: 12,
+                  background: "rgba(255,255,255,0.07)",
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  color: "#e5e7eb", fontSize: 14, fontWeight: 700, cursor: "pointer",
+                }}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 } // ✅ ChainmailDesigner ends here

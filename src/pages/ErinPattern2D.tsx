@@ -99,15 +99,31 @@ const ErinPattern2D: React.FC = () => {
   const [cells, setCells] = useState<Map<string, string>>(new Map());
   const [isPainting, setIsPainting] = useState(false);
 
+  // Refs always in sync — safe to read in event handlers that fire before React re-renders
+  const cellsRef = useRef<Map<string, string>>(new Map());
+  const isPaintingRef = useRef(false);   // isPainting state may be stale in rapid touch events
+  const hasDraggedRef = useRef(false);   // true once the pointer has moved (drag vs tap)
+  // Pointer Events: track active pointers by id for pinch-zoom detection
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+
   // ↩ Undo / Redo
   const cellsHistoryRef = useRef<Map<string, string>[]>([new Map()]);
   const cellsHistoryIdxRef = useRef(0);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
+  // Deduplicates: skips push if snapshot is identical to the current history entry.
+  // This makes it safe to call push from both touchEnd and onClick without double-counting.
   const pushCellsHistory = useCallback((snapshot: Map<string, string>) => {
     const history = cellsHistoryRef.current;
     const idx = cellsHistoryIdxRef.current;
+    const current = history[idx];
+    // Skip if unchanged
+    if (current && current.size === snapshot.size) {
+      let same = true;
+      for (const [k, v] of snapshot) { if (current.get(k) !== v) { same = false; break; } }
+      if (same) return;
+    }
     const newHistory = history.slice(0, idx + 1);
     newHistory.push(new Map(snapshot));
     cellsHistoryRef.current = newHistory;
@@ -121,7 +137,9 @@ const ErinPattern2D: React.FC = () => {
     if (idx <= 0) return;
     const prevIdx = idx - 1;
     cellsHistoryIdxRef.current = prevIdx;
-    setCells(new Map(cellsHistoryRef.current[prevIdx]));
+    const restored = new Map(cellsHistoryRef.current[prevIdx]);
+    cellsRef.current = restored;
+    setCells(restored);
     setCanUndo(prevIdx > 0);
     setCanRedo(true);
   }, []);
@@ -132,7 +150,9 @@ const ErinPattern2D: React.FC = () => {
     if (idx >= history.length - 1) return;
     const nextIdx = idx + 1;
     cellsHistoryIdxRef.current = nextIdx;
-    setCells(new Map(history[nextIdx]));
+    const restored = new Map(history[nextIdx]);
+    cellsRef.current = restored;
+    setCells(restored);
     setCanUndo(true);
     setCanRedo(nextIdx < history.length - 1);
   }, []);
@@ -266,19 +286,29 @@ const ErinPattern2D: React.FC = () => {
 
   useEffect(() => {
     const t = setTimeout(() => {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify(Array.from(cells.entries())),
-      );
+      try {
+        localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify(Array.from(cells.entries())),
+        );
+      } catch {
+        /* private mode / quota — ignore */
+      }
     }, 400);
     return () => clearTimeout(t);
   }, [cells]);
 
   const clearAll = () => {
     if (window.confirm("Clear all painted cells?")) {
-      pushCellsHistory(cells);
-      setCells(new Map());
-      localStorage.removeItem(STORAGE_KEY);
+      const empty = new Map<string, string>();
+      cellsRef.current = empty;
+      setCells(empty);
+      pushCellsHistory(empty);
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        /* ignore */
+      }
     }
   };
 
@@ -419,7 +449,9 @@ const ErinPattern2D: React.FC = () => {
       return;
     }
 
-    setCells(new Map(data.cells));
+    const loaded = new Map<string, string>(data.cells);
+    cellsRef.current = loaded;
+    setCells(loaded);
 
     const s = data.settings ?? {};
     setCols(s.cols ?? cols);
@@ -579,65 +611,122 @@ const ErinPattern2D: React.FC = () => {
   }, [panX, panY, zoom]);
 
   // ------------------------------
-  // Mouse panning + painting
-  // ------------------------------
-  const handleMouseDown = (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (!paintActive) {
-      panStartRef.current = { x: e.clientX, y: e.clientY };
-      panOrigRef.current = { x: panX, y: panY };
-    } else {
-      pushCellsHistory(cells);
-      setIsPainting(true);
-    }
-  };
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (!paintActive && panStartRef.current) {
-      const dx = e.clientX - panStartRef.current.x;
-      const dy = e.clientY - panStartRef.current.y;
-      setPanX(panOrigRef.current.x + dx);
-      setPanY(panOrigRef.current.y + dy);
-    } else if (paintActive && isPainting) {
-      const { x, y } = screenToCanvas(e.clientX, e.clientY);
-      const c = Math.round((x - offsetX) / spacingX);
-      const r = Math.round((y - offsetY) / spacingY);
-      if (r < 0 || r >= rows || c < 0 || c >= cols) return;
-      const key = `${r}-${c}`;
-      const next = new Map(cells);
-      if (isErasing) next.delete(key);
-      else next.set(key, selectedColor);
-      setCells(next);
-    }
-  };
-
-  const handleMouseUp = () => {
-    setIsPainting(false);
-    panStartRef.current = null;
-  };
-
-  // ------------------------------
-  // ✅ Touch / Pinch Zoom (centered + fully iOS Safari compatible)
+  // Unified Pointer Events (mouse + touch + stylus — fires exactly once, no synthesized duplicates)
   // ------------------------------
   const lastDist = useRef<number | null>(null);
   const pinchStartZoom = useRef<number>(1);
 
-  // ------------------------------
-  // ✅ Handle Canvas Click (paint or erase cell)
-  // ------------------------------
-  const handleCanvasClick = (e: React.MouseEvent<HTMLElement>) => {
-    if (!paintActive) return;
-    const { x, y } = screenToCanvas(e.clientX, e.clientY);
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-    const c = Math.round((x - offsetX) / spacingX);
-    const r = Math.round((y - offsetY) / spacingY);
-    if (r < 0 || r >= rows || c < 0 || c >= cols) return;
+    if (activePointersRef.current.size === 1) {
+      if (paintActive) {
+        hasDraggedRef.current = false;
+        isPaintingRef.current = true;
+        setIsPainting(true);
+      } else {
+        panStartRef.current = { x: e.clientX, y: e.clientY };
+        panOrigRef.current = { x: panX, y: panY };
+      }
+      lastDist.current = null;
+    } else if (activePointersRef.current.size === 2) {
+      // Second pointer down: switch to pinch zoom, cancel any in-progress paint
+      isPaintingRef.current = false;
+      setIsPainting(false);
+      panStartRef.current = null;
+      const pts = [...activePointersRef.current.values()];
+      const dx = pts[0].x - pts[1].x;
+      const dy = pts[0].y - pts[1].y;
+      lastDist.current = Math.sqrt(dx * dx + dy * dy);
+      pinchStartZoom.current = zoomRef.current;
+    }
+  };
 
-    const key = `${r}-${c}`;
-    const next = new Map(cells);
-    if (isErasing) next.delete(key);
-    else next.set(key, selectedColor);
-    setCells(next);
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!activePointersRef.current.has(e.pointerId)) return;
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointersRef.current.size === 2) {
+      // Pinch zoom
+      const pts = [...activePointersRef.current.values()];
+      const dx = pts[0].x - pts[1].x;
+      const dy = pts[0].y - pts[1].y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (lastDist.current == null) {
+        lastDist.current = dist;
+        pinchStartZoom.current = zoomRef.current;
+        return;
+      }
+
+      const nextZoom = Math.max(0.3, Math.min(5, pinchStartZoom.current * (dist / lastDist.current)));
+      const baseEl = outerWrapRef.current;
+      if (!baseEl) return;
+      const rect = baseEl.getBoundingClientRect();
+      const midX = (pts[0].x + pts[1].x) / 2 - rect.left;
+      const midY = (pts[0].y + pts[1].y) / 2 - rect.top;
+      const z = Math.max(1e-6, zoomRef.current);
+      const worldX = (midX - panXRef.current) / z;
+      const worldY = (midY - panYRef.current) / z;
+      setZoom(nextZoom);
+      setPanX(midX - worldX * nextZoom);
+      setPanY(midY - worldY * nextZoom);
+      return;
+    }
+
+    if (activePointersRef.current.size === 1) {
+      if (paintActive && isPaintingRef.current) {
+        hasDraggedRef.current = true;
+        const { x, y } = screenToCanvas(e.clientX, e.clientY);
+        const c = Math.round((x - offsetX) / spacingX);
+        const r = Math.round((y - offsetY) / spacingY);
+        if (r < 0 || r >= rows || c < 0 || c >= cols) return;
+        const key = `${r}-${c}`;
+        const next = new Map(cellsRef.current);
+        if (isErasing) next.delete(key);
+        else next.set(key, selectedColor);
+        cellsRef.current = next;
+        setCells(next);
+      } else if (!paintActive && panStartRef.current) {
+        setPanX(panOrigRef.current.x + (e.clientX - panStartRef.current.x));
+        setPanY(panOrigRef.current.y + (e.clientY - panStartRef.current.y));
+      }
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!activePointersRef.current.has(e.pointerId)) return;
+    const wasOnlyPointer = activePointersRef.current.size === 1;
+
+    if (wasOnlyPointer && isPaintingRef.current) {
+      if (!hasDraggedRef.current && paintActive) {
+        // Tap: no drag happened — paint the cell under the lift point
+        const { x, y } = screenToCanvas(e.clientX, e.clientY);
+        const c = Math.round((x - offsetX) / spacingX);
+        const r = Math.round((y - offsetY) / spacingY);
+        if (r >= 0 && r < rows && c >= 0 && c < cols) {
+          const key = `${r}-${c}`;
+          const next = new Map(cellsRef.current);
+          if (isErasing) next.delete(key);
+          else next.set(key, selectedColor);
+          cellsRef.current = next;
+          setCells(next);
+        }
+      }
+      pushCellsHistory(cellsRef.current);
+    }
+
+    activePointersRef.current.delete(e.pointerId);
+
+    if (activePointersRef.current.size < 2) {
+      lastDist.current = null;
+    }
+    if (activePointersRef.current.size === 0) {
+      isPaintingRef.current = false;
+      setIsPainting(false);
+      panStartRef.current = null;
+    }
   };
 
   // ------------------------------
@@ -727,91 +816,6 @@ const ErinPattern2D: React.FC = () => {
     [],
   );
 
-  // ------------------------------
-  // ✅ Touch / Pinch Zoom (single canonical implementation) — FIXED
-  // Uses UNTRANSFORMED outerWrap rect; no drift after zoom.
-  // ------------------------------
-  const handleTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 2) {
-      e.preventDefault();
-
-      const baseEl = outerWrapRef.current;
-      if (!baseEl) return;
-
-      const t1 = e.touches[0];
-      const t2 = e.touches[1];
-
-      const dx = t1.clientX - t2.clientX;
-      const dy = t1.clientY - t2.clientY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (lastDist.current == null) {
-        lastDist.current = dist;
-        pinchStartZoom.current = zoomRef.current;
-        return;
-      }
-
-      const scaleFactor = dist / lastDist.current;
-      const nextZoom = Math.max(
-        0.3,
-        Math.min(5, pinchStartZoom.current * scaleFactor),
-      );
-
-      const rect = baseEl.getBoundingClientRect();
-      const midClientX = (t1.clientX + t2.clientX) / 2;
-      const midClientY = (t1.clientY + t2.clientY) / 2;
-
-      const cx = midClientX - rect.left;
-      const cy = midClientY - rect.top;
-
-      const z = Math.max(1e-6, zoomRef.current);
-      const px = panXRef.current;
-      const py = panYRef.current;
-
-      const worldX = (cx - px) / z;
-      const worldY = (cy - py) / z;
-
-      setZoom(nextZoom);
-      setPanX(cx - worldX * nextZoom);
-      setPanY(cy - worldY * nextZoom);
-
-      return;
-    }
-
-    // one-finger pan
-    if (e.touches.length === 1 && !paintActive) {
-      e.preventDefault();
-      const t = e.touches[0];
-      if (panStartRef.current) {
-        setPanX(panOrigRef.current.x + (t.clientX - panStartRef.current.x));
-        setPanY(panOrigRef.current.y + (t.clientY - panStartRef.current.y));
-      }
-    }
-
-    // one-finger paint
-    if (e.touches.length === 1 && paintActive && isPainting) {
-      e.preventDefault();
-      const t = e.touches[0];
-      const { x, y } = screenToCanvas(t.clientX, t.clientY);
-
-      const c = Math.round((x - offsetX) / spacingX);
-      const r = Math.round((y - offsetY) / spacingY);
-      if (r < 0 || r >= rows || c < 0 || c >= cols) return;
-
-      setCells((prev) => {
-        const next = new Map(prev);
-        if (isErasing) next.delete(`${r}-${c}`);
-        else next.set(`${r}-${c}`, selectedColor);
-        return next;
-      });
-    }
-  };
-
-  const handleTouchEnd = () => {
-    lastDist.current = null;
-    setIsPainting(false);
-    panStartRef.current = null;
-  };
 
   const handlePrint = () => {
     document.body.classList.add("printing");
@@ -893,6 +897,29 @@ const ErinPattern2D: React.FC = () => {
               borderRadius: 20,
             }}
           >
+          <div
+            title="Drag to move palette"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 6,
+              height: 18,
+              marginBottom: 6,
+              borderRadius: 8,
+              background: "rgba(255,255,255,0.06)",
+              color: "#94a3b8",
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.04em",
+              cursor: "grab",
+              userSelect: "none",
+            }}
+          >
+            <span style={{ fontSize: 10, opacity: 0.7 }}>⋮⋮</span>
+            <span>COLORS</span>
+            <span style={{ fontSize: 10, opacity: 0.7 }}>⋮⋮</span>
+          </div>
           <div
             style={{
               display: "grid",
@@ -1015,24 +1042,11 @@ const ErinPattern2D: React.FC = () => {
                 cursor: paintActive ? "crosshair" : "grab",
                 zIndex: 2,
               }}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMove}
-              onMouseUp={handleMouseUp}
-              onMouseLeave={handleMouseUp}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerUp}
               onWheel={handleWheel}
-              onTouchStart={(e) => {
-                if (!paintActive) {
-                  const t = e.touches[0];
-                  panStartRef.current = { x: t.clientX, y: t.clientY };
-                  panOrigRef.current = { x: panX, y: panY };
-                } else {
-                  pushCellsHistory(cells);
-                  setIsPainting(true);
-                }
-              }}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={handleTouchEnd}
-              onClick={handleCanvasClick} // ✅ just reference the function, do NOT redeclare it
             >
               {showImage && (
                 <img

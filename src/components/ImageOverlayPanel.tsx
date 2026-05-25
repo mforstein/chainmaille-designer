@@ -1,5 +1,5 @@
 // src/components/ImageOverlayPanel.tsx
-import React, { useRef, useState, useCallback } from "react";
+import React, { useRef, useState, useCallback, useEffect } from "react";
 
 export interface OverlayState {
   dataUrl: string | null;
@@ -10,12 +10,22 @@ export interface OverlayState {
   opacity: number;
   repeat?: "none" | "tile";
   patternScale?: number; // % scale for tiling background (100 = original)
+  // Image Fill: when true, transfer paints the actual image region onto each
+  // scale (averaged over the scale's footprint) instead of a single-pixel sample.
+  imageFill?: boolean;
+  // Inset from scale edge (0–50%): 0 = image covers edge-to-edge, larger = framed.
+  boundaryPct?: number;
+  // Optional shape hint for the in-panel test preview (matches active scale shape).
+  testScaleShape?: "teardrop" | "leaf" | "round" | "kite";
 }
 
 interface Props {
   onApply: (overlay: OverlayState) => void;
   gridAspect?: number; // width/height ratio of the ring grid — preview matches this
   onClose?: () => void;
+  // Hide the scale-specific subpanel (Image Fill on Scales / Test Scale Shape /
+  // Image Boundary / scale test canvas). Use on ring-only pages like /designer.
+  hideScaleControls?: boolean;
 }
 
 /* ----------------------- defaults ----------------------- */
@@ -28,10 +38,13 @@ const defaultOverlay: OverlayState = {
   opacity: 0.8,
   repeat: "none",
   patternScale: 100,
+  imageFill: false,
+  boundaryPct: 0,
+  testScaleShape: "teardrop",
 };
 
 /* ------------------- component ------------------- */
-export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClose }) => {
+export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClose, hideScaleControls = false }) => {
   // Preview height matches the ring grid's aspect ratio (width ÷ aspect).
   // Panel content width is 412px (440px - 14px padding × 2).
   const PREVIEW_W = 412;
@@ -40,10 +53,205 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
   const [dragging, setDragging] = useState(false);
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Test preview canvas — shows a single scale outline with the image clipped
+  // and inset by boundaryPct so the user can see exactly how much of the scale
+  // the transferred image will cover.
+  const testCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const testImgRef = useRef<HTMLImageElement | null>(null);
+
+  /* ----- scale outline path (matches drawScaleFromExport / RingRenderer shapes) ----- */
+  const buildScalePath = useCallback(
+    (
+      shape: "teardrop" | "leaf" | "round" | "kite",
+      w: number,
+      h: number,
+      holeR: number,
+    ): { outer: Path2D; hole: Path2D } => {
+      const halfW = w / 2;
+      const topY = -h * 0.08;
+      const midY = h * 0.38;
+      const tipY = h * 0.98;
+      const outer = new Path2D();
+      switch (shape) {
+        case "leaf":
+          outer.moveTo(0, topY);
+          outer.bezierCurveTo(halfW * 0.95, h * 0.08, halfW * 1.05, midY, halfW * 0.34, h * 0.76);
+          outer.bezierCurveTo(halfW * 0.18, h * 0.9, halfW * 0.08, h * 0.96, 0, tipY);
+          outer.bezierCurveTo(-halfW * 0.08, h * 0.96, -halfW * 0.18, h * 0.9, -halfW * 0.34, h * 0.76);
+          outer.bezierCurveTo(-halfW * 1.05, midY, -halfW * 0.95, h * 0.08, 0, topY);
+          outer.closePath();
+          break;
+        case "round":
+          outer.moveTo(0, topY);
+          outer.bezierCurveTo(halfW * 0.95, topY, halfW * 1.05, h * 0.46, 0, tipY);
+          outer.bezierCurveTo(-halfW * 1.05, h * 0.46, -halfW * 0.95, topY, 0, topY);
+          outer.closePath();
+          break;
+        case "kite":
+          outer.moveTo(0, topY);
+          outer.lineTo(halfW * 0.96, h * 0.2);
+          outer.lineTo(halfW * 0.56, h * 0.78);
+          outer.lineTo(0, tipY);
+          outer.lineTo(-halfW * 0.56, h * 0.78);
+          outer.lineTo(-halfW * 0.96, h * 0.2);
+          outer.closePath();
+          break;
+        case "teardrop":
+        default:
+          outer.moveTo(0, topY);
+          outer.bezierCurveTo(halfW, h * 0.16, halfW, midY, 0, tipY);
+          outer.bezierCurveTo(-halfW, midY, -halfW, h * 0.16, 0, topY);
+          outer.closePath();
+          break;
+      }
+      const hole = new Path2D();
+      hole.arc(0, 0, holeR, 0, Math.PI * 2);
+      return { outer, hole };
+    },
+    [],
+  );
+
+  /* ----- load the image once for the test preview (cached) ----- */
+  useEffect(() => {
+    if (!overlay.dataUrl) {
+      testImgRef.current = null;
+      return;
+    }
+    const im = new Image();
+    im.onload = () => {
+      testImgRef.current = im;
+    };
+    im.src = overlay.dataUrl;
+  }, [overlay.dataUrl]);
+
+  /* ----- redraw the test preview whenever any input that affects it changes ----- */
+  useEffect(() => {
+    const cvs = testCanvasRef.current;
+    if (!cvs) return;
+    const ctx = cvs.getContext("2d");
+    if (!ctx) return;
+    const W = cvs.width;
+    const H = cvs.height;
+    ctx.clearRect(0, 0, W, H);
+
+    // Dark backdrop so the scale shape reads against the panel chrome
+    ctx.fillStyle = "#0b1220";
+    ctx.fillRect(0, 0, W, H);
+
+    // Scale geometry within the preview area
+    const margin = 14;
+    const scaleH = H - margin * 2;
+    const scaleW = scaleH * 0.62; // teardrop aspect ratio
+    const holeR = scaleW * 0.13;
+    const cx = W / 2;
+    const cy = margin;
+    const shape = overlay.testScaleShape ?? "teardrop";
+    const { outer, hole } = buildScalePath(shape, scaleW, scaleH, holeR);
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    // Outer shape filled with the unfilled scale color (light grey, matches app)
+    ctx.fillStyle = "#cbd5e1";
+    const baseShape = new Path2D();
+    baseShape.addPath(outer);
+    baseShape.addPath(hole);
+    ctx.fill(baseShape, "evenodd");
+
+    // Now build the inset path used to clip the image. Slider value = % of the
+    // smaller of (scaleW, scaleH) to pull the boundary inward.
+    const boundary = Math.max(0, Math.min(50, overlay.boundaryPct ?? 0));
+    const insetPx = (Math.min(scaleW, scaleH) * boundary) / 100;
+    const insetScaleW = Math.max(2, scaleW - insetPx * 2);
+    const insetScaleH = Math.max(2, scaleH - insetPx * 2);
+    const insetHoleR = Math.max(1, holeR + insetPx); // hole grows inward symmetrically
+    const { outer: insetOuter, hole: insetHole } = buildScalePath(
+      shape,
+      insetScaleW,
+      insetScaleH,
+      insetHoleR,
+    );
+
+    // Draw image clipped to inset shape (only when an image is loaded).
+    const img = testImgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      ctx.save();
+      // Translate so the inset shape is centered at the same place as the outer
+      const cyInset = (scaleH - insetScaleH) / 2;
+      ctx.translate(0, cyInset);
+      // Build a clip path that is the inset outer minus the inset hole
+      const clip = new Path2D();
+      clip.addPath(insetOuter);
+      clip.addPath(insetHole);
+      ctx.clip(clip, "evenodd");
+
+      // Cover the inset shape's bounding box with the image (object-fit: cover-like).
+      const bbW = insetScaleW;
+      const bbH = insetScaleH;
+      const iW = img.naturalWidth;
+      const iH = img.naturalHeight;
+      const scaleFit = Math.max(bbW / iW, bbH / iH);
+      const drawW = iW * scaleFit;
+      const drawH = iH * scaleFit;
+      const dx = -drawW / 2;
+      const dy = (bbH - drawH) / 2;
+      ctx.globalAlpha = Math.max(0, Math.min(1, overlay.opacity));
+      ctx.drawImage(img, dx, dy, drawW, drawH);
+      ctx.restore();
+    }
+
+    // Re-stroke the original outer scale outline so the boundary is visible
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "#e2e8f0";
+    ctx.stroke(outer);
+    ctx.stroke(hole);
+
+    // Stroke the inset outline (the "image boundary") in cyan
+    if (boundary > 0) {
+      ctx.save();
+      const cyInset = (scaleH - insetScaleH) / 2;
+      ctx.translate(0, cyInset);
+      ctx.setLineDash([4, 3]);
+      ctx.strokeStyle = "rgba(34,211,238,0.95)";
+      ctx.lineWidth = 1.2;
+      ctx.stroke(insetOuter);
+      ctx.stroke(insetHole);
+      ctx.restore();
+    }
+    ctx.restore();
+
+    // Label
+    ctx.fillStyle = "rgba(226,232,240,0.7)";
+    ctx.font = "10px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(
+      boundary === 0 ? "Image fills scale edge-to-edge" : `Image inset ${boundary}%`,
+      W / 2,
+      H - 4,
+    );
+  }, [
+    overlay.dataUrl,
+    overlay.boundaryPct,
+    overlay.opacity,
+    overlay.testScaleShape,
+    overlay.imageFill,
+    buildScalePath,
+  ]);
 
   /* ---------------- snapshot: capture visible preview as a new flat image ---------------- */
   const createSnapshot = useCallback((): Promise<OverlayState | null> => {
     if (!overlay.dataUrl) return Promise.resolve(null);
+
+    // Tile mode: don't bake the image into a flat snapshot. The renderer
+    // tiles the original image itself using overlay.repeat + patternScale +
+    // offsetX/offsetY; snapshotting would collapse the repeat into a single
+    // pre-positioned image and lose the tiling behavior. Pass the overlay
+    // state through unchanged.
+    if (overlay.repeat === "tile") {
+      return Promise.resolve({ ...overlay });
+    }
+
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -80,6 +288,9 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
           opacity: overlay.opacity,
           repeat: "none",
           patternScale: 100,
+          imageFill: !!overlay.imageFill,
+          boundaryPct: Math.max(0, Math.min(50, Number(overlay.boundaryPct ?? 0))),
+          testScaleShape: overlay.testScaleShape ?? "teardrop",
         });
       };
       img.onerror = () => resolve(null);
@@ -371,12 +582,18 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
                 min={0.1}
                 max={5}
                 value={overlay.scale}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const n = parseFloat(e.target.value);
                   setOverlay((s) => ({
                     ...s,
-                    scale: Math.max(0.1, Number(e.target.value) || 1),
-                  }))
-                }
+                    // Number.isFinite guard: typing "0" with the old
+                    // `Number(x) || 1` pattern jumped to 1; now it clamps
+                    // through Math.max to the real minimum (0.1).
+                    scale: Number.isFinite(n)
+                      ? Math.max(0.1, Math.min(5, n))
+                      : 1,
+                  }));
+                }}
                 style={numStyle}
               />
             </label>
@@ -398,15 +615,15 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
                 max={400}
                 step={5}
                 value={overlay.patternScale ?? 100}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const n = parseFloat(e.target.value);
                   setOverlay((s) => ({
                     ...s,
-                    patternScale: Math.max(
-                      10,
-                      Math.min(400, Number(e.target.value) || 100),
-                    ),
-                  }))
-                }
+                    patternScale: Number.isFinite(n)
+                      ? Math.max(10, Math.min(400, n))
+                      : 100,
+                  }));
+                }}
                 style={numStyle}
               />
             </label>
@@ -421,12 +638,13 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
               type="number"
               step={1}
               value={overlay.rotation}
-              onChange={(e) =>
+              onChange={(e) => {
+                const n = parseFloat(e.target.value);
                 setOverlay((s) => ({
                   ...s,
-                  rotation: Number(e.target.value) || 0,
-                }))
-              }
+                  rotation: Number.isFinite(n) ? n : 0,
+                }));
+              }}
               style={numStyle}
             />
           </label>
@@ -442,18 +660,157 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
               min={0}
               max={1}
               value={overlay.opacity}
-              onChange={(e) =>
+              onChange={(e) => {
+                const n = parseFloat(e.target.value);
                 setOverlay((s) => ({
                   ...s,
-                  opacity: Math.max(
-                    0,
-                    Math.min(1, Number(e.target.value) || 0.8),
-                  ),
-                }))
-              }
+                  // Real bug fixed here: the old `Number(x) || 0.8` pattern
+                  // refused to accept opacity 0 (fully transparent), bouncing
+                  // it back to 0.8. parseFloat + isFinite preserves zero.
+                  opacity: Number.isFinite(n)
+                    ? Math.max(0, Math.min(1, n))
+                    : 0.8,
+                }));
+              }}
               style={numStyle}
             />
           </label>
+
+          {/* ───── Scale Image Fill (new) ───── */}
+          {!hideScaleControls && (
+          <div
+            style={{
+              marginTop: 6,
+              padding: 10,
+              background: "rgba(15,23,42,0.6)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 10,
+              display: "grid",
+              gap: 8,
+            }}
+          >
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+              title="When on, transfer paints the actual image region onto each scale (averaged inside its outline) instead of a single-pixel color sample."
+            >
+              <span style={{ fontWeight: 600, color: "#cbd5e1" }}>
+                Image Fill on Scales
+              </span>
+              <input
+                type="checkbox"
+                checked={!!overlay.imageFill}
+                onChange={(e) =>
+                  setOverlay((s) => ({ ...s, imageFill: e.target.checked }))
+                }
+              />
+            </label>
+
+            <label
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+              }}
+            >
+              <span>Test Scale Shape</span>
+              <select
+                value={overlay.testScaleShape ?? "teardrop"}
+                onChange={(e) =>
+                  setOverlay((s) => ({
+                    ...s,
+                    testScaleShape: e.target.value as
+                      | "teardrop"
+                      | "leaf"
+                      | "round"
+                      | "kite",
+                  }))
+                }
+                style={{
+                  background: "#1f2937",
+                  color: "#f3f4f6",
+                  borderRadius: 6,
+                  border: "1px solid #374151",
+                  padding: "3px 8px",
+                  cursor: "pointer",
+                }}
+              >
+                {/* Only Standard (internally "leaf") is selectable. */}
+                <option value="leaf">Standard</option>
+              </select>
+            </label>
+
+            <label style={{ display: "grid", gap: 4 }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <span title="0 = image fills the scale edge-to-edge. Higher values frame the image inside the scale.">
+                  Image Boundary (%)
+                </span>
+                <span
+                  style={{
+                    fontVariantNumeric: "tabular-nums",
+                    color: "#94a3b8",
+                    minWidth: 32,
+                    textAlign: "right",
+                  }}
+                >
+                  {Math.round(overlay.boundaryPct ?? 0)}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={50}
+                step={1}
+                value={Math.round(overlay.boundaryPct ?? 0)}
+                onChange={(e) => {
+                  const n = parseFloat(e.target.value);
+                  setOverlay((s) => ({
+                    ...s,
+                    boundaryPct: Number.isFinite(n)
+                      ? Math.max(0, Math.min(50, n))
+                      : 0,
+                  }));
+                }}
+                style={{ width: "100%" }}
+              />
+            </label>
+
+            {/* Test preview canvas — shows one scale with the image clipped */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "center",
+                paddingTop: 4,
+              }}
+            >
+              <canvas
+                ref={testCanvasRef}
+                width={220}
+                height={220}
+                style={{
+                  width: 220,
+                  height: 220,
+                  borderRadius: 8,
+                  background: "#0b1220",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                }}
+                aria-label="Test preview of image on a single scale with boundary inset"
+              />
+            </div>
+          </div>
+          )}
         </div>
       )}
 
