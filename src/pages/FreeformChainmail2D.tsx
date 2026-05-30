@@ -72,14 +72,12 @@ if (typeof window !== "undefined" && !window.getBOMRings) {
 // SAFETY STUBS (history integration preserved, no-ops here)
 // NOTE: exported to avoid TS noUnusedLocals errors and to preserve API surface.
 // ======================================================
-export const commitRings = () => {};
-export const handleUndo = () => {};
-export const handleRedo = () => {};
-export const lock2dView = () => {};
-export const toggleLock = () => {};
-export const updateHistory = () => {};
-export const applyHistory = () => {};
-export const pushHistory = () => {};
+// Note: legacy no-op stub exports (commitRings/handleUndo/handleRedo/
+// lock2dView/toggleLock/updateHistory/applyHistory/pushHistory) were
+// removed here on 2026-05-30. They blocked Vite's React Fast Refresh
+// because non-component exports in a component file disable HMR.
+// Verified no external imports referenced them (only locally-scoped
+// symbols of the same names exist in App.tsx/ErinPattern2D.tsx).
 
 // ======================================================
 // COLOR PALETTE
