@@ -4522,10 +4522,12 @@ const derived = useMemo(() => {
   }, [isSelecting, selectionMode, clearInteractionCanvas]);
 
   useEffect(() => {
-    if (selectionMode === "none" || !isSelecting) {
-      clearInteractionCanvas();
-      return;
-    }
+    // Always re-run the overlay drawer instead of unconditionally clearing
+    // when selectionMode is "none" or not actively selecting.
+    // drawSelectionOverlay handles its own clear and then re-emits the
+    // alignment grid + paste-preview ghost (if armed). The previous
+    // shortcut to clearInteractionCanvas() wiped the freshly armed
+    // paste-preview the instant Cmd+C auto-exited to selectionMode='none'.
     drawSelectionOverlay();
   }, [
     selectionMode,
@@ -4536,7 +4538,6 @@ const derived = useMemo(() => {
     logicalOrigin.ox,
     logicalOrigin.oy,
     drawSelectionOverlay,
-    clearInteractionCanvas,
   ]);
 
   const handleMouseDown = useCallback(
