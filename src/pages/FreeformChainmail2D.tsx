@@ -2667,13 +2667,19 @@ const FreeformChainmail2D: React.FC = () => {
 
   // Snap a paste target row to one with the same parity as the source's
   // top row, so the brick lattice's odd-row half-cs offset doesn't mirror
-  // the cluster horizontally. Prefer the same row when parity matches;
-  // otherwise nudge by +1 (paste lands one row below the click point).
+  // the cluster horizontally. Takes the cursor's *fractional* row (ly /
+  // spacingY) and picks the nearest integer row whose parity matches —
+  // sometimes that's the rounded row itself, sometimes the row above,
+  // sometimes the row below, whichever is closer to the cursor.
   function snapTargetRowToParity(
-    targetRow: number,
+    rawRow: number,
     sourceParity: 0 | 1,
   ): number {
-    return (targetRow & 1) === sourceParity ? targetRow : targetRow + 1;
+    const r0 = Math.round(rawRow);
+    if (((r0 % 2) + 2) % 2 === sourceParity) return r0;
+    const dUp = Math.abs(r0 + 1 - rawRow);
+    const dDown = Math.abs(r0 - 1 - rawRow);
+    return dUp <= dDown ? r0 + 1 : r0 - 1;
   }
 
   // Paste the clipboard onto the design with its (0,0) anchor at the given
@@ -2681,12 +2687,14 @@ const FreeformChainmail2D: React.FC = () => {
   // (matches paint semantics — last write wins). Pushes one POST-paste
   // history entry so each paste can be undone in one Cmd+Z step.
   const pasteClipboardAt = useCallback(
-    (targetRow: number, targetCol: number) => {
+    (targetRow: number, targetCol: number, rawTargetRow?: number) => {
       if (!clipboard || clipboard.items.length === 0) return;
       // Brick-offset shape preservation: snap to matching parity so the
       // pasted cluster looks identical to the source rather than mirrored.
+      // Passing rawTargetRow lets the snap pick the *nearest* matching
+      // row instead of always nudging by +1.
       const anchorRow = snapTargetRowToParity(
-        targetRow,
+        rawTargetRow ?? targetRow,
         clipboard.sourceMinRowParity,
       );
 
@@ -4226,12 +4234,11 @@ const derived = useMemo(() => {
         const { lx: hlx, ly: hly } = screenToWorld(hsx, hsy);
         const adjHx = hlx - circleOffsetX;
         const adjHy = hly - circleOffsetY;
-        const { row: rawAnchorRow, col: anchorCol } = logicalToRowColApprox(
-          adjHx,
-          adjHy,
-        );
-        // Mirror the parity snap pasteClipboardAt applies, so the preview
-        // shows exactly where the paste will land — not where the cursor is.
+        const { col: anchorCol } = logicalToRowColApprox(adjHx, adjHy);
+        // Mirror the parity snap pasteClipboardAt applies, using the true
+        // fractional row so the preview lands on the same nearest-matching
+        // row the actual paste will choose.
+        const rawAnchorRow = adjHy / spacingY;
         const anchorRow = snapTargetRowToParity(
           rawAnchorRow,
           clipboardRef.current.sourceMinRowParity,
@@ -5593,15 +5600,27 @@ const derived = useMemo(() => {
       const { lx, ly } = screenToWorld(sx, sy);
       const adjLx = lx - circleOffsetX;
       const adjLy = ly - circleOffsetY;
-      const { row, col } = logicalToRowColApprox(adjLx, adjLy);
-      pasteClipboardAt(row, col);
+      // Compute the *fractional* row from the cursor's world Y so the
+      // parity snap inside pasteClipboardAt can pick the nearest
+      // matching-parity row (instead of always nudging +1).
+      const rawRow = adjLy / spacingY;
+      const { col } = logicalToRowColApprox(adjLx, adjLy);
+      pasteClipboardAt(Math.round(rawRow), col, rawRow);
       // Drop out of marquee mode and clear the visible selection so the
       // user is back in paint mode for follow-up edits. The effect on
       // selectionMode also clears pureSelectMode and persistedSelectionRect.
       setSelectionMode("none");
       setSelectedKeys(new Set());
     },
-    [getCanvasPoint, screenToWorld, circleOffsetX, circleOffsetY, pasteClipboardAt],
+    [
+      getCanvasPoint,
+      screenToWorld,
+      circleOffsetX,
+      circleOffsetY,
+      spacingY,
+      logicalToRowColApprox,
+      pasteClipboardAt,
+    ],
   );
 
   // ===============================
