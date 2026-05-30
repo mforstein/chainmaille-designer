@@ -5370,6 +5370,10 @@ const derived = useMemo(() => {
   // ===============================
   const handleClick = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      // Only react to the primary (left) button. Some browsers fire onClick
+      // for middle/right buttons too — right-click is for paste via
+      // onContextMenu, and we never want it to also paint a ring/scale.
+      if (e.button !== 0) return;
       if (panMode) return;
       if (scalePlaneDragMode) return; // drag mode owns the canvas
       if (selectionMode !== "none") return; // selection tool uses drag, not click
