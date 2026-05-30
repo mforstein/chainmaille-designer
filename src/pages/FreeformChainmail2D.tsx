@@ -6651,6 +6651,35 @@ const scales3D = useMemo(() => {
                 <IconScaleMove size={18} />
               </ToolBtn>
 
+              {/* Marquee select — direct entry to rectangle selection.
+                  Conventional copy/paste flow: click this → drag a rectangle
+                  on the canvas → Cmd/Ctrl+C → right-click anywhere to paste.
+                  Sits next to Copy so the flow reads left-to-right on the
+                  toolbar. Doesn't replace the "Shapes" button (which opens
+                  the multi-shape selection panel for circle/hex/etc.). */}
+              <ToolBtn
+                active={selectionMode === "square"}
+                onClick={() => {
+                  setSelectionMode((m) => (m === "square" ? "none" : "square"));
+                  setPanMode(false);
+                  setScalePlaneDragMode(false);
+                  setEraseMode(false);
+                  scaleDragRef.current = null;
+                }}
+                title="Marquee select — drag a rectangle on the canvas to select rings/scales, then Cmd/Ctrl+C to copy and right-click to paste"
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    display: "inline-block",
+                    width: 18,
+                    height: 18,
+                    border: "2px dashed currentColor",
+                    borderRadius: 2,
+                  }}
+                />
+              </ToolBtn>
+
               {/* Copy selection (rings + scales) — Cmd/Ctrl+C */}
               <ToolBtn
                 onClick={copySelectionToClipboard}
