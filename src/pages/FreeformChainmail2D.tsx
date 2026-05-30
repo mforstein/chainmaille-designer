@@ -1303,6 +1303,17 @@ const FreeformChainmail2D: React.FC = () => {
   // overlay re-draw is triggered explicitly from the mousemove handler.
   const mouseHoverPosRef = useRef<{ sx: number; sy: number } | null>(null);
 
+  // Whether the paste-preview ghost should follow the cursor. Set true on
+  // Cmd/Ctrl+C copy; cleared on paste, Esc, or when the user toggles the
+  // Marquee button off. Without this gate the ghost lingered indefinitely
+  // any time the clipboard had items, with no way to dismiss it short of
+  // moving the cursor outside the canvas.
+  const [pastePreviewActive, setPastePreviewActive] = useState(false);
+  const pastePreviewActiveRef = useRef(false);
+  useEffect(() => {
+    pastePreviewActiveRef.current = pastePreviewActive;
+  }, [pastePreviewActive]);
+
   // Always drop pure-select intent + the persisted rect when the selection
   // tool is dismissed, so re-entering via the ShapePanel doesn't inherit
   // either.
@@ -2776,6 +2787,9 @@ const FreeformChainmail2D: React.FC = () => {
         if (selectedKeysRef.current && selectedKeysRef.current.size > 0) {
           e.preventDefault();
           copySelectionToClipboard();
+          // Arm the paste-preview ghost so the user can see where their
+          // right-click will land.
+          setPastePreviewActive(true);
           // For the Marquee/pure-select workflow: after copy, exit the
           // selection tool so the user is back in paint mode and can
           // immediately right-click anywhere to paste — no extra toggle.
@@ -2796,6 +2810,12 @@ const FreeformChainmail2D: React.FC = () => {
       if (e.key === "Escape" && pasteModeRef.current) {
         e.preventDefault();
         setPasteMode(false);
+      }
+      // Esc also dismisses the right-click paste-preview ghost so the
+      // user can always clear it without other gestures.
+      if (e.key === "Escape" && pastePreviewActiveRef.current) {
+        e.preventDefault();
+        setPastePreviewActive(false);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -4220,8 +4240,11 @@ const derived = useMemo(() => {
 
     // ─── Paste preview ghost (clipboard + hover, not actively dragging) ──
     // Translucent ring outlines anchored at the cursor showing where each
-    // clipboard ring would land if the user right-clicked now.
+    // clipboard ring would land if the user right-clicked now. Gated by
+    // pastePreviewActive so the user can dismiss it explicitly (Marquee
+    // button toggle off, Esc, or after a paste).
     if (
+      pastePreviewActiveRef.current &&
       clipboardRef.current &&
       clipboardRef.current.items.length > 0 &&
       mouseHoverPosRef.current &&
@@ -4453,6 +4476,7 @@ const derived = useMemo(() => {
     circleOffsetY,
     centerSpacing,
     spacingY,
+    pastePreviewActive,
   ]);
 
   // Re-render the overlay whenever the persisted rect changes so the dashed
@@ -4462,6 +4486,12 @@ const derived = useMemo(() => {
   useEffect(() => {
     if (persistedSelectionRect) drawSelectionOverlay();
   }, [persistedSelectionRect, drawSelectionOverlay]);
+
+  // Same for paste-preview gate flips — re-render so the ghost appears
+  // (on copy) or vanishes (on dismiss) immediately, not after the next move.
+  useEffect(() => {
+    drawSelectionOverlay();
+  }, [pastePreviewActive, drawSelectionOverlay]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -5609,6 +5639,8 @@ const derived = useMemo(() => {
       // selectionMode also clears pureSelectMode and persistedSelectionRect.
       setSelectionMode("none");
       setSelectedKeys(new Set());
+      // Paste committed — dismiss the ghost so it doesn't linger.
+      setPastePreviewActive(false);
     },
     [
       getCanvasPoint,
@@ -6977,6 +7009,9 @@ const scales3D = useMemo(() => {
                   const wasActive = selectionMode === "square" && pureSelectMode;
                   if (wasActive) {
                     setSelectionMode("none"); // effect clears pureSelectMode
+                    // User explicitly toggled marquee off — also dismiss
+                    // the paste-preview ghost so the canvas is fully clean.
+                    setPastePreviewActive(false);
                   } else {
                     setSelectionMode("square");
                     setPureSelectMode(true);
