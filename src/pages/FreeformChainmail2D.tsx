@@ -1259,6 +1259,22 @@ const FreeformChainmail2D: React.FC = () => {
   const [isSelecting, setIsSelecting] = useState(false);
   const selectionRef = useRef<SelectionDrag | null>(null);
 
+  // Pure-select intent for the Marquee toolbar button. When true (and
+  // selectionMode === "square"), the selection drag captures cells WITHOUT
+  // auto-painting rings/scales — i.e. classical marquee semantics. When the
+  // user picks a shape from the ShapePanel instead, this stays false so the
+  // legacy "select-and-fill" behavior is preserved for that path.
+  const [pureSelectMode, setPureSelectMode] = useState(false);
+  const pureSelectModeRef = useRef(false);
+  useEffect(() => {
+    pureSelectModeRef.current = pureSelectMode;
+  }, [pureSelectMode]);
+  // Always drop pure-select intent when the selection tool is dismissed,
+  // so re-entering via the ShapePanel doesn't accidentally inherit it.
+  useEffect(() => {
+    if (selectionMode === "none") setPureSelectMode(false);
+  }, [selectionMode]);
+
   // authoritative selected ring keys: `${row}-${col}`
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(
     () => new Set(),
@@ -4618,6 +4634,15 @@ const derived = useMemo(() => {
       // Highlight selected cells (for render feedback)
       setSelectedKeys(new Set(cells.map((c) => `${c.row}-${c.col}`)));
 
+      // PURE SELECT (Marquee toolbar button): we've already captured the
+      // pre-state snapshot above and set selectedKeys for highlight/Copy.
+      // Stop here — do NOT paint rings/scales into the dragged area. This
+      // is the classical marquee semantic the Shapes path lacks.
+      if (pureSelectModeRef.current) {
+        setLastSelectionCount(cells.length);
+        return;
+      }
+
       // Apply to scales (no cluster logic)
       if (activeLayerRef.current === "scales") {
         pushToHistory(rings, scaleColorsRef.current);
@@ -6101,13 +6126,13 @@ const scales3D = useMemo(() => {
               </ToolBtn>
 
               <ToolBtn
-                active={selectionMode !== "none"}
+                active={selectionMode !== "none" && !pureSelectMode}
                 onClick={() => {
                   setShapePanelOpen((v) => !v);
                   setPanMode(false);
                   clearSelectionState();
                 }}
-                title="Shapes"
+                title="Shapes (select-and-fill: square/circle/hex/etc.)"
               >
                 <IconSquare />
               </ToolBtn>
@@ -6560,6 +6585,9 @@ const scales3D = useMemo(() => {
                 active={selectionMode === "none" ? "square" : selectionMode}
                 onPick={(t) => {
                   setSelectionMode((m) => (m === t ? "none" : t));
+                  // Picking via the ShapePanel always means select-and-fill;
+                  // drop any prior pure-select intent from the Marquee button.
+                  setPureSelectMode(false);
                   setPanMode(false);
                   // Mutually exclusive with the scale-plane drag tool: that
                   // mode hijacks mousedown before selection ever fires, so
@@ -6651,22 +6679,30 @@ const scales3D = useMemo(() => {
                 <IconScaleMove size={18} />
               </ToolBtn>
 
-              {/* Marquee select — direct entry to rectangle selection.
+              {/* Marquee select — direct entry to PURE rectangle selection.
                   Conventional copy/paste flow: click this → drag a rectangle
                   on the canvas → Cmd/Ctrl+C → right-click anywhere to paste.
-                  Sits next to Copy so the flow reads left-to-right on the
-                  toolbar. Doesn't replace the "Shapes" button (which opens
-                  the multi-shape selection panel for circle/hex/etc.). */}
+                  Critically, unlike the legacy ShapePanel "square" tool,
+                  this does NOT paint rings into the dragged area — it only
+                  selects existing rings/scales there. The pureSelectMode
+                  flag toggled here is read inside applySelectionToActiveLayer
+                  to skip the auto-paint step. */}
               <ToolBtn
-                active={selectionMode === "square"}
+                active={selectionMode === "square" && pureSelectMode}
                 onClick={() => {
-                  setSelectionMode((m) => (m === "square" ? "none" : "square"));
+                  const wasActive = selectionMode === "square" && pureSelectMode;
+                  if (wasActive) {
+                    setSelectionMode("none"); // effect clears pureSelectMode
+                  } else {
+                    setSelectionMode("square");
+                    setPureSelectMode(true);
+                  }
                   setPanMode(false);
                   setScalePlaneDragMode(false);
                   setEraseMode(false);
                   scaleDragRef.current = null;
                 }}
-                title="Marquee select — drag a rectangle on the canvas to select rings/scales, then Cmd/Ctrl+C to copy and right-click to paste"
+                title="Marquee select — drag a rectangle on the canvas to select existing rings/scales (no painting), then Cmd/Ctrl+C to copy and right-click to paste"
               >
                 <span
                   aria-hidden
