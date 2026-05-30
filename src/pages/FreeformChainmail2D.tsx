@@ -2722,6 +2722,14 @@ const FreeformChainmail2D: React.FC = () => {
         if (selectedKeysRef.current && selectedKeysRef.current.size > 0) {
           e.preventDefault();
           copySelectionToClipboard();
+          // For the Marquee/pure-select workflow: after copy, exit the
+          // selection tool so the user is back in paint mode and can
+          // immediately right-click anywhere to paste — no extra toggle.
+          // The cascade effect on selectionMode === "none" clears
+          // pureSelectMode and the persisted selection rect.
+          if (pureSelectModeRef.current) {
+            setSelectionMode("none");
+          }
         }
         return;
       }
@@ -4130,19 +4138,23 @@ const derived = useMemo(() => {
         const rowSpanG = Math.min(maxRowG - minRowG, 200);
         const colSpanG = Math.min(maxColG - minColG, 200);
         ctx.save();
-        ctx.fillStyle = "rgba(148,163,184,0.18)";
+        ctx.fillStyle = "rgba(148,163,184,0.32)";
         for (let dr = 0; dr <= rowSpanG; dr++) {
           const row = minRowG + dr;
           for (let dc = 0; dc <= colSpanG; dc++) {
             const col = minColG + dc;
             const { x: gx, y: gy } = rcToLogical(row, col);
-            const { sx: gsx, sy: gsy } = worldToScreen(
+            // adjusted-logical → logical → world (Y flip happens in
+            // logicalToWorld) → screen. Skipping logicalToWorld here was
+            // the cause of the grid landing at -row instead of +row.
+            const { wx: gwx, wy: gwy } = logicalToWorld(
               gx + circleOffsetX,
               gy + circleOffsetY,
             );
+            const { sx: gsx, sy: gsy } = worldToScreen(gwx, gwy);
             if (gsx < -5 || gsy < -5 || gsx > rect.width + 5 || gsy > rect.height + 5) continue;
             ctx.beginPath();
-            ctx.arc(gsx, gsy, 1.2, 0, Math.PI * 2);
+            ctx.arc(gsx, gsy, 1.4, 0, Math.PI * 2);
             ctx.fill();
           }
         }
@@ -4172,10 +4184,19 @@ const derived = useMemo(() => {
         );
         // Approximate ring outer radius in screen pixels from the lattice
         // scale at the cursor: distance between two adjacent column centers.
+        // Same logical→world→screen chain as the actual ring positions below.
         const probeA = rcToLogical(anchorRow, anchorCol);
         const probeB = rcToLogical(anchorRow, anchorCol + 1);
-        const sA = worldToScreen(probeA.x + circleOffsetX, probeA.y + circleOffsetY);
-        const sB = worldToScreen(probeB.x + circleOffsetX, probeB.y + circleOffsetY);
+        const wA = logicalToWorld(
+          probeA.x + circleOffsetX,
+          probeA.y + circleOffsetY,
+        );
+        const wB = logicalToWorld(
+          probeB.x + circleOffsetX,
+          probeB.y + circleOffsetY,
+        );
+        const sA = worldToScreen(wA.wx, wA.wy);
+        const sB = worldToScreen(wB.wx, wB.wy);
         const scalePx = Math.hypot(sB.sx - sA.sx, sB.sy - sA.sy);
         const ringRadiusPx = Math.max(3, scalePx * 0.48);
         ctx.save();
@@ -4187,10 +4208,13 @@ const derived = useMemo(() => {
           const r = anchorRow + it.deltaRow;
           const c = anchorCol + it.deltaCol;
           const { x: rx, y: ry } = rcToLogical(r, c);
-          const { sx: psx, sy: psy } = worldToScreen(
+          // logicalToWorld restores world Y orientation; without it the
+          // preview ended up mirrored vertically and offset below cursor.
+          const { wx: pwx, wy: pwy } = logicalToWorld(
             rx + circleOffsetX,
             ry + circleOffsetY,
           );
+          const { sx: psx, sy: psy } = worldToScreen(pwx, pwy);
           ctx.beginPath();
           ctx.arc(psx, psy, ringRadiusPx, 0, Math.PI * 2);
           ctx.fill();
@@ -4363,6 +4387,7 @@ const derived = useMemo(() => {
     // grid + paste-preview dependencies
     screenToWorld,
     worldToScreen,
+    logicalToWorld,
     rcToLogical,
     logicalToRowColApprox,
     circleOffsetX,
