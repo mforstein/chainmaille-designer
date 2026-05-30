@@ -977,6 +977,26 @@ const FreeformChainmail2D: React.FC = () => {
     pushToHistory(ringsSnap, scalesSnap);
   }, [pushToHistory]);
 
+  // Initial-state snapshot on mount. The history convention from this point
+  // forward is: each entry stores the POST-action state, and the current
+  // visible state always equals stack[historyIndex]. Without an initial
+  // entry, the first user action would push pre-state at index 0 and the
+  // undo guard (index <= 0) would refuse to budge — and even when it did
+  // budge, it would skip over actions because pre-state of action N+1
+  // equals post-state of action N, conflating two steps into one.
+  const didInitialHistoryPushRef = useRef(false);
+  useEffect(() => {
+    if (didInitialHistoryPushRef.current) return;
+    didInitialHistoryPushRef.current = true;
+    historyRef.current = [
+      { rings: new Map(rings), scaleColors: new Map(scaleColors) },
+    ];
+    historyIndexRef.current = 0;
+    setCanUndo(false);
+    setCanRedo(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleUndoAction = useCallback(() => {
     if (historyIndexRef.current <= 0) return;
     historyIndexRef.current--;
@@ -2658,8 +2678,8 @@ const FreeformChainmail2D: React.FC = () => {
 
   // Paste the clipboard onto the design with its (0,0) anchor at the given
   // target row/col. Overwrites existing rings/scales at the destination cells
-  // (matches paint semantics — last write wins). Pushes one history entry so
-  // each paste can be undone independently.
+  // (matches paint semantics — last write wins). Pushes one POST-paste
+  // history entry so each paste can be undone in one Cmd+Z step.
   const pasteClipboardAt = useCallback(
     (targetRow: number, targetCol: number) => {
       if (!clipboard || clipboard.items.length === 0) return;
@@ -2669,58 +2689,58 @@ const FreeformChainmail2D: React.FC = () => {
         targetRow,
         clipboard.sourceMinRowParity,
       );
-      pushToHistory(rings, scaleColorsRef.current);
-      setRings((prev) => {
-        const next: RingMap = new Map(prev);
-        for (const it of clipboard.items) {
-          if (!it.ring) continue;
-          const r = anchorRow + it.deltaRow;
-          const c = targetCol + it.deltaCol;
-          next.set(`${r}-${c}`, {
-            row: r,
-            col: c,
-            color: it.ring.color,
-            cluster: it.ring.cluster,
-          });
+
+      // Compute the next state of all three stores synchronously so we can
+      // both apply it and record it. This replaces the previous pattern of
+      // pushing pre-paste state and letting setRings/setScaleColors run
+      // afterward — which conflated pre and post states across multiple
+      // actions and made undo skip two steps at a time.
+      const nextRings: RingMap = new Map(rings);
+      for (const it of clipboard.items) {
+        if (!it.ring) continue;
+        const r = anchorRow + it.deltaRow;
+        const c = targetCol + it.deltaCol;
+        nextRings.set(`${r}-${c}`, {
+          row: r,
+          col: c,
+          color: it.ring.color,
+          cluster: it.ring.cluster,
+        });
+      }
+
+      const nextScaleColors = new Map(scaleColorsRef.current);
+      for (const it of clipboard.items) {
+        if (it.scaleColor === undefined) continue;
+        const r = anchorRow + it.deltaRow;
+        const c = targetCol + it.deltaCol;
+        nextScaleColors.set(`${r},${c}`, it.scaleColor);
+      }
+
+      const nextScaleImagePatches = new Map(scaleImagePatchesRef.current);
+      let patchesChanged = false;
+      for (const it of clipboard.items) {
+        const r = anchorRow + it.deltaRow;
+        const c = targetCol + it.deltaCol;
+        const sk = `${r},${c}`;
+        if (it.scaleImagePatch !== undefined) {
+          nextScaleImagePatches.set(sk, it.scaleImagePatch);
+          patchesChanged = true;
+        } else if (it.scaleColor !== undefined && nextScaleImagePatches.has(sk)) {
+          nextScaleImagePatches.delete(sk);
+          patchesChanged = true;
         }
-        return next;
-      });
-      // Build scaleColors and scaleImagePatches changes in lockstep so a
-      // pasted solid-color scale wipes any old image patch at the destination
-      // (same overwrite semantics as paint).
-      setScaleColors((prev) => {
-        const next = new Map(prev);
-        for (const it of clipboard.items) {
-          if (it.scaleColor === undefined) continue;
-          const r = anchorRow + it.deltaRow;
-          const c = targetCol + it.deltaCol;
-          next.set(`${r},${c}`, it.scaleColor);
-        }
-        return next;
-      });
-      setScaleImagePatches((prev) => {
-        // Iterate the clipboard once: set the new patch when present, delete
-        // any prior patch at the destination key when the clipboard cell has
-        // no patch (so a solid-color paste over an image-filled scale clears
-        // the image — matching paint behavior).
-        let changed = false;
-        const next = new Map(prev);
-        for (const it of clipboard.items) {
-          const r = anchorRow + it.deltaRow;
-          const c = targetCol + it.deltaCol;
-          const sk = `${r},${c}`;
-          if (it.scaleImagePatch !== undefined) {
-            next.set(sk, it.scaleImagePatch);
-            changed = true;
-          } else if (it.scaleColor !== undefined && next.has(sk)) {
-            next.delete(sk);
-            changed = true;
-          }
-        }
-        return changed ? next : prev;
-      });
+      }
+
+      setRings(nextRings);
+      setScaleColors(nextScaleColors);
+      if (patchesChanged) setScaleImagePatches(nextScaleImagePatches);
+
+      // Record POST-paste state. With the initial mount snapshot in place,
+      // historyRef now stores [post-action-0, post-action-1, ...], so undo
+      // decrements by exactly one user-perceptible step.
+      pushToHistory(nextRings, nextScaleColors);
     },
-    [clipboard, rings, scaleColorsRef, pushToHistory],
+    [clipboard, rings, scaleColorsRef, scaleImagePatchesRef, pushToHistory],
   );
 
   // Refs mirror state for the keydown handler so we don't re-bind on every
@@ -4886,41 +4906,36 @@ const derived = useMemo(() => {
         return;
       }
 
-      // Apply to scales (no cluster logic)
+      // Apply to scales (no cluster logic). Compute next state explicitly
+      // so we can push the POST-action snapshot — undo will rewind by
+      // exactly one Cmd+Z.
       if (activeLayerRef.current === "scales") {
-        pushToHistory(rings, scaleColorsRef.current);
-        setScaleColors((prev) => {
-          const next = new Map(prev);
-          if (eraseModeRef.current) {
-            for (const cell of cells) next.delete(`${cell.row},${cell.col}`);
-          } else {
-            const col = normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex);
-            for (const cell of cells) next.set(`${cell.row},${cell.col}`, col);
-          }
-          return next;
-        });
+        const nextScaleColors = new Map(scaleColorsRef.current);
+        if (eraseModeRef.current) {
+          for (const cell of cells) nextScaleColors.delete(`${cell.row},${cell.col}`);
+        } else {
+          const col = normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex);
+          for (const cell of cells) nextScaleColors.set(`${cell.row},${cell.col}`, col);
+        }
         // Painting OR erasing must also drop any image-overlay patches at
         // those keys: a new paint color must take visual precedence over a
         // prior Image Fill transfer (overwrite), and erasing clears the patch
         // so a freshly placed scale at the same row/col doesn't silently
         // inherit the previous transfer.
-        setScaleImagePatches((prev) => {
-          if (prev.size === 0) return prev;
-          const next = new Map(prev);
-          let changed = false;
-          for (const cell of cells) {
-            const k = `${cell.row},${cell.col}`;
-            if (next.delete(k)) changed = true;
-          }
-          return changed ? next : prev;
-        });
+        const nextPatches = new Map(scaleImagePatchesRef.current);
+        let patchesChanged = false;
+        for (const cell of cells) {
+          if (nextPatches.delete(`${cell.row},${cell.col}`)) patchesChanged = true;
+        }
+        setScaleColors(nextScaleColors);
+        if (patchesChanged) setScaleImagePatches(nextPatches);
         setLastSelectionCount(cells.length);
         setSelectedKeys(new Set());
+        pushToHistory(rings, nextScaleColors);
         return;
       }
 
-      // Apply to rings
-      pushToHistory(rings, scaleColorsRef.current);
+      // Apply to rings — same POST-state pattern.
       const mapCopy: RingMap = new Map(rings);
       let clusterId = nextClusterId;
 
@@ -4954,6 +4969,7 @@ const derived = useMemo(() => {
 
       // Clear highlight after apply (overlay picking retains highlight by its own path)
       setSelectedKeys(new Set());
+      pushToHistory(mapCopy, scaleColorsRef.current);
     },
     [
       rings,
@@ -5441,23 +5457,21 @@ const derived = useMemo(() => {
 
       if (activeLayer === "scales") {
         const key = `${approxRow},${approxCol}`;
-        pushToHistoryDebounced(rings, scaleColorsRef.current);
-        setScaleColors((prev) => {
-          const next = new Map(prev);
-          if (eraseModeRef.current) next.delete(key);
-          else next.set(key, normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex));
-          return next;
-        });
+        // Compute next state explicitly and push POST-state so undo rewinds
+        // by exactly one user-perceptible step (consolidated by the 600 ms
+        // debounce for rapid sequential clicks).
+        const nextScaleColors = new Map(scaleColorsRef.current);
+        if (eraseModeRef.current) nextScaleColors.delete(key);
+        else nextScaleColors.set(key, normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex));
         // Painting OR erasing must drop any prior image-overlay patch at
         // this key. Paint = the new solid color must overwrite the image
         // patch. Erase = a freshly placed scale here doesn't auto-inherit
         // the previous Image Fill.
-        setScaleImagePatches((prev) => {
-          if (!prev.has(key)) return prev;
-          const next = new Map(prev);
-          next.delete(key);
-          return next;
-        });
+        const nextPatches = new Map(scaleImagePatchesRef.current);
+        const patchesChanged = nextPatches.delete(key);
+        setScaleColors(nextScaleColors);
+        if (patchesChanged) setScaleImagePatches(nextPatches);
+        pushToHistoryDebounced(rings, nextScaleColors);
         return;
       }
 
@@ -5496,7 +5510,6 @@ const derived = useMemo(() => {
 
       if (!found) return;
 
-      pushToHistoryDebounced(rings, scaleColorsRef.current);
       const { ring, newCluster } = resolvePlacement(
         bestCol,
         bestRow,
@@ -5518,6 +5531,8 @@ const derived = useMemo(() => {
 
       setRings(mapCopy);
       setnextClusterId(newCluster);
+      // Push POST-paint state so a single Cmd+Z rewinds exactly this click.
+      pushToHistoryDebounced(mapCopy, scaleColorsRef.current);
 
       // ✅ Diagnostics log only when enabled
       if (showDiagnostics) {
