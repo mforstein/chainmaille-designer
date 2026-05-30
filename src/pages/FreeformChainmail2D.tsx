@@ -2787,6 +2787,15 @@ const FreeformChainmail2D: React.FC = () => {
         if (selectedKeysRef.current && selectedKeysRef.current.size > 0) {
           e.preventDefault();
           copySelectionToClipboard();
+          // Seed the hover ref from the live cursor so the ghost can
+          // render immediately even if the user hasn't moved the mouse
+          // over the canvas since page load. Without this, Cmd+C from
+          // pure-keyboard use left the ref null and the preview block
+          // bailed out — no ghost visible until the next mousemove.
+          if (!mouseHoverPosRef.current && wrapRef.current) {
+            const r = wrapRef.current.getBoundingClientRect();
+            mouseHoverPosRef.current = { sx: r.width / 2, sy: r.height / 2 };
+          }
           // Arm the paste-preview ghost so the user can see where their
           // right-click will land.
           setPastePreviewActive(true);
