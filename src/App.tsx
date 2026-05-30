@@ -107,6 +107,7 @@ import PasswordGate from "./pages/PasswordGate";
 import AuthPage from "./pages/AuthPage";
 import PricingPage from "./pages/PricingPage";
 import EulaPage from "./pages/EulaPage";
+import PrivacyPolicy from "./pages/PrivacyPolicy";
 import CommercialLicensePage from "./pages/CommercialLicensePage";
 import FreeformChainmail2D from "./pages/FreeformChainmail2D";
 import ErinPattern2D from "./pages/ErinPattern2D";
@@ -2510,6 +2511,7 @@ function App() {
       <Route path="/auth" element={<AuthPage />} />
       <Route path="/pricing" element={<PricingPage />} />
       <Route path="/eula" element={<EulaPage />} />
+      <Route path="/privacy" element={<PrivacyPolicy />} />
       <Route path="/commercial-license" element={<CommercialLicensePage />} />
 
       {/* ✅ PUBLIC TOOLS — NO AUTH */}

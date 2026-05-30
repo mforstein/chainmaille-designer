@@ -115,6 +115,7 @@ android/local.properties
 android/app/release
 *.keystore
 *.jks
+android/keystore.properties
 
 # =========================
 # Capacitor — iOS build artifacts
