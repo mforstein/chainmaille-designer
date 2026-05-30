@@ -1359,7 +1359,17 @@ const FreeformChainmail2D: React.FC = () => {
     scaleColor?: string;
     scaleImagePatch?: string;
   };
-  const [clipboard, setClipboard] = useState<{ items: ClipboardItem[]; w: number; h: number } | null>(null);
+  // sourceMinRowParity captures the parity (0=even, 1=odd) of the top-most
+  // row in the original selection. The brick lattice shifts odd rows by
+  // +centerSpacing/2, so a paste preserves the cluster's shape only when
+  // the target's anchor row has the same parity as the source's. Paste
+  // and preview use this flag to snap targetRow to a matching-parity row.
+  const [clipboard, setClipboard] = useState<{
+    items: ClipboardItem[];
+    w: number;
+    h: number;
+    sourceMinRowParity: 0 | 1;
+  } | null>(null);
   // When true, the next canvas click pastes the clipboard at the clicked
   // cell. Stays on after each paste so the user can place multiple copies.
   // Exit via Esc, the Paste toolbar button toggle, or Cmd/Ctrl+V again.
@@ -2631,8 +2641,20 @@ const FreeformChainmail2D: React.FC = () => {
       items,
       w: maxCol - minCol + 1,
       h: maxRow - minRow + 1,
+      sourceMinRowParity: (minRow & 1) as 0 | 1,
     });
   }, [selectedKeys, rings, scaleColors, scaleImagePatches]);
+
+  // Snap a paste target row to one with the same parity as the source's
+  // top row, so the brick lattice's odd-row half-cs offset doesn't mirror
+  // the cluster horizontally. Prefer the same row when parity matches;
+  // otherwise nudge by +1 (paste lands one row below the click point).
+  function snapTargetRowToParity(
+    targetRow: number,
+    sourceParity: 0 | 1,
+  ): number {
+    return (targetRow & 1) === sourceParity ? targetRow : targetRow + 1;
+  }
 
   // Paste the clipboard onto the design with its (0,0) anchor at the given
   // target row/col. Overwrites existing rings/scales at the destination cells
@@ -2641,12 +2663,18 @@ const FreeformChainmail2D: React.FC = () => {
   const pasteClipboardAt = useCallback(
     (targetRow: number, targetCol: number) => {
       if (!clipboard || clipboard.items.length === 0) return;
+      // Brick-offset shape preservation: snap to matching parity so the
+      // pasted cluster looks identical to the source rather than mirrored.
+      const anchorRow = snapTargetRowToParity(
+        targetRow,
+        clipboard.sourceMinRowParity,
+      );
       pushToHistory(rings, scaleColorsRef.current);
       setRings((prev) => {
         const next: RingMap = new Map(prev);
         for (const it of clipboard.items) {
           if (!it.ring) continue;
-          const r = targetRow + it.deltaRow;
+          const r = anchorRow + it.deltaRow;
           const c = targetCol + it.deltaCol;
           next.set(`${r}-${c}`, {
             row: r,
@@ -2664,7 +2692,7 @@ const FreeformChainmail2D: React.FC = () => {
         const next = new Map(prev);
         for (const it of clipboard.items) {
           if (it.scaleColor === undefined) continue;
-          const r = targetRow + it.deltaRow;
+          const r = anchorRow + it.deltaRow;
           const c = targetCol + it.deltaCol;
           next.set(`${r},${c}`, it.scaleColor);
         }
@@ -2678,7 +2706,7 @@ const FreeformChainmail2D: React.FC = () => {
         let changed = false;
         const next = new Map(prev);
         for (const it of clipboard.items) {
-          const r = targetRow + it.deltaRow;
+          const r = anchorRow + it.deltaRow;
           const c = targetCol + it.deltaCol;
           const sk = `${r},${c}`;
           if (it.scaleImagePatch !== undefined) {
@@ -4178,9 +4206,15 @@ const derived = useMemo(() => {
         const { lx: hlx, ly: hly } = screenToWorld(hsx, hsy);
         const adjHx = hlx - circleOffsetX;
         const adjHy = hly - circleOffsetY;
-        const { row: anchorRow, col: anchorCol } = logicalToRowColApprox(
+        const { row: rawAnchorRow, col: anchorCol } = logicalToRowColApprox(
           adjHx,
           adjHy,
+        );
+        // Mirror the parity snap pasteClipboardAt applies, so the preview
+        // shows exactly where the paste will land — not where the cursor is.
+        const anchorRow = snapTargetRowToParity(
+          rawAnchorRow,
+          clipboardRef.current.sourceMinRowParity,
         );
         // Approximate ring outer radius in screen pixels from the lattice
         // scale at the cursor: distance between two adjacent column centers.
