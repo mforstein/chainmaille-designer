@@ -4202,7 +4202,11 @@ const derived = useMemo(() => {
     // ─── Always-on faint alignment grid ───────────────────────────────────
     // Dots at every ring-center position visible in the viewport. The brick
     // offset comes from rcToLogical (odd rows shifted half a centerSpacing).
-    // Helps users align pastes with existing structures.
+    // Matches the RingRenderer's positioning chain exactly:
+    //   rcToLogical(row, col) → logicalToWorld → worldToScreen
+    // Earlier code added circleOffsetX/Y here, but the renderer ignores
+    // circleOffsetX/Y when placing rings, so the grid sat ~one diameter
+    // off from the actual rings whenever circleOffsetX/Y was non-zero.
     try {
       const tl = screenToWorld(0, 0);
       const br = screenToWorld(rect.width, rect.height);
@@ -4212,10 +4216,10 @@ const derived = useMemo(() => {
         centerSpacing > 0 &&
         spacingY > 0
       ) {
-        const minLx = Math.min(tl.lx, br.lx) - circleOffsetX;
-        const maxLx = Math.max(tl.lx, br.lx) - circleOffsetX;
-        const minLy = Math.min(tl.ly, br.ly) - circleOffsetY;
-        const maxLy = Math.max(tl.ly, br.ly) - circleOffsetY;
+        const minLx = Math.min(tl.lx, br.lx);
+        const maxLx = Math.max(tl.lx, br.lx);
+        const minLy = Math.min(tl.ly, br.ly);
+        const maxLy = Math.max(tl.ly, br.ly);
         const minRowG = Math.floor(minLy / spacingY) - 1;
         const maxRowG = Math.ceil(maxLy / spacingY) + 1;
         const minColG = Math.floor(minLx / centerSpacing) - 1;
@@ -4230,13 +4234,7 @@ const derived = useMemo(() => {
           for (let dc = 0; dc <= colSpanG; dc++) {
             const col = minColG + dc;
             const { x: gx, y: gy } = rcToLogical(row, col);
-            // adjusted-logical → logical → world (Y flip happens in
-            // logicalToWorld) → screen. Skipping logicalToWorld here was
-            // the cause of the grid landing at -row instead of +row.
-            const { wx: gwx, wy: gwy } = logicalToWorld(
-              gx + circleOffsetX,
-              gy + circleOffsetY,
-            );
+            const { wx: gwx, wy: gwy } = logicalToWorld(gx, gy);
             const { sx: gsx, sy: gsy } = worldToScreen(gwx, gwy);
             if (gsx < -5 || gsy < -5 || gsx > rect.width + 5 || gsy > rect.height + 5) continue;
             ctx.beginPath();
@@ -4281,14 +4279,8 @@ const derived = useMemo(() => {
         // Same logical→world→screen chain as the actual ring positions below.
         const probeA = rcToLogical(anchorRow, anchorCol);
         const probeB = rcToLogical(anchorRow, anchorCol + 1);
-        const wA = logicalToWorld(
-          probeA.x + circleOffsetX,
-          probeA.y + circleOffsetY,
-        );
-        const wB = logicalToWorld(
-          probeB.x + circleOffsetX,
-          probeB.y + circleOffsetY,
-        );
+        const wA = logicalToWorld(probeA.x, probeA.y);
+        const wB = logicalToWorld(probeB.x, probeB.y);
         const sA = worldToScreen(wA.wx, wA.wy);
         const sB = worldToScreen(wB.wx, wB.wy);
         const scalePx = Math.hypot(sB.sx - sA.sx, sB.sy - sA.sy);
@@ -4302,12 +4294,12 @@ const derived = useMemo(() => {
           const r = anchorRow + it.deltaRow;
           const c = anchorCol + it.deltaCol;
           const { x: rx, y: ry } = rcToLogical(r, c);
-          // logicalToWorld restores world Y orientation; without it the
-          // preview ended up mirrored vertically and offset below cursor.
-          const { wx: pwx, wy: pwy } = logicalToWorld(
-            rx + circleOffsetX,
-            ry + circleOffsetY,
-          );
+          // Match the renderer chain exactly: rcToLogical (= logical) →
+          // logicalToWorld (subtracts logicalOrigin + flips Y) → screen.
+          // No circleOffsetX/Y here — the renderer doesn't add them, so
+          // the preview must not either or it sits offset from the
+          // actual ring by ~one diameter.
+          const { wx: pwx, wy: pwy } = logicalToWorld(rx, ry);
           const { sx: psx, sy: psy } = worldToScreen(pwx, pwy);
           ctx.beginPath();
           ctx.arc(psx, psy, ringRadiusPx, 0, Math.PI * 2);
