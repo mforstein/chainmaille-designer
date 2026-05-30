@@ -36,6 +36,49 @@ function legacyTier(): Tier | null {
   return null;
 }
 
+// ─── Developer tier override (dev / QA / testing backdoor) ───────────────────
+// Activate by visiting any URL with:   ?devtier=<tier>&devkey=<DEV_TOKEN>
+//   where <tier> is one of:  free | maker | crafter | studio
+// Once activated the override is persisted in localStorage as `chainmail_dev_tier`
+// and survives across navigations and sessions. Beats every other tier source
+// (Supabase metadata, ERIN50 legacy bridge).
+//
+// To deactivate:  visit any URL with  ?devtier=clear   (no token required)
+//                 OR in devtools:     localStorage.removeItem('chainmail_dev_tier')
+//
+// The token is only mild obscurity — keeps casual users from stumbling onto
+// it, but anyone who reads the JS bundle can find it. Rotate by editing
+// DEV_TIER_TOKEN below; that invalidates every existing dev URL.
+const DEV_TIER_KEY = "chainmail_dev_tier";
+const DEV_TIER_TOKEN = "erin-dev-2026";
+const VALID_TIER_NAMES: readonly Tier[] = ["free", "maker", "crafter", "studio"] as const;
+
+function devOverrideTier(): Tier | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl = params.get("devtier");
+    if (fromUrl !== null) {
+      const lowered = fromUrl.toLowerCase();
+      if (lowered === "clear") {
+        localStorage.removeItem(DEV_TIER_KEY);
+      } else if (
+        params.get("devkey") === DEV_TIER_TOKEN &&
+        (VALID_TIER_NAMES as readonly string[]).includes(lowered)
+      ) {
+        localStorage.setItem(DEV_TIER_KEY, lowered);
+      }
+    }
+    const stored = localStorage.getItem(DEV_TIER_KEY);
+    if (stored && (VALID_TIER_NAMES as readonly string[]).includes(stored)) {
+      return stored as Tier;
+    }
+  } catch {
+    // localStorage / window access denied (private mode, etc.) — silently no-op
+  }
+  return null;
+}
+
 // ─── Context shape ────────────────────────────────────────────────────────────
 interface AuthContextValue {
   user: User | null;
@@ -54,10 +97,13 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
-  const [tier, setTier] = useState<Tier>(() => legacyTier() ?? "free");
+  const [tier, setTier] = useState<Tier>(() => devOverrideTier() ?? legacyTier() ?? "free");
   const [loading, setLoading] = useState(true);
 
   function tierFromUser(u: User | null): Tier {
+    // Dev override beats all other tier sources (URL param + localStorage).
+    const override = devOverrideTier();
+    if (override) return override;
     if (!u) return legacyTier() ?? "free";
     const meta = u.user_metadata as { tier?: Tier } | undefined;
     return meta?.tier ?? "free";

@@ -5288,6 +5288,31 @@ const derived = useMemo(() => {
   );
 
   // ===============================
+  // RIGHT-CLICK PASTE
+  // ===============================
+  // Conventional copy/paste: after copying a selection (Cmd/Ctrl+C), right-click
+  // anywhere on the canvas to paste the clipboard centered at that point.
+  // Equivalent on iPad: long-press the canvas (Safari fires contextmenu on
+  // long-press when touch-action is "none", which the interaction canvas sets).
+  // Falls through silently if the clipboard is empty so the browser context
+  // menu still doesn't appear (per the design canvas owning the gesture).
+  const handleContextMenuPaste = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const cb = clipboardRef.current;
+      if (!cb || cb.items.length === 0) return;
+      const { sx, sy } = getCanvasPoint(e);
+      const { lx, ly } = screenToWorld(sx, sy);
+      const adjLx = lx - circleOffsetX;
+      const adjLy = ly - circleOffsetY;
+      const { row, col } = logicalToRowColApprox(adjLx, adjLy);
+      pasteClipboardAt(row, col);
+    },
+    [getCanvasPoint, screenToWorld, circleOffsetX, circleOffsetY, pasteClipboardAt],
+  );
+
+  // ===============================
   // CLEAR / GEOMETRY RESET
   // ===============================
   const handleClear = useCallback(() => {
@@ -8149,6 +8174,7 @@ const scales3D = useMemo(() => {
           onMouseUp={handleMouseUp}
           onMouseMove={handleMouseMove}
           onClick={handleClick}
+          onContextMenu={handleContextMenuPaste}
           onMouseLeave={() => {
             // If pointer leaves while selecting, finalize safely
             if (isSelecting && selectionMode !== "none") {
