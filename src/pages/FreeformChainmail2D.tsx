@@ -1269,10 +1269,25 @@ const FreeformChainmail2D: React.FC = () => {
   useEffect(() => {
     pureSelectModeRef.current = pureSelectMode;
   }, [pureSelectMode]);
-  // Always drop pure-select intent when the selection tool is dismissed,
-  // so re-entering via the ShapePanel doesn't accidentally inherit it.
+
+  // Persistent screen-space rect of the last completed pure-select drag, so
+  // the user sees what they captured after they release the mouse. Cleared
+  // when the marquee is dismissed, the user pastes, or starts a new drag.
+  const [persistedSelectionRect, setPersistedSelectionRect] = useState<{
+    sx0: number;
+    sy0: number;
+    sx1: number;
+    sy1: number;
+  } | null>(null);
+
+  // Always drop pure-select intent + the persisted rect when the selection
+  // tool is dismissed, so re-entering via the ShapePanel doesn't inherit
+  // either.
   useEffect(() => {
-    if (selectionMode === "none") setPureSelectMode(false);
+    if (selectionMode === "none") {
+      setPureSelectMode(false);
+      setPersistedSelectionRect(null);
+    }
   }, [selectionMode]);
 
   // authoritative selected ring keys: `${row}-${col}`
@@ -4086,6 +4101,29 @@ const derived = useMemo(() => {
     ctx.clearRect(0, 0, rect.width, rect.height);
 
     if (selectionMode === "none") return;
+
+    // Released drag in pure-select mode: draw the persisted selection rect
+    // as a dashed outline so the user can see what they captured. This
+    // path runs only when there's no active drag (post-release).
+    if (!isSelecting && pureSelectMode && persistedSelectionRect) {
+      const { sx0, sy0, sx1, sy1 } = persistedSelectionRect;
+      const rx = Math.min(sx0, sx1);
+      const ry = Math.min(sy0, sy1);
+      const rw = Math.abs(sx1 - sx0);
+      const rh = Math.abs(sy1 - sy0);
+      ctx.save();
+      ctx.setLineDash([6, 4]);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(37,99,235,0.95)";
+      ctx.fillStyle = "rgba(37,99,235,0.08)";
+      ctx.beginPath();
+      ctx.rect(rx, ry, rw, rh);
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
     if (!isSelecting) return;
 
     const sel = selectionRef.current;
@@ -4213,7 +4251,22 @@ const derived = useMemo(() => {
     ctx.fillStyle = "rgba(248,250,252,0.9)";
     const hint = eraseMode ? "🧽" : overlayPickingRef.current ? "🖼️" : "🎨";
     ctx.fillText(`${hint} ${lastSelectionCount || ""}`, 10, rect.height - 12);
-  }, [selectionMode, isSelecting, eraseMode, lastSelectionCount]);
+  }, [
+    selectionMode,
+    isSelecting,
+    eraseMode,
+    lastSelectionCount,
+    pureSelectMode,
+    persistedSelectionRect,
+  ]);
+
+  // Re-render the overlay whenever the persisted rect changes so the dashed
+  // selection box shows up immediately after the marquee drag is released.
+  // The other call sites of drawSelectionOverlay only fire during active
+  // drags; without this, the rect wouldn't appear until the next mouseMove.
+  useEffect(() => {
+    if (persistedSelectionRect) drawSelectionOverlay();
+  }, [persistedSelectionRect, drawSelectionOverlay]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -4640,6 +4693,15 @@ const derived = useMemo(() => {
       // is the classical marquee semantic the Shapes path lacks.
       if (pureSelectModeRef.current) {
         setLastSelectionCount(cells.length);
+        // Persist the screen-space rect so the user can see what was
+        // captured after they release the mouse. The drawSelectionOverlay
+        // function picks this up and renders a dashed outline.
+        setPersistedSelectionRect({
+          sx0: sel.sx0,
+          sy0: sel.sy0,
+          sx1: sel.sx1,
+          sy1: sel.sy1,
+        });
         return;
       }
 
@@ -5333,6 +5395,11 @@ const derived = useMemo(() => {
       const adjLy = ly - circleOffsetY;
       const { row, col } = logicalToRowColApprox(adjLx, adjLy);
       pasteClipboardAt(row, col);
+      // Drop out of marquee mode and clear the visible selection so the
+      // user is back in paint mode for follow-up edits. The effect on
+      // selectionMode also clears pureSelectMode and persistedSelectionRect.
+      setSelectionMode("none");
+      setSelectedKeys(new Set());
     },
     [getCanvasPoint, screenToWorld, circleOffsetX, circleOffsetY, pasteClipboardAt],
   );
