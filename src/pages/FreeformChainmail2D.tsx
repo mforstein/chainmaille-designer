@@ -2672,6 +2672,18 @@ const FreeformChainmail2D: React.FC = () => {
       h: maxRow - minRow + 1,
       sourceMinRowParity: (minRow & 1) as 0 | 1,
     });
+    // Arm the paste-preview ghost from inside the copy function so BOTH
+    // the keyboard shortcut (Cmd/Ctrl+C) and the toolbar Copy 📋 button
+    // surface the ghost. Without this the button path silently set the
+    // clipboard with no visible feedback.
+    setPastePreviewActive(true);
+    // Seed the hover ref to canvas center so the ghost has somewhere to
+    // render immediately (the next mousemove overwrites it). This is what
+    // makes the ghost actually visible right after copy.
+    if (!mouseHoverPosRef.current && wrapRef.current) {
+      const r = wrapRef.current.getBoundingClientRect();
+      mouseHoverPosRef.current = { sx: r.width / 2, sy: r.height / 2 };
+    }
   }, [selectedKeys, rings, scaleColors, scaleImagePatches]);
 
   // Snap a paste target row to one with the same parity as the source's
@@ -2786,19 +2798,10 @@ const FreeformChainmail2D: React.FC = () => {
       if (mod && e.key.toLowerCase() === "c") {
         if (selectedKeysRef.current && selectedKeysRef.current.size > 0) {
           e.preventDefault();
+          // copySelectionToClipboard now arms the paste-preview ghost +
+          // seeds the hover ref, so this path no longer needs to do that
+          // explicitly. Same for the toolbar 📋 Copy button.
           copySelectionToClipboard();
-          // Seed the hover ref from the live cursor so the ghost can
-          // render immediately even if the user hasn't moved the mouse
-          // over the canvas since page load. Without this, Cmd+C from
-          // pure-keyboard use left the ref null and the preview block
-          // bailed out — no ghost visible until the next mousemove.
-          if (!mouseHoverPosRef.current && wrapRef.current) {
-            const r = wrapRef.current.getBoundingClientRect();
-            mouseHoverPosRef.current = { sx: r.width / 2, sy: r.height / 2 };
-          }
-          // Arm the paste-preview ghost so the user can see where their
-          // right-click will land.
-          setPastePreviewActive(true);
           // For the Marquee/pure-select workflow: after copy, exit the
           // selection tool so the user is back in paint mode and can
           // immediately right-click anywhere to paste — no extra toggle.
