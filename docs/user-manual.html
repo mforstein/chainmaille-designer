@@ -1,0 +1,576 @@
+<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><title>Chainmail Studio User Manual</title>
+<style>
+  @page { size: letter; margin: 0.75in; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    max-width: 7.5in; margin: 0 auto; padding: 0.5in 0.4in;
+    color: #1f2937; line-height: 1.55; font-size: 11pt;
+  }
+  h1 { font-size: 24pt; color: #0b0f1a; border-bottom: 2px solid #0b0f1a; padding-bottom: 8px; margin: 0 0 12px; }
+  h2 { font-size: 17pt; color: #0b1220; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin: 32px 0 10px; page-break-after: avoid; }
+  h3 { font-size: 13pt; color: #1f2937; margin: 18px 0 6px; page-break-after: avoid; }
+  h4 { font-size: 11pt; color: #334155; margin: 12px 0 4px; }
+  p, ul, ol { margin: 6px 0 10px; }
+  code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; font-size: 9.5pt; font-family: 'SF Mono', Menlo, monospace; }
+  pre code { display: block; padding: 10px; overflow-x: auto; line-height: 1.4; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 14px; font-size: 10pt; }
+  th, td { border: 1px solid #cbd5e1; padding: 6px 9px; vertical-align: top; text-align: left; }
+  th { background: #e2e8f0; font-weight: 700; }
+  blockquote { border-left: 3px solid #60a5fa; margin: 10px 0; padding: 4px 12px; background: #eff6ff; color: #1e3a8a; font-size: 10pt; }
+  a { color: #2563eb; text-decoration: none; }
+  hr { border: none; border-top: 1px solid #e2e8f0; margin: 24px 0; }
+  /* Visible screenshot placeholders so they stand out in the printed PDF */
+  p:has(em:first-child:contains("SCREENSHOT")), p:has(strong:contains("📷")) {
+    background: #fef9c3; padding: 8px 10px; border-left: 3px solid #ca8a04; border-radius: 4px;
+  }
+</style>
+</head><body><h1>Chainmail Studio — User Manual</h1>
+<p><strong>Chainmail Studio by Woven Rainbows by Erin</strong>
+Version 1.0 · Updated 2026-05-30</p>
+<hr />
+<h2>Contents</h2>
+<ol>
+<li><a href="#1-read-first--assumptions">Read first — assumptions</a></li>
+<li><a href="#2-home-page">Home page</a></li>
+<li><a href="#3-workspace-navigator">Workspace navigator</a></li>
+<li><a href="#4-freeform-studio">Freeform Studio</a></li>
+<li><a href="#5-3d-designer">3D Designer</a></li>
+<li><a href="#6-ring-size-chart">Ring Size Chart</a></li>
+<li><a href="#7-weave-tuner">Weave Tuner</a></li>
+<li><a href="#8-weave-atlas">Weave Atlas</a></li>
+<li><a href="#9-erin-pattern-2d-basic">Erin Pattern 2D (Basic)</a></li>
+<li><a href="#10-export--bom-csv-pdf-3d">Export — BOM, CSV, PDF, 3D</a></li>
+<li><a href="#11-how-to-recipes">How-to recipes</a></li>
+<li><a href="#12-keyboard-shortcuts">Keyboard shortcuts</a></li>
+</ol>
+<blockquote>
+<p><strong>📷 Note on screenshots</strong>: every section has a <code>[SCREENSHOT:]</code> placeholder describing what to capture. When you're filling this in, open the relevant page in the app and grab the indicated view.</p>
+</blockquote>
+<hr />
+<h2>1. Read first — assumptions</h2>
+<p>Everything here assumes the following. Read once; later sections won't repeat them.</p>
+<h3>Geometry</h3>
+<ul>
+<li>The canvas is a <strong>4-in-1 European hex grid</strong>. All renderers (Freeform, Designer, Basic) place rings on this grid. Other weaves (Box Chain, Byzantine, Persian, Scale Maille) live in the Atlas but their dedicated canvas engines are in progress.</li>
+<li>All distances are in <strong>millimeters</strong>. Inner Diameter (ID), Wire Diameter (WD), and Aspect Ratio (AR = ID ÷ WD) drive geometry. AR &lt; 3 is too tight; the workable range is <strong>3.5–5.5</strong>.</li>
+<li>The <strong>Tuner snapshot</strong> is the source of truth for ring + scale geometry. Whatever you set in the Tuner pushes live to Freeform and Designer without a reload.</li>
+</ul>
+<h3>Tier access (v1)</h3>
+<table>
+<thead>
+<tr>
+<th>Tier</th>
+<th>Cost</th>
+<th>Unlocks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Free</strong></td>
+<td>$0</td>
+<td>Home, Basic, Ring Chart, Atlas browse, Tuner preview</td>
+</tr>
+<tr>
+<td><strong>Maker</strong></td>
+<td>~$8/mo</td>
+<td>3D Designer (no image overlay), Tuner save, Atlas apply, CSV export</td>
+</tr>
+<tr>
+<td><strong>Crafter</strong></td>
+<td>~$18/mo</td>
+<td>3D Designer full (spline, flood fill, image overlay), Erin Pattern 2D full, PDF BOM, Physical Pattern PDF</td>
+</tr>
+<tr>
+<td><strong>Studio</strong></td>
+<td>~$35/mo</td>
+<td>Freeform full + image overlay/transfer, shape &amp; spline fill, supplier cost estimator, GLB/STL export, commercial-use license</td>
+</tr>
+</tbody>
+</table>
+<p><strong>iPhone/iPad/Android apps</strong> ship with <strong>Free tier features only</strong>. Subscribe at <a href="https://chainmaildesigner.com">chainmaildesigner.com</a> to unlock paid tools.</p>
+<h3>Default scale shape</h3>
+<ul>
+<li>The &quot;Standard&quot; scale is internally named <strong>&quot;leaf&quot;</strong> — an almond/lancet silhouette matching a real chainmaille scale. This is the default for new designs.</li>
+<li>The legacy <strong>&quot;teardrop&quot;</strong> shape is still selectable. Older designs saved with teardrop render unchanged.</li>
+</ul>
+<h3>Persistence</h3>
+<ul>
+<li>Most preferences (color palette, last-used scale shape, panel positions, weave snapshot, Atlas matrix) live in <strong>localStorage</strong>. Clearing site data resets to defaults.</li>
+<li>Project files (JSON) capture canvas contents + overlay settings, but <strong>not</strong> the palette or Tuner snapshot — those follow the device, not the file.</li>
+</ul>
+<h3>Browser / device requirements</h3>
+<ul>
+<li><strong>WebGL 2</strong> required for all 3D renders. Hardware acceleration must be on.</li>
+<li>Touch + mouse + Apple Pencil all supported. Two-finger pan and pinch-zoom always work regardless of active tool.</li>
+<li>Installable as a <strong>PWA</strong> on mobile/desktop (manifest references <code>/icons/icon-192.png</code> and <code>/icons/icon-512.png</code>).</li>
+</ul>
+<hr />
+<h2>2. Home page</h2>
+<p><strong>URL</strong>: <code>/wovenrainbowsbyerin</code>
+<strong>Access</strong>: public, no account required</p>
+<p>[SCREENSHOT: Home page hero with the Etsy shop strip visible below]</p>
+<p>The public landing page. Loads live data from Erin's Etsy shop, the designer features gallery, and the blog.</p>
+<table>
+<thead>
+<tr>
+<th>Element</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Access Studio button</strong></td>
+<td>Routes to the Workspace Navigator where you pick a design tool.</td>
+</tr>
+<tr>
+<td><strong>Latest Release Notes</strong></td>
+<td>Shows the most recent update post. Admin users see a &quot;+ Post Update&quot; button.</td>
+</tr>
+<tr>
+<td><strong>Designer Gallery</strong></td>
+<td>Live grid from <code>/designer_features.json</code> — feature shots with captions.</td>
+</tr>
+<tr>
+<td><strong>Etsy shop strip</strong></td>
+<td>Live listings from the Woven Rainbows by Erin Etsy shop. Tap a card to open in a new tab.</td>
+</tr>
+<tr>
+<td><strong>Blog system</strong></td>
+<td>Erin (admin) can post updates; entries persist via Supabase in production.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>3. Workspace navigator</h2>
+<p><strong>URL</strong>: <code>/workspace</code>
+<strong>Access</strong>: any signed-in user (login is optional in v1)</p>
+<p>[SCREENSHOT: Workspace navigator showing tool tiles]</p>
+<p>The launchpad after signing in. Shows your account tier and links to every design tool.</p>
+<p><strong>Design tools</strong>:</p>
+<ul>
+<li>🪡 <strong>Basic</strong> — grid color planner (free)</li>
+<li>💎 <strong>Designer</strong> — 3D Ring Grid Designer (Maker+)</li>
+<li>✨ <strong>Studio</strong> — Freeform Designer (Studio)</li>
+</ul>
+<p><strong>Utilities</strong>:</p>
+<ul>
+<li>📊 <strong>Ring Size Chart</strong> — AR reference (free)</li>
+<li>⚙️ <strong>Weave Tuner</strong> — geometry workbench (preview free, save requires Maker)</li>
+<li>🌐 <strong>Weave Atlas</strong> — curated preset catalog (browse free, apply requires Maker)</li>
+</ul>
+<hr />
+<h2>4. Freeform Studio</h2>
+<p><strong>URL</strong>: <code>/freeform</code>
+<strong>Access</strong>: Studio tier (preview-only on free)</p>
+<p>[SCREENSHOT: Freeform Studio with a multi-color design in progress, palette visible bottom-left, toolbar on the left edge]</p>
+<p>The primary production design environment. Place rings and scales on a free-form hex grid, apply colors, overlay reference images, fill shapes, copy + paste regions, and export finished patterns.</p>
+<h3>Toolbar (left side, draggable)</h3>
+<table>
+<thead>
+<tr>
+<th>Icon</th>
+<th>Tool</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>☰</td>
+<td>Navigation</td>
+<td>Opens the compass overlay to jump between pages</td>
+</tr>
+<tr>
+<td>📦</td>
+<td>Finalize &amp; Export</td>
+<td>PDF, CSV, GLB, STL, Physical Pattern exports</td>
+</tr>
+<tr>
+<td>⚙️</td>
+<td>Utility Panel</td>
+<td>Toggles secondary pill (Geometry, Save/Load, Library, Stats, BG, Reset)</td>
+</tr>
+<tr>
+<td>🎨</td>
+<td>Draw (Paint)</td>
+<td>Primary placement tool. Click or drag to place rings at hex-grid positions. R/S toggles ring/scale layer.</td>
+</tr>
+<tr>
+<td>⌫</td>
+<td>Eraser</td>
+<td>Click or drag to remove. Painting wipes any prior image-fill patch.</td>
+</tr>
+<tr>
+<td>↩️ ↪️</td>
+<td>Undo / Redo</td>
+<td>Per-action history. <strong>Each Cmd+Z reverts exactly one action.</strong> Cmd+Shift+Z to redo.</td>
+</tr>
+<tr>
+<td>⬚</td>
+<td><strong>Marquee Select</strong></td>
+<td>Click-then-drag to select a rectangular region of existing rings/scales (no painting). Then Cmd+C to copy, right-click to paste.</td>
+</tr>
+<tr>
+<td>◼</td>
+<td>Shapes</td>
+<td>Shape picker (Square, Circle, Hex, Octagon, Heart, Triangle). Drag on canvas to fill the shape (paint-and-select).</td>
+</tr>
+<tr>
+<td>R/S</td>
+<td>Ring/Scale layer</td>
+<td>Switches the active paint layer. S = scales highlighted blue.</td>
+</tr>
+<tr>
+<td>✋</td>
+<td>Pan</td>
+<td>Click-drag to scroll without placing. Two-finger touch always pans.</td>
+</tr>
+<tr>
+<td>✛</td>
+<td>Scale-Plane drag</td>
+<td>Drags the scale grid relative to rings, writing to <code>gridOffsetXmm/Ymm</code>.</td>
+</tr>
+<tr>
+<td>📋</td>
+<td>Copy</td>
+<td>Copies selected region's rings + scales (with image patches) onto the clipboard. Cmd/Ctrl+C also works.</td>
+</tr>
+<tr>
+<td>🖼️</td>
+<td>Image Overlay</td>
+<td>Opens the Image Overlay panel (Studio tier).</td>
+</tr>
+<tr>
+<td>🧹</td>
+<td>Clear All</td>
+<td>Removes everything. Confirmation required.</td>
+</tr>
+</tbody>
+</table>
+<h3>Copy / paste workflow</h3>
+<ol>
+<li><strong>Marquee Select</strong> (⬚) — click button, drag rectangle around existing rings/scales</li>
+<li><strong>Cmd+C</strong> (or 📋 Copy) — captures the selection. The 📋 button shows a count badge. A blue dashed outline marks the captured region.</li>
+<li><strong>Right-click anywhere on the canvas</strong> — pastes the clipboard at that point. A blue ghost preview follows your cursor showing exactly where rings will land.</li>
+<li><strong>Esc</strong> dismisses the ghost without pasting.</li>
+</ol>
+<blockquote>
+<p><strong>Note</strong>: paste auto-snaps the target row to the nearest matching-parity row (because chainmail's brick pattern shifts odd rows by half a centerSpacing). So a paste may land one row above or below where you clicked — that's how the cluster keeps its original shape.</p>
+</blockquote>
+<p>[SCREENSHOT: Marquee selection with dashed outline + paste preview ghost following cursor]</p>
+<h3>Image overlay (Studio tier)</h3>
+<p>[SCREENSHOT: Image overlay panel with sliders, image loaded, preview visible on canvas]</p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Load / Replace image</strong></td>
+<td>Drag-and-drop or click drop zone to load. Replace swaps for a new file.</td>
+</tr>
+<tr>
+<td><strong>Scale / Opacity / Rotation / Pan X / Pan Y</strong></td>
+<td>Register the image against your design. On-canvas preview updates live.</td>
+</tr>
+<tr>
+<td><strong>Tile (repeat)</strong></td>
+<td>Repeat the image across the design. <strong>Pattern Scale (%)</strong> sets tile size; 100% = single image fills design, 15% = small dense pattern.</td>
+</tr>
+<tr>
+<td><strong>Mask outline</strong></td>
+<td>Dashed rectangle defines the world-space region to paint into. Drag corners or body; &quot;Reset&quot; snaps to auto-bounds.</td>
+</tr>
+<tr>
+<td><strong>Transfer Scope</strong></td>
+<td>All rings (every cell of target) or Selection only.</td>
+</tr>
+<tr>
+<td><strong>Transfer Target</strong></td>
+<td>Rings · Scales · Both.</td>
+</tr>
+<tr>
+<td><strong>Preview Mode</strong></td>
+<td>&quot;Sampled Colors&quot; (default, shows actual ring/scale colors) or &quot;Raw Image&quot; (legacy clipped view).</td>
+</tr>
+<tr>
+<td><strong>Image Fill on Scales</strong></td>
+<td>When on, scales get a per-scale image patch instead of flat color. <strong>Image Boundary (%)</strong> insets the image inside the scale outline.</td>
+</tr>
+<tr>
+<td><strong>Transfer (green, bottom)</strong></td>
+<td>Commits the preview to actual ring/scale colors. Closing the panel without transfer reverts the preview.</td>
+</tr>
+</tbody>
+</table>
+<h3>Studio Stats panel (top-right)</h3>
+<p>Shows live counters: rings, colors used, geometry params (ID, WD, center spacing), design bounds (mm + ring count), and a breakdown of rings by color. Scales appear when present.</p>
+<hr />
+<h2>5. 3D Designer</h2>
+<p><strong>URL</strong>: <code>/designer</code>
+<strong>Access</strong>: Maker tier (Crafter+ for spline fill, image overlay)</p>
+<p>[SCREENSHOT: 3D Designer with a colored ring grid rotated 30°, palette visible]</p>
+<p>A 3D-rendered ring grid where every ring is a real torus you can rotate around. Use for projects where you want to validate the weave visually before cutting wire.</p>
+<h3>Tools (same icons as Freeform where applicable)</h3>
+<ul>
+<li><strong>Paint</strong> — click a ring to color it; drag to color multiple</li>
+<li><strong>Erase</strong> — same flow but removes color</li>
+<li><strong>Flood Fill</strong> — fills connected same-color rings (Crafter)</li>
+<li><strong>Spline Fill</strong> — draw a curve, the renderer fills the strip (Crafter)</li>
+<li><strong>Image Overlay</strong> — apply image colors to the grid (Crafter)</li>
+<li><strong>Camera rotate</strong> — orbit with click-drag, zoom with scroll/pinch</li>
+<li><strong>Camera reset</strong> — snaps back to top-down</li>
+</ul>
+<h3>Geometry tied to the Weave Tuner</h3>
+<p>Inner diameter, wire diameter, center spacing, and tilt angles come from the Tuner. Adjust there to retune the entire 3D scene.</p>
+<hr />
+<h2>6. Ring Size Chart</h2>
+<p><strong>URL</strong>: <code>/chart</code>
+<strong>Access</strong>: public, always free</p>
+<p>[SCREENSHOT: Ring Size Chart with 3D viewport on left, AR calculator on right]</p>
+<p>Interactive 3D visualization of every common ring size combination. Use it to <strong>pick a ring spec before cutting wire</strong>.</p>
+<table>
+<thead>
+<tr>
+<th>Control</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Ring grid selector</td>
+<td>Pick rows and columns of (ID, WD) combinations</td>
+</tr>
+<tr>
+<td>AR calculator</td>
+<td>Enter ID and WD; see AR and a weave-suitability hint</td>
+</tr>
+<tr>
+<td>Material color picker</td>
+<td>Visualize what each combo looks like in your chosen color</td>
+</tr>
+<tr>
+<td>3D preview</td>
+<td>Each cell renders as actual torus geometry; rotate to inspect</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>7. Weave Tuner</h2>
+<p><strong>URL</strong>: <code>/tuner</code>
+<strong>Access</strong>: preview free, save/load requires Maker</p>
+<p>[SCREENSHOT: Tuner page with a live 3D preview + sliders for geometry, with the snapshot save panel visible]</p>
+<p>Live geometry workbench. Adjust every ring + scale parameter and watch the 3D scene update instantly.</p>
+<h3>Panels</h3>
+<ol>
+<li><strong>Ring Geometry</strong> — inner diameter, wire diameter, center spacing, angles (In/Out)</li>
+<li><strong>Calibrate Scales</strong> — Size &amp; Style (presets, shape, color) and Dimensions (Hole ID + 4 sliders + calibrate link)</li>
+<li><strong>Tune Scales</strong> — Angles &amp; View (enable, view toggle, sliders, sync) and Depth &amp; Zoom (Plane Z, Tip Lift, Row Clearance Z, Zoom)</li>
+<li><strong>Save / Load</strong> — named weave snapshots in localStorage (Maker+)</li>
+</ol>
+<h3>Tuner ↔ Freeform sync</h3>
+<p>The Tuner snapshot is written to <code>localStorage[&quot;freeform.tunerSnapshot.v1&quot;]</code> and broadcast to Freeform via a custom event. Open Freeform after changing Tuner values and the new geometry applies immediately — no reload needed.</p>
+<h3>Scale Row Clearance Z</h3>
+<p>Range: <strong>−5 to +5</strong>. Negative values sink scales behind ring plane.</p>
+<hr />
+<h2>8. Weave Atlas</h2>
+<p><strong>URL</strong>: <code>/atlas</code>
+<strong>Access</strong>: browse free, apply requires Maker</p>
+<p>[SCREENSHOT: Weave Atlas grid with multiple weave types in cells, status colors visible]</p>
+<p>Curated preset catalog. Browse weaves by category and apply directly to the Designer.</p>
+<table>
+<thead>
+<tr>
+<th>Status color</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Bright (blue background)</td>
+<td>Currently active in the Designer</td>
+</tr>
+<tr>
+<td>Faint green</td>
+<td>Tested, ready to apply</td>
+</tr>
+<tr>
+<td>Faint yellow</td>
+<td>Drafted, may need tuning</td>
+</tr>
+<tr>
+<td>Faint red</td>
+<td>Known-broken, do not apply</td>
+</tr>
+</tbody>
+</table>
+<p>Click a weave to preview; &quot;Apply&quot; loads it into the Designer.</p>
+<hr />
+<h2>9. Erin Pattern 2D (Basic)</h2>
+<p><strong>URL</strong>: <code>/erin2d</code>
+<strong>Access</strong>: Crafter tier</p>
+<p>[SCREENSHOT: Erin Pattern 2D with a grid pattern in progress, image overlay visible]</p>
+<p>Grid-based 2D pattern designer for traditional pixel-style chainmaille charting. Each cell = one ring. Best for <strong>planning color sequences</strong> before you start the weave.</p>
+<p><strong>Tools</strong>: paint, erase, row/column operations (insert, delete, shift), image overlay, export.</p>
+<hr />
+<h2>10. Export — BOM, CSV, PDF, 3D</h2>
+<p>[SCREENSHOT: Finalize &amp; Export panel open over a finished design, ring counts visible]</p>
+<p>Open via 📦 Finalize &amp; Export in any designer.</p>
+<h3>Bill of Materials (BOM)</h3>
+<p>Live ring count by color and size. Updates as you design.</p>
+<h3>Export formats</h3>
+<table>
+<thead>
+<tr>
+<th>Format</th>
+<th>Tier</th>
+<th>Best for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>CSV</strong></td>
+<td>Maker+</td>
+<td>Spreadsheets, supplier order forms, raw data</td>
+</tr>
+<tr>
+<td><strong>PDF Overview</strong></td>
+<td>Crafter+</td>
+<td>Print a copy of your design with BOM table</td>
+</tr>
+<tr>
+<td><strong>Physical Pattern PDF</strong></td>
+<td>Crafter+</td>
+<td>True 1:1 scale per-color pages. Lay rings directly on the paper.</td>
+</tr>
+<tr>
+<td><strong>GLB</strong></td>
+<td>Studio</td>
+<td>3D model for Blender/Cinema 4D/etc.</td>
+</tr>
+<tr>
+<td><strong>STL (per-color)</strong></td>
+<td>Studio</td>
+<td>One STL per color for multi-color 3D printing</td>
+</tr>
+</tbody>
+</table>
+<h3>Physical Pattern PDF details</h3>
+<ul>
+<li>A4 portrait: 210×297mm at 10 px/mm</li>
+<li>8mm margins, 14mm header, 6mm tile overlap (so adjacent sheets align)</li>
+<li>Per-color pages + a combined overview</li>
+<li>Ruler ticks every 10mm so you can verify the printer scale (no &quot;fit to page&quot; stretching)</li>
+</ul>
+<hr />
+<h2>11. How-to recipes</h2>
+<h3>Copy a heart with image colors and paste it elsewhere</h3>
+<ol>
+<li>Use Image Overlay to transfer an image into rings (e.g. a heart shape on a 4-in-1 panel).</li>
+<li>Open Shapes, pick Heart, drag over the area you want to copy. <em>The selection auto-paints with the active color — that's the legacy Shape tool's behavior.</em></li>
+<li><strong>The clipboard captures the pre-paint state</strong>, so the image colors are preserved.</li>
+<li>Press <strong>Cmd+C</strong> or click 📋. The paste preview ghost appears.</li>
+<li>Press <strong>Cmd+Z</strong> to undo the auto-paint so the heart's image colors are restored.</li>
+<li><strong>Right-click</strong> anywhere on the canvas to paste a copy of the heart. Each right-click pastes once; Esc dismisses the ghost.</li>
+</ol>
+<h3>Place scales behind the rings</h3>
+<ol>
+<li>Open Studio Geometry (⚙️ → 🧰) and switch to the 🐠 Scale Tuners tab.</li>
+<li>Drag the <strong>Scale Plane Z (mm)</strong> slider into negative values. Scales sink behind the ring plane.</li>
+<li>Both renderers respect negative Z; adjacent rows still avoid clipping.</li>
+</ol>
+<h3>Plan a project with the right ring before cutting wire</h3>
+<ol>
+<li>Open <strong>Ring Size Chart</strong>.</li>
+<li>Enter the inner and wire diameters you have on hand → see the AR.</li>
+<li>If AR &lt; 3, weave will be too tight. 3.5–5.5 is workable. &gt;6 gets sloppy.</li>
+<li>Open <strong>Weave Atlas</strong> → filter by weave type → preview the cell at your AR.</li>
+<li>Open <strong>Tuner</strong> → load that weave's snapshot → tweak if needed → save.</li>
+<li>Open <strong>Designer</strong> or <strong>Freeform</strong> → start placing rings.</li>
+</ol>
+<h3>Get a printable pattern for a 6-color design</h3>
+<ol>
+<li>Finish the design in <strong>Freeform</strong> or <strong>Designer</strong>.</li>
+<li>Open 📦 <strong>Finalize &amp; Export</strong>.</li>
+<li>Click <strong>Physical Pattern PDF</strong>. Confirm size estimate if prompted.</li>
+<li>Print at 100% (NOT &quot;fit to page&quot;). Verify the 10mm ruler ticks match a real ruler.</li>
+<li>Lay rings directly on the printed pages, one per page per color.</li>
+</ol>
+<hr />
+<h2>12. Keyboard shortcuts</h2>
+<table>
+<thead>
+<tr>
+<th>Keys</th>
+<th>What it does</th>
+<th>Available in</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Cmd/Ctrl + Z</code></td>
+<td>Undo</td>
+<td>All designers</td>
+</tr>
+<tr>
+<td><code>Cmd/Ctrl + Shift + Z</code></td>
+<td>Redo</td>
+<td>All designers</td>
+</tr>
+<tr>
+<td><code>Cmd/Ctrl + Y</code></td>
+<td>Redo</td>
+<td>All designers</td>
+</tr>
+<tr>
+<td><code>Cmd/Ctrl + C</code></td>
+<td>Copy current selection</td>
+<td>Freeform</td>
+</tr>
+<tr>
+<td><code>Cmd/Ctrl + V</code></td>
+<td>Toggle paste mode (legacy click-to-paste)</td>
+<td>Freeform</td>
+</tr>
+<tr>
+<td><code>Right-click</code></td>
+<td>Paste at click point (modern)</td>
+<td>Freeform</td>
+</tr>
+<tr>
+<td><code>Esc</code></td>
+<td>Exit paste mode / dismiss preview / cancel drag</td>
+<td>Freeform</td>
+</tr>
+<tr>
+<td><code>Mouse wheel</code></td>
+<td>Zoom in/out</td>
+<td>All canvases</td>
+</tr>
+<tr>
+<td><code>Pinch (touch)</code></td>
+<td>Zoom in/out</td>
+<td>All canvases</td>
+</tr>
+<tr>
+<td><code>Two-finger drag (touch)</code></td>
+<td>Pan</td>
+<td>All canvases</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>Support &amp; contact</h2>
+<ul>
+<li><strong>Website</strong>: <a href="https://chainmaildesigner.com">chainmaildesigner.com</a></li>
+<li><strong>Privacy policy</strong>: <a href="https://chainmaildesigner.com/privacy">chainmaildesigner.com/privacy</a></li>
+<li><strong>EULA</strong>: <a href="https://chainmaildesigner.com/eula">chainmaildesigner.com/eula</a></li>
+<li><strong>Email</strong>: <a href="mailto:micahforstein@gmail.com">micahforstein@gmail.com</a></li>
+<li><strong>Shop (Etsy)</strong>: search &quot;Woven Rainbows by Erin&quot;</li>
+</ul>
+<hr />
+<p><em>© 2026 Woven Rainbows by Erin · Chainmail Studio</em>
+<em>Built with React, Three.js, and a lot of actual chainmaille at the workbench.</em></p>
+</body></html>
