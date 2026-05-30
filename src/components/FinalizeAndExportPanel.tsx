@@ -224,25 +224,28 @@ function drawScaleGlyph(args: {
   const h = heightPx;
 
   if (shape === "leaf") {
+    // Standard chainmaille scale (almond/lancet). Kept in sync with the 3D
+    // mesh in RingRenderer.makeScaleShapeRR(case "leaf") so the export PDF
+    // / preview tiles render the same silhouette as the 3D canvas.
     path.moveTo(0, h * 0.02);
     path.bezierCurveTo(
-      w * 0.48,
-      h * 0.06,
-      w * 0.56,
-      h * 0.26,
-      w * 0.54,
-      h * 0.46,
+      w * 0.375,
+      h * 0.10,
+      w * 0.50,
+      h * 0.30,
+      w * 0.50,
+      h * 0.50,
     );
-    path.bezierCurveTo(w * 0.52, h * 0.72, w * 0.32, h * 0.92, 0, h);
+    path.bezierCurveTo(w * 0.50, h * 0.72, w * 0.25, h * 0.92, 0, h);
     path.bezierCurveTo(
-      -w * 0.32,
+      -w * 0.25,
       h * 0.92,
-      -w * 0.52,
+      -w * 0.50,
       h * 0.72,
-      -w * 0.54,
-      h * 0.46,
+      -w * 0.50,
+      h * 0.50,
     );
-    path.bezierCurveTo(-w * 0.56, h * 0.26, -w * 0.48, h * 0.06, 0, h * 0.02);
+    path.bezierCurveTo(-w * 0.50, h * 0.30, -w * 0.375, h * 0.10, 0, h * 0.02);
     path.closePath();
   } else if (shape === "round") {
     path.moveTo(0, 0);
@@ -344,7 +347,10 @@ type ExportScale = {
   holeId_mm?: number;
   width_mm?: number;
   height_mm?: number;
-  shape?: "teardrop" | "leaf" | "round" | "kite";
+  // Accepts the four built-in shapes plus custom shape IDs ("custom:..." etc.)
+  // via the (string & {}) tail — keeps autocomplete for the literals but allows
+  // any string. Mirrors the ScaleShape type in FreeformChainmail2D.
+  shape?: "teardrop" | "leaf" | "round" | "kite" | (string & {});
   drop_mm?: number;
   holeOffsetY_mm?: number;
 };
@@ -355,7 +361,10 @@ type ScaleSettings = {
   widthMm?: number;
   heightMm?: number;
   colorHex?: string;
-  shape?: "teardrop" | "leaf" | "round" | "kite";
+  // Accepts the four built-in shapes plus custom shape IDs ("custom:..." etc.)
+  // via the (string & {}) tail — keeps autocomplete for the literals but allows
+  // any string. Mirrors the ScaleShape type in FreeformChainmail2D.
+  shape?: "teardrop" | "leaf" | "round" | "kite" | (string & {});
   dropMm?: number;
   holeOffsetYMm?: number;
 };

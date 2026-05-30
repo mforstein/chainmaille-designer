@@ -68,6 +68,11 @@ export function loadCustomShapes(): CustomScaleShape[] {
 export function saveCustomShapes(shapes: CustomScaleShape[]): void {
   try {
     localStorage.setItem(KEY_CUSTOM, JSON.stringify(shapes));
+    // Bust the cached shape lookup the renderer reads via getCustomShapeById.
+    // Without this, a freshly-created custom shape isn't visible to the
+    // renderer in the same tab — its mesh falls through to the built-in
+    // default (teardrop) until something else triggers cache invalidation.
+    notifyCustomShapesChanged();
   } catch {}
 }
 
@@ -85,6 +90,9 @@ export function loadBuiltinOverrides(): BuiltinOverrides {
 export function saveBuiltinOverrides(overrides: BuiltinOverrides): void {
   try {
     localStorage.setItem(KEY_BUILTIN_OVERRIDES, JSON.stringify(overrides));
+    // Same cache-invalidation reason as saveCustomShapes — overrides change
+    // built-in shape labels/emojis that the menu reads from the cache.
+    notifyCustomShapesChanged();
   } catch {}
 }
 
@@ -727,8 +735,11 @@ async function toBitmapLike(
     });
     return source;
   }
-  // File or Blob
-  const url = URL.createObjectURL(source);
+  // File or Blob — narrowing: HTMLCanvasElement / ImageBitmap / HTMLImageElement
+  // branches above all return, so by this line source can only be File | Blob.
+  // TS can't follow the `typeof ImageBitmap !== "undefined"` guard for narrowing,
+  // hence the explicit cast.
+  const url = URL.createObjectURL(source as Blob);
   try {
     const img = new Image();
     img.src = url;

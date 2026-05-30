@@ -340,7 +340,7 @@ function templateToProject(t: StarterTemplate): any {
       scaleHoleDiameter: 7.94,
       scaleWidth: 9.1,
       scaleHeight: 22.2,
-      scaleShape: "teardrop",
+      scaleShape: "leaf",
       scaleDrop: 9.2,
       scaleColor: "#aaaaaa",
       scaleCenterSpacing: 19.6,

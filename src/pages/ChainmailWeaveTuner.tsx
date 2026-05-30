@@ -229,10 +229,18 @@ function buildOverlayScales(args: {
 
   return chosen.map((ring) => {
     const useInterlocked = lockScaleHolesToRingCenters || scaleWeaveMode === "interlocked";
-    let holeX = ring.x;
-    let holeY = ring.y;
+    let holeX: number;
+    let holeY: number;
 
-    if (!useInterlocked) {
+    if (useInterlocked) {
+      // Lock keeps each scale snapped to its ring's center, but Grid X / Y
+      // still apply as a UNIFORM offset of the whole scale plane relative to
+      // the ring plane (every scale shifts by the same vector — alignment
+      // to ring centers is preserved). Lets the user dial in horizontal /
+      // vertical scale-vs-ring registration without giving up the snap.
+      holeX = ring.x + scaleGridOffsetX;
+      holeY = ring.y + scaleGridOffsetY;
+    } else {
       const p = rcToLogical(ring.row, ring.col, scaleCenterSpacing, scaleGridOffsetX, scaleGridOffsetY);
       holeX = p.x;
       holeY = p.y;
@@ -540,7 +548,11 @@ export default function ChainmailWeaveTuner() {
   const [scaleRowClearanceZ, setScaleRowClearanceZ] = useState(1.2);
   const [cameraZoom, setCameraZoom] = useState(1);
 
-  const [status, setStatus] = useState<"valid" | "no_solution">("valid");
+  // 3-state weave status, surfaced in the Atlas with green / orange / red.
+  // "valid"       — both ring and ring+scale weave work for this ID/wire pair
+  // "rings_only"  — rings weave but scale weave fails (still usable as rings)
+  // "no_solution" — neither ring nor scale weave works at this pair
+  const [status, setStatus] = useState<"valid" | "rings_only" | "no_solution">("valid");
   const [showCompass, setShowCompass] = useState(false);
   const [tunerMode, setTunerMode] = useState<TunerMode>("tune_rings");
   const [panelOpen, setPanelOpen] = useState(true);
@@ -595,7 +607,7 @@ export default function ChainmailWeaveTuner() {
       if (typeof last.centerSpacing === "number") setCenterSpacing(last.centerSpacing);
       if (typeof last.angleIn === "number") setAngleIn(last.angleIn);
       if (typeof last.angleOut === "number") setAngleOut(last.angleOut);
-      if (last.status === "valid" || last.status === "no_solution") setStatus(last.status);
+      if (last.status === "valid" || last.status === "rings_only" || last.status === "no_solution") setStatus(last.status);
       // Scale settings
       if (typeof last.scaleEnabled === "boolean") setScaleEnabled(last.scaleEnabled);
       if (typeof last.scaleBehindRings === "boolean") setScaleBehindRings(last.scaleBehindRings);
@@ -1586,8 +1598,9 @@ if (scaleEnabled) {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
               <div style={{ minWidth: 70, color: "#cbd5e1", fontWeight: 700 }}>Status</div>
-              <select value={status} onChange={(e) => setStatus(e.target.value as "valid" | "no_solution")} style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }}>
-                <option value="valid">✅ Valid</option>
+              <select value={status} onChange={(e) => setStatus(e.target.value as "valid" | "rings_only" | "no_solution")} style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }}>
+                <option value="valid">✅ Rings + Scales</option>
+                <option value="rings_only">🟠 Rings only (no scales)</option>
                 <option value="no_solution">❌ No Solution</option>
               </select>
             </div>
@@ -1688,12 +1701,12 @@ if (scaleEnabled) {
               <input type="range" min="2" max="25" step="0.1" value={scaleCenterSpacing} disabled={lockScaleHolesToRingCenters} onChange={(e) => setScaleCenterSpacing(parseFloat(e.target.value))} style={{ width: "100%" }} />
             </div>
             {(["X", "Y"] as const).map((axis) => (
-              <div key={axis} style={{ display: "flex", flexDirection: "column", gap: 6, opacity: lockScaleHolesToRingCenters ? 0.45 : 1 }}>
+              <div key={axis} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <div style={{ color: "#cbd5e1", fontWeight: 700 }}>Grid {axis}</div>
                   <div style={{ color: "#93c5fd", fontWeight: 700 }}>{(axis === "X" ? scaleGridOffsetX : scaleGridOffsetY).toFixed(2)} mm</div>
                 </div>
-                <input type="range" min="-30" max="30" step="0.05" value={axis === "X" ? scaleGridOffsetX : scaleGridOffsetY} disabled={lockScaleHolesToRingCenters} onChange={(e) => axis === "X" ? setScaleGridOffsetX(parseFloat(e.target.value)) : setScaleGridOffsetY(parseFloat(e.target.value))} style={{ width: "100%" }} />
+                <input type="range" min="-30" max="30" step="0.05" value={axis === "X" ? scaleGridOffsetX : scaleGridOffsetY} onChange={(e) => axis === "X" ? setScaleGridOffsetX(parseFloat(e.target.value)) : setScaleGridOffsetY(parseFloat(e.target.value))} style={{ width: "100%" }} />
               </div>
             ))}
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>

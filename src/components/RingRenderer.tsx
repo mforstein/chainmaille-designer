@@ -274,11 +274,16 @@ function makeScaleShapeRR(
   }
 
   if (shape === "leaf") {
+    // "Standard" chainmaille scale — almond / lancet silhouette matching the
+    // physical scale (see scale.jpg). Top rounds gently from the shoulder,
+    // widens smoothly to max belly around 45–55% of height, then tapers to a
+    // pointed tip at the bottom. Earlier curve widened too aggressively near
+    // the top and read as a leaf rather than a scale.
     s.moveTo(0, shoulderY);
-    s.bezierCurveTo(hw * 0.95, bodyOffY - h * 0.16, hw * 1.05, bellyY, hw * 0.34, lowerY);
-    s.bezierCurveTo(hw * 0.18, bodyOffY - h * 0.9, hw * 0.08, bodyOffY - h * 0.96, 0, tipY);
-    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.96, -hw * 0.18, bodyOffY - h * 0.9, -hw * 0.34, lowerY);
-    s.bezierCurveTo(-hw * 1.05, bellyY, -hw * 0.95, bodyOffY - h * 0.16, 0, shoulderY);
+    s.bezierCurveTo(hw * 0.75, bodyOffY - h * 0.15, hw * 1.00, bellyY, hw * 0.55, lowerY);
+    s.bezierCurveTo(hw * 0.28, bodyOffY - h * 0.88, hw * 0.08, bodyOffY - h * 0.97, 0, tipY);
+    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.97, -hw * 0.28, bodyOffY - h * 0.88, -hw * 0.55, lowerY);
+    s.bezierCurveTo(-hw * 1.00, bellyY, -hw * 0.75, bodyOffY - h * 0.15, 0, shoulderY);
   } else if (shape === "round") {
     s.moveTo(0, shoulderY);
     s.bezierCurveTo(hw * 0.95, shoulderY, hw * 1.05, bodyOffY - h * 0.52, 0, tipY);

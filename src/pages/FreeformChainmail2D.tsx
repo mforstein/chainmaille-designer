@@ -1103,7 +1103,10 @@ const FreeformChainmail2D: React.FC = () => {
     if (def) {
       return def.startsWith("custom:") ? def : `builtin:${def}`;
     }
-    return "builtin:teardrop";
+    // Default to "leaf" — symmetric pointed-both-ends ("football" / Standard
+    // scale, per scale.jpg reference). Matches what real chainmaille scales
+    // look like; teardrop (asymmetric round-top) is the legacy default.
+    return "builtin:leaf";
   });
   const [hiddenBuiltinShapes, setHiddenBuiltinShapesState] = useState<
     BuiltinScaleShape[]
@@ -3248,11 +3251,14 @@ const derived = useMemo(() => {
           : (scale.shape as string);
       switch (baseName) {
         case "leaf":
+          // Standard chainmaille scale (almond/lancet) — see RingRenderer
+          // `makeScaleShapeRR` for the rationale. Kept in sync with the 3D
+          // mesh path so 2D preview = 3D render.
           outer.moveTo(0, topY);
-          outer.bezierCurveTo(halfW * 0.95, h * 0.08 + dy, halfW * 1.05, midY, halfW * 0.34, h * 0.76 + dy);
-          outer.bezierCurveTo(halfW * 0.18, h * 0.9 + dy, halfW * 0.08, h * 0.96 + dy, 0, tipY);
-          outer.bezierCurveTo(-halfW * 0.08, h * 0.96 + dy, -halfW * 0.18, h * 0.9 + dy, -halfW * 0.34, h * 0.76 + dy);
-          outer.bezierCurveTo(-halfW * 1.05, midY, -halfW * 0.95, h * 0.08 + dy, 0, topY);
+          outer.bezierCurveTo(halfW * 0.75, h * 0.15 + dy, halfW * 1.00, midY, halfW * 0.55, h * 0.78 + dy);
+          outer.bezierCurveTo(halfW * 0.28, h * 0.9 + dy, halfW * 0.08, h * 0.97 + dy, 0, tipY);
+          outer.bezierCurveTo(-halfW * 0.08, h * 0.97 + dy, -halfW * 0.28, h * 0.9 + dy, -halfW * 0.55, h * 0.78 + dy);
+          outer.bezierCurveTo(-halfW * 1.00, midY, -halfW * 0.75, h * 0.15 + dy, 0, topY);
           outer.closePath();
           break;
         case "round":
@@ -3346,20 +3352,24 @@ const derived = useMemo(() => {
       activeScaleSettings.weaveMode === "interlocked";
 
     const ringP = rcToLogical(row, col);
-    let holeX = ringP.x;
-    let holeY = ringP.y;
+    const gx = Number.isFinite(activeScaleSettings.gridOffsetXmm)
+      ? activeScaleSettings.gridOffsetXmm
+      : 0;
+    const gy = Number.isFinite(activeScaleSettings.gridOffsetYmm)
+      ? activeScaleSettings.gridOffsetYmm
+      : 0;
+    let holeX: number;
+    let holeY: number;
 
-    // gridOffsetXmm/Ymm are part of the NON-interlocked grid recompute. In
-    // interlocked mode scales MUST stay pinned to ring centres for the
-    // weave alignment to hold — applying the drag-tool offset there would
-    // separate scales from their rings.
-    if (!useInterlocked) {
-      const gx = Number.isFinite(activeScaleSettings.gridOffsetXmm)
-        ? activeScaleSettings.gridOffsetXmm
-        : 0;
-      const gy = Number.isFinite(activeScaleSettings.gridOffsetYmm)
-        ? activeScaleSettings.gridOffsetYmm
-        : 0;
+    if (useInterlocked) {
+      // Lock keeps each scale snapped to its ring's center, but Grid X / Y
+      // still apply as a UNIFORM offset of the whole scale plane (every
+      // scale shifts by the same vector — registration to ring centers is
+      // preserved). Matches the Tuner UI behavior so saved tune pairs with
+      // non-zero gridOffsetXmm/Ymm + lock-on render correctly here.
+      holeX = ringP.x + gx;
+      holeY = ringP.y + gy;
+    } else {
       const rowOffset = row & 1 ? activeScaleSettings.centerSpacingMm / 2 : 0;
       holeX = col * activeScaleSettings.centerSpacingMm + rowOffset + gx;
       holeY = row * activeScaleSettings.centerSpacingMm * 0.866 + gy;
@@ -3677,14 +3687,14 @@ const derived = useMemo(() => {
         let d = "";
         switch (shapeStr) {
           case "leaf":
-            // Control-point Y values mirror the 3D mesh leaf path (negated
-            // for Y DOWN): bodyOff - 0.16*h, bodyOff - 0.78*h, bodyOff -
-            // 0.9*h, bodyOff - 0.96*h → in path Y DOWN: 0.16*h - dy etc.
+            // Standard chainmaille scale (almond/lancet). Keep in sync with
+            // the 3D mesh path in RingRenderer.makeScaleShapeRR (case "leaf")
+            // so the overlay preview matches the rendered scale.
             d = `M 0 ${topY} ` +
-                `C ${halfW * 0.95} ${h * 0.16 - dy}, ${halfW * 1.05} ${midY}, ${halfW * 0.34} ${h * 0.78 - dy} ` +
-                `C ${halfW * 0.18} ${h * 0.9 - dy}, ${halfW * 0.08} ${h * 0.96 - dy}, 0 ${tipY} ` +
-                `C ${-halfW * 0.08} ${h * 0.96 - dy}, ${-halfW * 0.18} ${h * 0.9 - dy}, ${-halfW * 0.34} ${h * 0.78 - dy} ` +
-                `C ${-halfW * 1.05} ${midY}, ${-halfW * 0.95} ${h * 0.16 - dy}, 0 ${topY} Z`;
+                `C ${halfW * 0.75} ${h * 0.15 - dy}, ${halfW * 1.00} ${midY}, ${halfW * 0.55} ${h * 0.78 - dy} ` +
+                `C ${halfW * 0.28} ${h * 0.9 - dy}, ${halfW * 0.08} ${h * 0.97 - dy}, 0 ${tipY} ` +
+                `C ${-halfW * 0.08} ${h * 0.97 - dy}, ${-halfW * 0.28} ${h * 0.9 - dy}, ${-halfW * 0.55} ${h * 0.78 - dy} ` +
+                `C ${-halfW * 1.00} ${midY}, ${-halfW * 0.75} ${h * 0.15 - dy}, 0 ${topY} Z`;
             break;
           case "round":
             // 3D mesh round: control at (hw*1.05, bodyOff - 0.52*h)
@@ -4231,17 +4241,11 @@ const derived = useMemo(() => {
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
-      // Scale plane drag mode — start dragging the scale grid
-      if (scalePlaneDragMode) {
-        scaleDragRef.current = {
-          screenX: e.clientX,
-          screenY: e.clientY,
-          gridX: activeScaleSettingsRef.current.gridOffsetXmm,
-          gridY: activeScaleSettingsRef.current.gridOffsetYmm,
-        };
-        return;
-      }
-
+      // Selection has priority over scale-plane drag: if both flags happen to
+      // be active (legacy stuck-state scenarios), the user can recover by just
+      // picking a Shape — they don't have to remember to toggle the ✛ button
+      // off first. The scale-plane drag tool's button still works on its own
+      // when selection is "none".
       if (selectionMode !== "none" && !panMode) {
         const { sx, sy } = getCanvasPoint(e);
         const { lx, ly } = screenToWorld(sx, sy);
@@ -4266,6 +4270,19 @@ const derived = useMemo(() => {
         setLastSelectionCount(0);
         setSelectedKeys(new Set()); // clear old highlight until we finalize
         drawSelectionOverlay();
+        return;
+      }
+
+      // Scale plane drag mode — start dragging the scale grid. Now lives
+      // after the selection check so an accidentally-active scale-plane
+      // drag mode doesn't hijack a user who's actively in selection mode.
+      if (scalePlaneDragMode) {
+        scaleDragRef.current = {
+          screenX: e.clientX,
+          screenY: e.clientY,
+          gridX: activeScaleSettingsRef.current.gridOffsetXmm,
+          gridY: activeScaleSettingsRef.current.gridOffsetYmm,
+        };
         return;
       }
 
@@ -4557,6 +4574,11 @@ const derived = useMemo(() => {
       if (!cells.length) {
         setLastSelectionCount(0);
         setSelectedKeys(new Set());
+        // Also clear the copy snapshot — otherwise the previous selection's
+        // cells survive and Copy would re-grab them, ignoring this new (empty)
+        // selection. Same for the badge count.
+        lastSelectionCellsRef.current = [];
+        setLastSelectionCount2(0);
         return;
       }
 
@@ -5947,13 +5969,15 @@ const scales3D = useMemo(() => {
           style={{
             display: "flex",
             flexDirection: "column",
-            gap: 10,
+            // Gap + width + padding all reduced ~20% to match the smaller
+            // ToolBtn (44 → 35) so the column fits on shorter viewports.
+            gap: 8,
             alignItems: "center",
-            width: 56,
-            padding: "10px 6px",
+            width: 45,
+            padding: "8px 5px",
             background: "#0f172a",
             border: "1px solid #0b1020",
-            borderRadius: 20,
+            borderRadius: 16,
             boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
             userSelect: "none",
           }}
@@ -6081,11 +6105,11 @@ const scales3D = useMemo(() => {
                 <ToolBtn
                   active={scaleShapePickerOpen}
                   onClick={() => setScaleShapePickerOpen((v) => !v)}
-                  title={`Scale shape: ${activeShapeMenuEntry?.label ?? activeScaleSettings.shape ?? "teardrop"} — click to change all scales`}
+                  title={`Scale shape: ${activeShapeMenuEntry?.label ?? activeScaleSettings.shape ?? "leaf"} — click to change all scales`}
                 >
                   {activeShapeMenuEntry?.emoji ??
                     SCALE_SHAPE_EMOJI[
-                      (activeScaleSettings.shape ?? "teardrop") as ScaleShapeName
+                      (activeScaleSettings.shape ?? "leaf") as ScaleShapeName
                     ] ??
                     "💧"}
                 </ToolBtn>
@@ -6366,10 +6390,10 @@ const scales3D = useMemo(() => {
                                   prev.filter((e) => e.id !== entry.id),
                                 );
                                 if (selectedShapeMenuId === entry.id) {
-                                  setSelectedShapeMenuId("builtin:teardrop");
+                                  setSelectedShapeMenuId("builtin:leaf");
                                   setScaleSettingsOverride((prev) => ({
                                     ...prev,
-                                    shape: "teardrop",
+                                    shape: "leaf",
                                   }));
                                 }
                               }}
@@ -6506,6 +6530,14 @@ const scales3D = useMemo(() => {
                 onPick={(t) => {
                   setSelectionMode((m) => (m === t ? "none" : t));
                   setPanMode(false);
+                  // Mutually exclusive with the scale-plane drag tool: that
+                  // mode hijacks mousedown before selection ever fires, so
+                  // forgetting to clear it leaves selection drags inert
+                  // (cursor still shows crosshair from the selection toolbar
+                  // active state — confusing). Mirrors the inverse exclusion
+                  // already enforced by the scale-plane-drag button.
+                  setScalePlaneDragMode(false);
+                  scaleDragRef.current = null;
                   clearSelectionState();
 
                   if (isSelecting) {
@@ -8094,11 +8126,13 @@ const scales3D = useMemo(() => {
                 ? "copy"
                 : selectionMode !== "none"
                 ? "crosshair"
-                : panMode
-                  ? "grab"
-                  : eraseMode
-                    ? "not-allowed"
-                    : "crosshair",
+                : scalePlaneDragMode
+                  ? "move"
+                  : panMode
+                    ? "grab"
+                    : eraseMode
+                      ? "not-allowed"
+                      : "crosshair",
             touchAction: "none",
             background: "transparent",
             zIndex: 3,

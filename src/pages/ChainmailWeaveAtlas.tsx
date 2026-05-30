@@ -22,6 +22,21 @@ const ID_ORDER = [
 
 const WIRE_ORDER = [0.9, 1.2, 1.6, 2.0, 2.5, 3.0];
 
+// Cell background: active entry highlights bright; otherwise a faint tint of
+// the status color so the grid reads at a glance.
+function isActiveBg(entry: any, activeId: string | null): string {
+  if (entry?.id === activeId) return "#19324d";
+  switch (entry?.status) {
+    case "valid":
+      return "#0f1720";       // dark green-ish neutral
+    case "rings_only":
+      return "#1a1408";       // dark amber tint
+    case "no_solution":
+    default:
+      return "#1a1111";       // dark red tint
+  }
+}
+
 export default function ChainmailWeaveAtlas() {
   const navigate = useNavigate();
   const [matrix, setMatrix] = useState<any[]>([]);
@@ -155,31 +170,51 @@ export default function ChainmailWeaveAtlas() {
                     </td>
                   );
 
-                const color = entry.status === "valid" ? "#19c37d" : "#ef4444";
-                const isActive = entry.id === activeWeaveId;
+                // 3-state color coding:
+                //   valid       → green (rings + scales both work)
+                //   rings_only  → orange (rings work, scales don't)
+                //   no_solution → red (neither works)
+                // Backward compatibility: any unknown status string is
+                // treated as "no_solution" rather than crashing.
+                const cellColor =
+                  entry.status === "valid"
+                    ? "#19c37d"
+                    : entry.status === "rings_only"
+                      ? "#f59e0b"
+                      : "#ef4444";
+                const cellBg = isActiveBg(entry, activeWeaveId);
+                const cellIcon =
+                  entry.status === "valid"
+                    ? "✅"
+                    : entry.status === "rings_only"
+                      ? "🟠"
+                      : "❌";
+                const cellTitle =
+                  entry.status === "valid"
+                    ? "Rings + Scales both valid"
+                    : entry.status === "rings_only"
+                      ? "Rings valid — scales not woven at this AR"
+                      : "No solution (rings or scales)";
 
                 return (
                   <td
                     key={id}
                     onClick={() => handleSelectWeave(entry)}
-                    title={`ID: ${id}" | Wire: ${wire}mm
+                    title={`${cellTitle}
+ID: ${id}" | Wire: ${wire}mm
 Center: ${entry.centerSpacing}mm
 Angles: ${entry.angleIn}/${entry.angleOut}°`}
                     style={{
                       border: "1px solid #1f2a36",
                       padding: "6px 8px",
                       cursor: "pointer",
-                      background: isActive
-                        ? "#19324d"
-                        : entry.status === "valid"
-                          ? "#0f1720"
-                          : "#1a1111",
-                      color,
+                      background: cellBg,
+                      color: cellColor,
                       fontWeight: "bold",
                       transition: "background 0.2s ease",
                     }}
                   >
-                    {entry.status === "valid" ? "✅" : "❌"}
+                    {cellIcon}
                   </td>
                 );
               })}
@@ -189,8 +224,9 @@ Angles: ${entry.angleIn}/${entry.angleOut}°`}
       </table>
 
       <div style={{ marginTop: 16, color: "#64748b", fontSize: 12, display: "flex", gap: 20, flexWrap: "wrap" }}>
-        <span>✅ Valid combination</span>
-        <span>❌ No solution</span>
+        <span style={{ color: "#19c37d" }}>✅ Rings + Scales — both weave</span>
+        <span style={{ color: "#f59e0b" }}>🟠 Rings only — scales don't weave at this AR</span>
+        <span style={{ color: "#ef4444" }}>❌ No solution — neither weaves</span>
         <span style={{ color: "#4a7a9b" }}>+ Untested — click to tune</span>
       </div>
 

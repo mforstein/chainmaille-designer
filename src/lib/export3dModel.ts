@@ -28,11 +28,14 @@ function makeScaleShape3D(
   const s = new THREE.Shape();
 
   if (shape === "leaf") {
+    // Standard chainmaille scale (almond/lancet). Match RingRenderer.tsx
+    // makeScaleShapeRR(case "leaf") exactly so STL/GLB export matches the
+    // rendered scene.
     s.moveTo(0, shoulderY);
-    s.bezierCurveTo(hw * 0.95, bodyOffY - h * 0.16, hw * 1.05, bellyY, hw * 0.34, lowerY);
-    s.bezierCurveTo(hw * 0.18, bodyOffY - h * 0.9, hw * 0.08, bodyOffY - h * 0.96, 0, tipY);
-    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.96, -hw * 0.18, bodyOffY - h * 0.9, -hw * 0.34, lowerY);
-    s.bezierCurveTo(-hw * 1.05, bellyY, -hw * 0.95, bodyOffY - h * 0.16, 0, shoulderY);
+    s.bezierCurveTo(hw * 0.75, bodyOffY - h * 0.15, hw * 1.00, bellyY, hw * 0.55, lowerY);
+    s.bezierCurveTo(hw * 0.28, bodyOffY - h * 0.88, hw * 0.08, bodyOffY - h * 0.97, 0, tipY);
+    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.97, -hw * 0.28, bodyOffY - h * 0.88, -hw * 0.55, lowerY);
+    s.bezierCurveTo(-hw * 1.00, bellyY, -hw * 0.75, bodyOffY - h * 0.15, 0, shoulderY);
   } else if (shape === "round") {
     s.moveTo(0, shoulderY);
     s.bezierCurveTo(hw * 0.95, shoulderY, hw * 1.05, bodyOffY - h * 0.52, 0, tipY);

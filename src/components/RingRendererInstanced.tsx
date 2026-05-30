@@ -1389,7 +1389,16 @@ prevPaintRef.current = new Map(paint);
         const rowZ = (maxRow - s.row + 1) * 0.5;
         return Math.min(m, s.planeZMm + rowZ);
       }, Infinity);
-      const globalLift = Math.max(0, zFloor - minPivotZ);
+      // The "lift above zFloor" safety keeps multi-row stacked-Z fills from
+      // burying scales beneath rings on first render. But it also blocks the
+      // user from intentionally putting scales BEHIND the rings (negative
+      // scalePlaneZ from the Freeform Z slider). Skip the lift when the user
+      // has either toggled "behind rings" OR explicitly sunk the plane below
+      // zero — mirrors the non-instanced RingRenderer.
+      const userWantsBehind =
+        scalesBehindRingsRef.current ||
+        scales3D.some((s) => (s.planeZMm ?? 0) < 0);
+      const globalLift = userWantsBehind ? 0 : Math.max(0, zFloor - minPivotZ);
 
       scales3D.forEach((s, i) => {
         const hsi = Math.max(s.holeDiameter * 0.54, s.height * 0.15);

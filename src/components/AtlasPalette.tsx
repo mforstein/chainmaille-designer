@@ -7,7 +7,12 @@ type Entry = {
   centerSpacing: number; // mm
   angleIn: number; // deg
   angleOut: number; // deg
-  status: "valid" | "no_solution";
+  // "valid"       — rings + scales both weave on this ID / wire pair
+  // "rings_only"  — rings weave but scales do not (e.g. hole geometry
+  //                 won't admit the ring at this AR; useful for ring-only
+  //                 sections of a design)
+  // "no_solution" — neither rings nor scales work
+  status: "valid" | "rings_only" | "no_solution";
   savedAt?: string;
 };
 

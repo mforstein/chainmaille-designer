@@ -40,7 +40,7 @@ const defaultOverlay: OverlayState = {
   patternScale: 100,
   imageFill: false,
   boundaryPct: 0,
-  testScaleShape: "teardrop",
+  testScaleShape: "leaf",
 };
 
 /* ------------------- component ------------------- */
@@ -74,11 +74,15 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
       const outer = new Path2D();
       switch (shape) {
         case "leaf":
+          // Standard chainmaille scale (almond/lancet). Match
+          // RingRenderer.makeScaleShapeRR(case "leaf") so the test preview
+          // canvas in this panel shows the same silhouette as the rendered
+          // scene.
           outer.moveTo(0, topY);
-          outer.bezierCurveTo(halfW * 0.95, h * 0.08, halfW * 1.05, midY, halfW * 0.34, h * 0.76);
-          outer.bezierCurveTo(halfW * 0.18, h * 0.9, halfW * 0.08, h * 0.96, 0, tipY);
-          outer.bezierCurveTo(-halfW * 0.08, h * 0.96, -halfW * 0.18, h * 0.9, -halfW * 0.34, h * 0.76);
-          outer.bezierCurveTo(-halfW * 1.05, midY, -halfW * 0.95, h * 0.08, 0, topY);
+          outer.bezierCurveTo(halfW * 0.75, h * 0.07, halfW * 1.00, midY, halfW * 0.55, h * 0.78);
+          outer.bezierCurveTo(halfW * 0.28, h * 0.90, halfW * 0.08, h * 0.97, 0, tipY);
+          outer.bezierCurveTo(-halfW * 0.08, h * 0.97, -halfW * 0.28, h * 0.90, -halfW * 0.55, h * 0.78);
+          outer.bezierCurveTo(-halfW * 1.00, midY, -halfW * 0.75, h * 0.07, 0, topY);
           outer.closePath();
           break;
         case "round":
@@ -145,7 +149,7 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
     const holeR = scaleW * 0.13;
     const cx = W / 2;
     const cy = margin;
-    const shape = overlay.testScaleShape ?? "teardrop";
+    const shape = overlay.testScaleShape ?? "leaf";
     const { outer, hole } = buildScalePath(shape, scaleW, scaleH, holeR);
 
     ctx.save();
@@ -290,7 +294,7 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
           patternScale: 100,
           imageFill: !!overlay.imageFill,
           boundaryPct: Math.max(0, Math.min(50, Number(overlay.boundaryPct ?? 0))),
-          testScaleShape: overlay.testScaleShape ?? "teardrop",
+          testScaleShape: overlay.testScaleShape ?? "leaf",
         });
       };
       img.onerror = () => resolve(null);
@@ -720,7 +724,7 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
             >
               <span>Test Scale Shape</span>
               <select
-                value={overlay.testScaleShape ?? "teardrop"}
+                value={overlay.testScaleShape ?? "leaf"}
                 onChange={(e) =>
                   setOverlay((s) => ({
                     ...s,
