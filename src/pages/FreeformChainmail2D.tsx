@@ -1280,6 +1280,11 @@ const FreeformChainmail2D: React.FC = () => {
     sy1: number;
   } | null>(null);
 
+  // Screen-space mouse position, updated on mousemove. Used to anchor the
+  // paste-preview ghost. A ref (not state) to avoid a re-render storm — the
+  // overlay re-draw is triggered explicitly from the mousemove handler.
+  const mouseHoverPosRef = useRef<{ sx: number; sy: number } | null>(null);
+
   // Always drop pure-select intent + the persisted rect when the selection
   // tool is dismissed, so re-entering via the ShapePanel doesn't inherit
   // either.
@@ -4100,6 +4105,103 @@ const derived = useMemo(() => {
     const rect = wrap.getBoundingClientRect();
     ctx.clearRect(0, 0, rect.width, rect.height);
 
+    // ─── Always-on faint alignment grid ───────────────────────────────────
+    // Dots at every ring-center position visible in the viewport. The brick
+    // offset comes from rcToLogical (odd rows shifted half a centerSpacing).
+    // Helps users align pastes with existing structures.
+    try {
+      const tl = screenToWorld(0, 0);
+      const br = screenToWorld(rect.width, rect.height);
+      if (
+        Number.isFinite(tl.lx) &&
+        Number.isFinite(br.lx) &&
+        centerSpacing > 0 &&
+        spacingY > 0
+      ) {
+        const minLx = Math.min(tl.lx, br.lx) - circleOffsetX;
+        const maxLx = Math.max(tl.lx, br.lx) - circleOffsetX;
+        const minLy = Math.min(tl.ly, br.ly) - circleOffsetY;
+        const maxLy = Math.max(tl.ly, br.ly) - circleOffsetY;
+        const minRowG = Math.floor(minLy / spacingY) - 1;
+        const maxRowG = Math.ceil(maxLy / spacingY) + 1;
+        const minColG = Math.floor(minLx / centerSpacing) - 1;
+        const maxColG = Math.ceil(maxLx / centerSpacing) + 1;
+        // Cap iteration so an extreme zoom-out can't lock the UI.
+        const rowSpanG = Math.min(maxRowG - minRowG, 200);
+        const colSpanG = Math.min(maxColG - minColG, 200);
+        ctx.save();
+        ctx.fillStyle = "rgba(148,163,184,0.18)";
+        for (let dr = 0; dr <= rowSpanG; dr++) {
+          const row = minRowG + dr;
+          for (let dc = 0; dc <= colSpanG; dc++) {
+            const col = minColG + dc;
+            const { x: gx, y: gy } = rcToLogical(row, col);
+            const { sx: gsx, sy: gsy } = worldToScreen(
+              gx + circleOffsetX,
+              gy + circleOffsetY,
+            );
+            if (gsx < -5 || gsy < -5 || gsx > rect.width + 5 || gsy > rect.height + 5) continue;
+            ctx.beginPath();
+            ctx.arc(gsx, gsy, 1.2, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+        ctx.restore();
+      }
+    } catch {
+      // overlay grid is decoration only — never break the rest of the draw
+    }
+
+    // ─── Paste preview ghost (clipboard + hover, not actively dragging) ──
+    // Translucent ring outlines anchored at the cursor showing where each
+    // clipboard ring would land if the user right-clicked now.
+    if (
+      clipboardRef.current &&
+      clipboardRef.current.items.length > 0 &&
+      mouseHoverPosRef.current &&
+      !isSelecting
+    ) {
+      try {
+        const { sx: hsx, sy: hsy } = mouseHoverPosRef.current;
+        const { lx: hlx, ly: hly } = screenToWorld(hsx, hsy);
+        const adjHx = hlx - circleOffsetX;
+        const adjHy = hly - circleOffsetY;
+        const { row: anchorRow, col: anchorCol } = logicalToRowColApprox(
+          adjHx,
+          adjHy,
+        );
+        // Approximate ring outer radius in screen pixels from the lattice
+        // scale at the cursor: distance between two adjacent column centers.
+        const probeA = rcToLogical(anchorRow, anchorCol);
+        const probeB = rcToLogical(anchorRow, anchorCol + 1);
+        const sA = worldToScreen(probeA.x + circleOffsetX, probeA.y + circleOffsetY);
+        const sB = worldToScreen(probeB.x + circleOffsetX, probeB.y + circleOffsetY);
+        const scalePx = Math.hypot(sB.sx - sA.sx, sB.sy - sA.sy);
+        const ringRadiusPx = Math.max(3, scalePx * 0.48);
+        ctx.save();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = "rgba(96,165,250,0.85)";
+        ctx.fillStyle = "rgba(96,165,250,0.10)";
+        for (const it of clipboardRef.current.items) {
+          if (!it.ring) continue; // empty cell — nothing to paste here
+          const r = anchorRow + it.deltaRow;
+          const c = anchorCol + it.deltaCol;
+          const { x: rx, y: ry } = rcToLogical(r, c);
+          const { sx: psx, sy: psy } = worldToScreen(
+            rx + circleOffsetX,
+            ry + circleOffsetY,
+          );
+          ctx.beginPath();
+          ctx.arc(psx, psy, ringRadiusPx, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+        }
+        ctx.restore();
+      } catch {
+        // preview is decoration only — never break the rest of the draw
+      }
+    }
+
     if (selectionMode === "none") return;
 
     // Released drag in pure-select mode: draw the persisted selection rect
@@ -4258,6 +4360,15 @@ const derived = useMemo(() => {
     lastSelectionCount,
     pureSelectMode,
     persistedSelectionRect,
+    // grid + paste-preview dependencies
+    screenToWorld,
+    worldToScreen,
+    rcToLogical,
+    logicalToRowColApprox,
+    circleOffsetX,
+    circleOffsetY,
+    centerSpacing,
+    spacingY,
   ]);
 
   // Re-render the overlay whenever the persisted rect changes so the dashed
@@ -4394,6 +4505,17 @@ const derived = useMemo(() => {
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       // Always track cursor for floating bubble (and to keep the state "used")
       setCursorPx({ x: e.clientX, y: e.clientY });
+
+      // Canvas-relative hover position for the paste-preview ghost + the
+      // grid stay-fresh draws. Cheap ref-write — no rerender.
+      {
+        const hp = getCanvasPoint(e);
+        mouseHoverPosRef.current = { sx: hp.sx, sy: hp.sy };
+        // Redraw the overlay so the grid + (if clipboard exists) the paste
+        // preview follow the cursor. This also keeps the grid responsive
+        // during pans that the user performs by moving the mouse.
+        drawSelectionOverlay();
+      }
 
       // Touch/Pointer parity helper (keeps eventToScreen used and ready for diagnostics)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
