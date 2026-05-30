@@ -875,6 +875,12 @@ const FreeformChainmail2D: React.FC = () => {
   // Finalize & Export (must be inside the component)
   const [finalizeOpen, setFinalizeOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  // FEATURE FLAG: Cost Estimator hidden from UI per product decision (2026-05-30).
+  // The 💰 toolbar button and the FreeformCostPanel render are both gated below.
+  // Implementation (FreeformCostPanel, supplierMatcher, estimateCost) is preserved
+  // in the codebase — flip this to `true` to restore. While disabled, there is no
+  // reachable UI path that can open the panel.
+  const COST_ESTIMATOR_FEATURE_ENABLED = false;
   const [costPanelOpen, setCostPanelOpen] = useState(false);
 
   // Canvas background color — persisted across sessions
@@ -6747,18 +6753,20 @@ const scales3D = useMemo(() => {
               📚
             </ToolBtn>
 
-            {/* Cost Estimator — Studio only */}
-            <ToolBtn
-              active={costPanelOpen}
-              onClick={() => {
-                if (isStudioTier) setCostPanelOpen((v) => !v);
-                else window.location.href = "/pricing";
-              }}
-              title={isStudioTier ? "Material cost estimator" : "Cost Estimator (Studio)"}
-              style={{ opacity: isStudioTier ? 1 : 0.45, position: "relative" }}
-            >
-              💰{!isStudioTier && <span style={{ position: "absolute", top: 2, right: 2, fontSize: 8, lineHeight: 1 }}>🔒</span>}
-            </ToolBtn>
+            {/* Cost Estimator — DISABLED. Flip COST_ESTIMATOR_FEATURE_ENABLED to restore. */}
+            {COST_ESTIMATOR_FEATURE_ENABLED && (
+              <ToolBtn
+                active={costPanelOpen}
+                onClick={() => {
+                  if (isStudioTier) setCostPanelOpen((v) => !v);
+                  else window.location.href = "/pricing";
+                }}
+                title={isStudioTier ? "Material cost estimator" : "Cost Estimator (Studio)"}
+                style={{ opacity: isStudioTier ? 1 : 0.45, position: "relative" }}
+              >
+                💰{!isStudioTier && <span style={{ position: "absolute", top: 2, right: 2, fontSize: 8, lineHeight: 1 }}>🔒</span>}
+              </ToolBtn>
+            )}
 
             {/* Canvas background — dark/light toggle */}
             <button
@@ -7921,7 +7929,7 @@ const scales3D = useMemo(() => {
         </DraggablePill>
       )}
 
-      {costPanelOpen && isStudioTier && (
+      {COST_ESTIMATOR_FEATURE_ENABLED && costPanelOpen && isStudioTier && (
         <DraggablePill
           id="freeform-cost"
           defaultPosition={{ x: Math.max(8, window.innerWidth - 444), y: 60 }}
