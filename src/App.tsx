@@ -2174,13 +2174,9 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
         }}
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <button
-          onClick={() => go("/workspace")}
-          title="Workspace"
-          style={btnStyle}
-        >
-          🗂️
-        </button>
+        {/* 🗂️ Workspace button removed 2026-05-31: redundant with the
+            🏠 Home button below now that /workspace redirects to the
+            home page (which is the workspace navigator). */}
 
         <button
           onClick={() => go("/wovenrainbowsbyerin")}
