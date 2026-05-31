@@ -96,7 +96,7 @@ export default function CommercialLicensePage() {
               textDecoration: "none",
             }}
           >
-            View Studio Plan — $35/mo
+            View Studio Plan — $9.99/mo
           </Link>
         </div>
 

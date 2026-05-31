@@ -34,9 +34,9 @@ const TIER_FEATURES: Record<Tier, string[]> = {
 
 const TIER_PRICE: Record<Tier, string> = {
   free: "Free",
-  maker: "$8 / month",
-  crafter: "$18 / month",
-  studio: "$35 / month",
+  maker: "$2.99 / month",
+  crafter: "$5.99 / month",
+  studio: "$9.99 / month",
 };
 
 const fieldStyle: React.CSSProperties = {
