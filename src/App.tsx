@@ -1189,13 +1189,9 @@ const doClearPaint = () => {
             📦
           </ToolBtn>
 
-          <ToolBtn
-            title="Navigation Menu"
-            active={showCompass}
-            onClick={() => setShowCompass((v) => !v)}
-          >
-            <IconHamburger size={18} />
-          </ToolBtn>
+          {/* Per Erin (2026-05-31): redundant navigation icon removed.
+              Users return to the home page (which IS the navigator) to
+              switch tools instead of using a per-page compass overlay. */}
 
           <ToolBtn
             title="Controls Menu"
@@ -2038,14 +2034,9 @@ onChange={(e) => {
         </DraggablePill>
       )}
 
-      {/* === Compass Navigation Panel === */}
-      {showCompass && (
-        <DraggableCompassNav
-          onNavigate={() => {
-            setShowCompass(false);
-          }}
-        />
-      )}
+      {/* Compass Navigation Panel removed 2026-05-31 — see toolbar
+          comment above. The home page now hosts the workspace navigator
+          directly. */}
 
 {finalizeOpen && (
   <FinalizeAndExportPanel
@@ -2476,8 +2467,15 @@ function App() {
       {/* Password page */}
       <Route path="/wovenrainbowsbyerin/login" element={<PasswordGate />} />
 
-      {/* Workspace chooser (post-auth) */}
-      <Route path="/workspace" element={<WorkspaceHome />} />
+      {/* Workspace chooser removed 2026-05-31 — the home page hosts the
+          navigator directly now. Redirect any bookmarks / old links back
+          to home. WorkspaceHome function is kept in this file as a
+          fallback target for WorkspaceGate (auth flow) and as the source
+          of TIER_BADGE_COLOR consumers; safe to remove later if unused. */}
+      <Route
+        path="/workspace"
+        element={<Navigate to="/wovenrainbowsbyerin" replace />}
+      />
 
       {/* Designer tools (still protected individually) */}
       <Route

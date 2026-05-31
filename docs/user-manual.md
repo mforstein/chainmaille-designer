@@ -37,9 +37,9 @@ Everything here assumes the following. Read once; later sections won't repeat th
 | Tier | Cost | Unlocks |
 |---|---|---|
 | **Free** | $0 | Home, Basic, Ring Chart, Atlas browse, Tuner preview |
-| **Maker** | ~$8/mo | 3D Designer (no image overlay), Tuner save, Atlas apply, CSV export |
-| **Crafter** | ~$18/mo | 3D Designer full (spline, flood fill, image overlay), Erin Pattern 2D full, PDF BOM, Physical Pattern PDF |
-| **Studio** | ~$35/mo | Freeform full + image overlay/transfer, shape & spline fill, supplier cost estimator, GLB/STL export, commercial-use license |
+| **Maker** | $2.99/mo | 3D Designer (no image overlay), Tuner save, Atlas apply, CSV export |
+| **Crafter** | $5.99/mo | 3D Designer full (spline, flood fill, image overlay), Erin Pattern 2D full, PDF BOM, Physical Pattern PDF |
+| **Studio** | $9.99/mo | Freeform full + image overlay/transfer, shape & spline fill, supplier cost estimator, GLB/STL export, commercial-use license |
 
 **iPhone/iPad/Android apps** ship with **Free tier features only**. Subscribe at [chainmaildesigner.com](https://chainmaildesigner.com) to unlock paid tools.
 

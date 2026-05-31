@@ -39,7 +39,7 @@ const PLANS: Plan[] = [
   {
     tier: "maker",
     name: "Maker",
-    price: "$4",
+    price: "$2.99",
     period: "/ month",
     tagline: "Build for yourself",
     color: "#0369a1",
@@ -56,7 +56,7 @@ const PLANS: Plan[] = [
   {
     tier: "crafter",
     name: "Crafter",
-    price: "$9",
+    price: "$5.99",
     period: "/ month",
     tagline: "Sell at markets & online",
     color: "#7c3aed",
@@ -73,7 +73,7 @@ const PLANS: Plan[] = [
   {
     tier: "studio",
     name: "Studio",
-    price: "$17.50",
+    price: "$9.99",
     period: "/ month",
     tagline: "Full-time makers & shops",
     color: "#b45309",

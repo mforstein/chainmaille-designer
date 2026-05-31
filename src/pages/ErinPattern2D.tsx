@@ -880,10 +880,9 @@ const ErinPattern2D: React.FC = () => {
                 <IconRedo size={18} />
               </ToolBtn>
             </div>
-            <ToolBtn title="Navigation Menu" active={showCompass}
-              onClick={() => setShowCompass((v) => !v)}>
-              <IconHamburger size={18} />
-            </ToolBtn>
+            {/* Per Erin (2026-05-31): redundant Navigation Menu icon
+                removed. Users return to the home page (which IS the
+                navigator) to switch tools. */}
           </div>
         </DraggablePill>
 
@@ -1085,9 +1084,8 @@ const ErinPattern2D: React.FC = () => {
         </div>
       </div>
 
-      {showCompass && (
-        <DraggableCompassNav onNavigate={() => setShowCompass(false)} />
-      )}
+      {/* Compass nav overlay removed 2026-05-31 — see Navigation Menu
+          comment in the toolbar block above. */}
     </>
   );
 };

@@ -10,11 +10,14 @@ const TIER_LABELS: Record<Tier, string> = {
   studio: "Studio",
 };
 
+// Per Erin (2026-05-31): top tier capped at $10/mo, lower tiers
+// scaled proportionally below. Free tier may eventually carry
+// optional advertising via a service — decision pending; no ads in v1.
 const TIER_PRICE: Record<Tier, string> = {
   free: "Free",
-  maker: "$8/mo",
-  crafter: "$18/mo",
-  studio: "$35/mo",
+  maker: "$2.99/mo",
+  crafter: "$5.99/mo",
+  studio: "$9.99/mo",
 };
 
 interface RequiresTierProps {

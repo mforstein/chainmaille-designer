@@ -6362,13 +6362,9 @@ const scales3D = useMemo(() => {
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
         >
-          <ToolBtn
-            active={showCompass}
-            onClick={() => setShowCompass((v) => !v)}
-            title="Navigation Menu"
-          >
-            <IconHamburger size={18} />
-          </ToolBtn>
+          {/* Per Erin (2026-05-31): redundant per-page Navigation Menu
+              icon removed. Users return to the home page (which IS the
+              navigator) to switch tools. */}
 
           <ToolBtn
             onClick={() => setFinalizeOpen(true)}
@@ -8372,16 +8368,8 @@ const scales3D = useMemo(() => {
         </DraggablePill>
       )}
 
-      {/* ============================= */}
-      {/* ✅ SUBMENU / NAVIGATION (Designer style) */}
-      {/* ============================= */}
-      {showCompass && (
-        <DraggableCompassNav
-          onNavigate={() => {
-            setShowCompass(false);
-          }}
-        />
-      )}
+      {/* Submenu / Navigation removed 2026-05-31 — see toolbar comment
+          above. The home page hosts the workspace navigator now. */}
 
       {/* Preview banner for non-Studio users */}
       {isPreviewOnly && (

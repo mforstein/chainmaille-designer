@@ -110,9 +110,13 @@
 | Tier | Monthly Price | Target User |
 |------|---------------|-------------|
 | **Free** | $0 | Browsers, beginners |
-| **Maker** | ~$8/mo | Hobbyists building for themselves |
-| **Crafter** | ~$18/mo | Semi-pro, selling at markets/online |
-| **Studio** | ~$35/mo | Full-time makers, pattern designers, shops |
+| **Maker** | $2.99/mo | Hobbyists building for themselves |
+| **Crafter** | $5.99/mo | Semi-pro, selling at markets/online |
+| **Studio** | $9.99/mo | Full-time makers, pattern designers, shops |
+
+> Pricing updated 2026-05-31 per Erin: top tier capped at $10/mo, lower
+> tiers scaled proportionally. Free tier may eventually carry optional
+> advertising via a service — undecided; no ads in v1.
 
 ### Feature Access Matrix
 
