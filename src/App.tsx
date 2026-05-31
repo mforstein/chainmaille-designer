@@ -1189,9 +1189,13 @@ const doClearPaint = () => {
             📦
           </ToolBtn>
 
-          {/* Per Erin (2026-05-31): redundant navigation icon removed.
-              Users return to the home page (which IS the navigator) to
-              switch tools instead of using a per-page compass overlay. */}
+          <ToolBtn
+            title="Navigation Menu"
+            active={showCompass}
+            onClick={() => setShowCompass((v) => !v)}
+          >
+            <IconHamburger size={18} />
+          </ToolBtn>
 
           <ToolBtn
             title="Controls Menu"
@@ -2034,9 +2038,14 @@ onChange={(e) => {
         </DraggablePill>
       )}
 
-      {/* Compass Navigation Panel removed 2026-05-31 — see toolbar
-          comment above. The home page now hosts the workspace navigator
-          directly. */}
+      {/* === Compass Navigation Panel === */}
+      {showCompass && (
+        <DraggableCompassNav
+          onNavigate={() => {
+            setShowCompass(false);
+          }}
+        />
+      )}
 
 {finalizeOpen && (
   <FinalizeAndExportPanel
