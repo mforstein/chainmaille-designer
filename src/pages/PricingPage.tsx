@@ -417,9 +417,35 @@ export default function PricingPage() {
         <p>All plans include mobile app access. Cancel any time — no lock-in.</p>
         <p>Existing ERIN50 password users receive a complimentary 90-day Studio trial on first sign-up.</p>
         <p>
-          Questions?{" "}
-          <a href="mailto:micahforstein@gmail.com" style={{ color: "#7c3aed" }}>
-            Contact us
+          Questions? Email{" "}
+          <a
+            href="mailto:micahforstein@gmail.com?subject=Chainmail%20Studio%20question"
+            style={{ color: "#7c3aed" }}
+            onClick={(e) => {
+              // mailto silently no-ops on browsers without a default mail
+              // client (common on Brave/Chrome with web-only setups). Copy
+              // the address to the clipboard as a fallback so the click
+              // does *something* useful either way.
+              navigator.clipboard?.writeText("micahforstein@gmail.com").catch(() => {});
+              // Don't preventDefault — let mailto try; if it fails the
+              // clipboard copy already happened. Use a brief delay to give
+              // the OS time to launch a handler before we surface the toast.
+              setTimeout(() => {
+                if (document.visibilityState === "visible") {
+                  // Mail handler didn't take focus → tab still visible.
+                  // Show a lightweight inline confirmation.
+                  e.currentTarget?.setAttribute("data-copied", "1");
+                  const el = e.currentTarget;
+                  if (el) {
+                    const orig = el.textContent ?? "";
+                    el.textContent = "micahforstein@gmail.com (copied to clipboard)";
+                    setTimeout(() => { el.textContent = orig; }, 2200);
+                  }
+                }
+              }, 350);
+            }}
+          >
+            micahforstein@gmail.com
           </a>
         </p>
         <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 16 }}>

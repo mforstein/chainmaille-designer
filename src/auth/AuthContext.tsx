@@ -151,11 +151,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    // On mount: pull cached session, then immediately refresh against Supabase
+    // so we always have the latest user_metadata (e.g. Stripe-updated tier).
+    // getSession is synchronous-feeling (uses the cached JWT) — that's what
+    // unblocks initial render. refreshSession is the async truth-up call.
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
       setUser(data.session?.user ?? null);
       setTier(tierFromUser(data.session?.user ?? null));
       setLoading(false);
+      if (data.session && supabase) {
+        supabase.auth.refreshSession().catch(() => { /* network blip — keep cached */ });
+      }
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange(
@@ -166,7 +173,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    return () => listener.subscription.unsubscribe();
+    // Refresh the session whenever the tab becomes visible again. This picks
+    // up any user_metadata changes (e.g. tier updates from the Stripe webhook
+    // after the user returns from Stripe checkout) without forcing a manual
+    // sign-out/sign-in. Cheap (one network call) and silent when nothing changed.
+    const onVisibility = () => {
+      if (document.visibilityState === "visible" && supabase) {
+        supabase.auth.refreshSession().catch(() => { /* offline or token expired — ignore */ });
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    return () => {
+      listener.subscription.unsubscribe();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   const signIn = useCallback(
