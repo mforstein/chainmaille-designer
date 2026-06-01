@@ -288,7 +288,7 @@ export default function UserManual() {
           <Bullets items={[
             <>Most preferences (color palette, last-used scale shape, panel positions, weave snapshot, Atlas matrix) live in <code>localStorage</code>. Clearing site data resets everything to defaults.</>,
             <>Project files (JSON) capture the canvas contents and overlay settings, but never the palette / Tuner snapshot — those follow the device, not the file.</>,
-            <>ERIN50 unlock flags and the dev-tier override moved to <code>sessionStorage</code> on 2026-05-31 — they expire when the browser/tab closes, or when you click <strong>Sign out</strong>. Subscription tier (real Stripe-paid accounts) lives in your Supabase profile and persists indefinitely.</>,
+            <>Subscription tier (real Stripe-paid accounts) lives in your Supabase profile and persists indefinitely — clicking <strong>Sign out</strong> ends your local session but does not affect the underlying account.</>,
           ]} />
 
           <Sub title="Browser support" />
@@ -299,23 +299,10 @@ export default function UserManual() {
           ]} />
         </Sec>
 
-        {/* ── ACCOUNTS, ERIN50, SUBSCRIPTIONS ──────────────────────────────── */}
-        <Sec id="accounts" icon="🔑" title="Accounts, ERIN50 unlock, and subscriptions">
+        {/* ── ACCOUNTS, SUBSCRIPTIONS ──────────────────────────────────────── */}
+        <Sec id="accounts" icon="🔑" title="Accounts & subscriptions">
           <p style={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.7 }}>
-            Three ways to gain access. Free browsing needs no account; ERIN50 is the legacy beta passcode (session-scoped now); paid subscriptions are persistent and tied to your account.
-          </p>
-
-          <Sub title="ERIN50 — the legacy beta passcode" />
-          <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.7 }}>
-            ERIN50 is <strong>one single passcode</strong> typed into one field — not a username + password combo. Three places it works:
-          </p>
-          <Bullets items={[
-            <>The dedicated unlock page: <a href="/password-gate" style={{ color: "#a78bfa" }}>chainmaildesigner.com/password-gate</a> — type <code>ERIN50</code> and press Enter.</>,
-            <>The in-app paywall modal that appears when you try to use a Studio-tier feature without access — same single-field input.</>,
-            <>As a URL parameter: <code>chainmaildesigner.com/?unlock=ERIN50</code> — auto-activates.</>,
-          ]} />
-          <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.7, marginTop: 6 }}>
-            Case-insensitive. <strong>As of 2026-05-31, ERIN50 unlocks are session-scoped</strong> — stored in <code>sessionStorage</code>, not <code>localStorage</code>. The unlock lasts until you close the browser tab/window or click Sign Out. Re-enter ERIN50 next time you visit. This protects shared/public computers from leaving a Studio-tier session active.
+            Free browsing doesn't need an account. Paid subscriptions are tied to your account and unlock the higher-tier design tools.
           </p>
 
           <Sub title="Creating a Supabase account" />
@@ -346,9 +333,9 @@ export default function UserManual() {
             On the pricing page, your current tier shows <strong>Manage subscription</strong> instead of an upgrade button. That opens Stripe's Customer Portal — change card info, switch tiers, or cancel. Cancellation keeps access until the end of the paid month, then drops to Free.
           </p>
 
-          <Sub title="Signing out fully" />
+          <Sub title="Signing out" />
           <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.7 }}>
-            Click <strong>Sign out</strong> in the auth bar to fully reset: Supabase session ends, all ERIN50/dev-override flags are removed from both localStorage and sessionStorage, and your tier resets to Free. Closing the browser tab/window also auto-clears session-scoped unlocks.
+            Click <strong>Sign out</strong> in the auth bar to end your session and drop back to Free tier locally. Your underlying Supabase account and Stripe subscription are not affected — sign back in any time and your paid tier returns.
           </p>
         </Sec>
 

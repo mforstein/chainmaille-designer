@@ -8,7 +8,7 @@ Version 1.0 · Updated 2026-05-31
 ## Contents
 
 1. [Read first — assumptions](#1-read-first--assumptions)
-2. [Accounts, ERIN50 unlock, and subscriptions](#2-accounts-erin50-unlock-and-subscriptions)
+2. [Accounts & subscriptions](#2-accounts--subscriptions)
 3. [Home page](#3-home-page)
 4. [Workspace navigator](#4-workspace-navigator)
 5. [Freeform Studio](#5-freeform-studio)
@@ -59,38 +59,23 @@ Everything here assumes the following. Read once; later sections won't repeat th
 
 ---
 
-## 2. Accounts, ERIN50 unlock, and subscriptions
+## 2. Accounts & subscriptions
 
-### Three ways to gain access
+### Two ways to use Chainmail Studio
 
 | Path | Who it's for | How long it lasts |
 |---|---|---|
 | **Free browsing** | First-time visitors | No account needed for Home, Ring Chart, Atlas browse, Tuner preview, Basic 2D |
-| **ERIN50 passcode** | Existing beta users (legacy) | Browser-session-scoped — clears when the tab/browser closes |
 | **Paid subscription** (Maker / Crafter / Studio) | Customers who want the paid tools | Persistent — tied to your account, paid monthly via Stripe |
 
 ### Creating a Supabase account
 
 1. Go to [chainmaildesigner.com/auth](https://chainmaildesigner.com/auth).
 2. Click **Sign up**, enter your email + password.
-3. Confirm via the verification email.
+3. Confirm via the verification email (if email confirmation is enabled).
 4. New accounts start on the **Free** tier.
 
-You can sign in/out at any time. Signing out clears any local unlocks too (ERIN50 flags, dev overrides) so a hard "Sign out" always drops you back to Free.
-
-### ERIN50 — the legacy beta passcode
-
-ERIN50 is **one single passcode** typed into one field. **Not a username + password combo.**
-
-Three places it works:
-
-1. The dedicated unlock page: [chainmaildesigner.com/password-gate](https://chainmaildesigner.com/password-gate) — type `ERIN50` and press Enter.
-2. The in-app paywall modal that appears when you try to use a Studio-tier feature without access — same single-field input.
-3. As a URL parameter: visit [chainmaildesigner.com/?unlock=ERIN50](https://chainmaildesigner.com/?unlock=ERIN50) — auto-activates and persists.
-
-Case-insensitive (`ERIN50`, `erin50`, `Erin50` all work).
-
-**Important — temporary access**: starting 2026-05-31, ERIN50 unlocks are **session-scoped** — they live in `sessionStorage`, not `localStorage`. The unlock lasts until you close the browser tab/window or click Sign Out. Re-enter ERIN50 next time you visit. This change protects shared and public computers from inadvertently leaving a Studio-tier session active.
+You can sign in/out at any time. Signing out drops you back to Free locally — your Supabase account and Stripe subscription are preserved on the server.
 
 ### Upgrading via subscription
 
@@ -474,26 +459,9 @@ To **manage or cancel**, return to the pricing page — your current tier shows 
 
 ---
 
-## Signing out and clearing local access
+## Signing out
 
-Click **Sign out** in the auth bar (top-right of the home page when signed in) to fully reset your session:
-
-- Supabase session ends
-- ERIN50 unlock flags (`designerAuth` / `freeformAuth` / `erin2DAuth`) are removed from sessionStorage AND localStorage
-- Dev override (`chainmail_dev_tier`) is removed from sessionStorage AND localStorage
-- Tier resets to Free
-
-You can also clear access without signing in by closing the browser tab/window — sessionStorage-scoped unlocks die automatically with the tab.
-
-To manually clear from DevTools Console (paste this into any chainmaildesigner.com page):
-
-```javascript
-['designerAuth','freeformAuth','erin2DAuth','chainmail_dev_tier'].forEach(k => {
-  localStorage.removeItem(k);
-  sessionStorage.removeItem(k);
-});
-location.reload();
-```
+Click **Sign out** in the auth bar (top-right of the home page when signed in) to end your local session and drop back to Free tier. Your Supabase account and any active Stripe subscription are preserved on the server — sign back in any time to restore your paid tier.
 
 ---
 
