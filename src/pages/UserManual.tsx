@@ -7,18 +7,19 @@ import { IconHamburger } from "../components/icons/ToolIcons";
 // ─── section index ─────────────────────────────────────────────────────────────
 
 const SECTIONS = [
-  { id: "assumptions", icon: "ℹ️", title: "Read first" },
-  { id: "home",        icon: "🏠", title: "Home" },
-  { id: "workspace",   icon: "🗂️", title: "Workspace" },
-  { id: "studio",      icon: "✨", title: "Freeform Studio" },
-  { id: "designer",    icon: "💎", title: "3D Designer" },
-  { id: "chart",       icon: "📊", title: "Ring Chart" },
-  { id: "tuner",       icon: "⚙️", title: "Weave Tuner" },
-  { id: "atlas",       icon: "🌐", title: "Weave Atlas" },
-  { id: "pattern",     icon: "🪡", title: "Basic" },
-  { id: "export",      icon: "📦", title: "Export" },
-  { id: "examples",    icon: "🧪", title: "How-To" },
-  { id: "shortcuts",   icon: "⌨️", title: "Shortcuts" },
+  { id: "assumptions",   icon: "ℹ️", title: "Read first" },
+  { id: "accounts",      icon: "🔑", title: "Accounts & Pricing" },
+  { id: "home",          icon: "🏠", title: "Home" },
+  { id: "workspace",     icon: "🗂️", title: "Workspace" },
+  { id: "studio",        icon: "✨", title: "Freeform Studio" },
+  { id: "designer",      icon: "💎", title: "3D Designer" },
+  { id: "chart",         icon: "📊", title: "Ring Chart" },
+  { id: "tuner",         icon: "⚙️", title: "Weave Tuner" },
+  { id: "atlas",         icon: "🌐", title: "Weave Atlas" },
+  { id: "pattern",       icon: "🪡", title: "Basic" },
+  { id: "export",        icon: "📦", title: "Export" },
+  { id: "examples",      icon: "🧪", title: "How-To" },
+  { id: "shortcuts",     icon: "⌨️", title: "Shortcuts" },
 ];
 
 // ─── styled primitives ─────────────────────────────────────────────────────────
@@ -267,11 +268,14 @@ export default function UserManual() {
 
           <Sub title="Tiers & gating" />
           <Bullets items={[
-            <><strong>Free</strong>: Home, Basic, Ring Chart, Atlas browse, Tuner preview.</>,
-            <><strong>Maker</strong>: 3D Designer (no image overlay), Tuner save, Atlas apply, CSV export.</>,
-            <><strong>Crafter</strong>: 3D Designer full (spline, flood fill, image overlay), Erin Pattern 2D full, PDF BOM, Physical Pattern PDF, Affiliate buy buttons.</>,
-            <><strong>Studio</strong>: Freeform (full), Freeform image overlay & transfer, shape/spline fill, Supplier cost estimator, GLB/STL export, Commercial-use license.</>,
+            <><strong>Free</strong> ($0): Home, Basic, Ring Chart, Atlas browse, Tuner preview.</>,
+            <><strong>Maker</strong> ($2.99/mo): 3D Designer (no image overlay), Tuner save, Atlas apply, CSV export.</>,
+            <><strong>Crafter</strong> ($5.99/mo): 3D Designer full (spline, flood fill, image overlay), Erin Pattern 2D full, PDF BOM, Physical Pattern PDF, Affiliate buy buttons.</>,
+            <><strong>Studio</strong> ($9.99/mo): Freeform (full), Freeform image overlay & transfer, shape/spline fill, Supplier cost estimator, GLB/STL export, Commercial-use license.</>,
           ]} />
+          <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.6, marginTop: 4 }}>
+            Subscribe via <a href="/pricing" style={{ color: "#a78bfa" }}>chainmaildesigner.com/pricing</a>. Mobile apps (iOS/Android) ship with Free tier features only — subscribe from the website to unlock paid tools.
+          </p>
 
           <Sub title="Default scale shape" />
           <Bullets items={[
@@ -284,6 +288,7 @@ export default function UserManual() {
           <Bullets items={[
             <>Most preferences (color palette, last-used scale shape, panel positions, weave snapshot, Atlas matrix) live in <code>localStorage</code>. Clearing site data resets everything to defaults.</>,
             <>Project files (JSON) capture the canvas contents and overlay settings, but never the palette / Tuner snapshot — those follow the device, not the file.</>,
+            <>ERIN50 unlock flags and the dev-tier override moved to <code>sessionStorage</code> on 2026-05-31 — they expire when the browser/tab closes, or when you click <strong>Sign out</strong>. Subscription tier (real Stripe-paid accounts) lives in your Supabase profile and persists indefinitely.</>,
           ]} />
 
           <Sub title="Browser support" />
@@ -292,6 +297,59 @@ export default function UserManual() {
             <>Touch + mouse + pen are all supported; two-finger pan and pinch-zoom always work regardless of the active tool.</>,
             <>The app is installable as a PWA on mobile/desktop. The manifest references <code>/icons/icon-192.png</code> and <code>/icons/icon-512.png</code>.</>,
           ]} />
+        </Sec>
+
+        {/* ── ACCOUNTS, ERIN50, SUBSCRIPTIONS ──────────────────────────────── */}
+        <Sec id="accounts" icon="🔑" title="Accounts, ERIN50 unlock, and subscriptions">
+          <p style={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.7 }}>
+            Three ways to gain access. Free browsing needs no account; ERIN50 is the legacy beta passcode (session-scoped now); paid subscriptions are persistent and tied to your account.
+          </p>
+
+          <Sub title="ERIN50 — the legacy beta passcode" />
+          <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.7 }}>
+            ERIN50 is <strong>one single passcode</strong> typed into one field — not a username + password combo. Three places it works:
+          </p>
+          <Bullets items={[
+            <>The dedicated unlock page: <a href="/password-gate" style={{ color: "#a78bfa" }}>chainmaildesigner.com/password-gate</a> — type <code>ERIN50</code> and press Enter.</>,
+            <>The in-app paywall modal that appears when you try to use a Studio-tier feature without access — same single-field input.</>,
+            <>As a URL parameter: <code>chainmaildesigner.com/?unlock=ERIN50</code> — auto-activates.</>,
+          ]} />
+          <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.7, marginTop: 6 }}>
+            Case-insensitive. <strong>As of 2026-05-31, ERIN50 unlocks are session-scoped</strong> — stored in <code>sessionStorage</code>, not <code>localStorage</code>. The unlock lasts until you close the browser tab/window or click Sign Out. Re-enter ERIN50 next time you visit. This protects shared/public computers from leaving a Studio-tier session active.
+          </p>
+
+          <Sub title="Creating a Supabase account" />
+          <Bullets items={[
+            <>Go to <a href="/auth" style={{ color: "#a78bfa" }}>chainmaildesigner.com/auth</a>.</>,
+            <>Click <strong>Sign up</strong>, enter your email + password, confirm via the verification email.</>,
+            <>New accounts start on the <strong>Free</strong> tier.</>,
+          ]} />
+
+          <Sub title="Upgrading via subscription (Stripe Payment Links)" />
+          <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.7 }}>
+            Subscriptions use Stripe-hosted checkout — no card data ever touches our site.
+          </p>
+          <Bullets items={[
+            <>Sign in at chainmaildesigner.com so the subscription can be tied to your account.</>,
+            <>Visit <a href="/pricing" style={{ color: "#a78bfa" }}>/pricing</a> and click <strong>Start Maker</strong> ($2.99), <strong>Start Crafter</strong> ($5.99), or <strong>Start Studio</strong> ($9.99).</>,
+            <>Stripe's checkout page opens with your email pre-filled. Enter card details. Subscribe.</>,
+            <>Webhook updates your tier within seconds. Refresh chainmaildesigner.com — locked tools unlock immediately.</>,
+          ]} />
+
+          <Sub title="Test mode (currently active)" />
+          <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.7 }}>
+            The site is in Stripe test mode. Use card <code>4242 4242 4242 4242</code>, any future expiry, any 3-digit CVC, any ZIP. No real charges. Live mode launches after testing is verified.
+          </p>
+
+          <Sub title="Managing or cancelling" />
+          <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.7 }}>
+            On the pricing page, your current tier shows <strong>Manage subscription</strong> instead of an upgrade button. That opens Stripe's Customer Portal — change card info, switch tiers, or cancel. Cancellation keeps access until the end of the paid month, then drops to Free.
+          </p>
+
+          <Sub title="Signing out fully" />
+          <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.7 }}>
+            Click <strong>Sign out</strong> in the auth bar to fully reset: Supabase session ends, all ERIN50/dev-override flags are removed from both localStorage and sessionStorage, and your tier resets to Free. Closing the browser tab/window also auto-clears session-scoped unlocks.
+          </p>
         </Sec>
 
         {/* ── HOME ─────────────────────────────────────────────────────────── */}

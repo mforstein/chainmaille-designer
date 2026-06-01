@@ -183,10 +183,11 @@ function PasswordGateWrapper({ onUnlock }: { onUnlock: () => void }) {
   return (
     <PasswordGate
       onSuccess={() => {
-        // 🔓 unlock everything once
-        localStorage.setItem("designerAuth", "true");
-        localStorage.setItem("freeformAuth", "true");
-        localStorage.setItem("erin2DAuth", "true");
+        // 🔓 unlock everything once (sessionStorage so it expires on tab close
+        // or signOut — see auth/AuthContext.tsx)
+        sessionStorage.setItem("designerAuth", "true");
+        sessionStorage.setItem("freeformAuth", "true");
+        sessionStorage.setItem("erin2DAuth", "true");
 
         onUnlock();
       }}
@@ -2227,11 +2228,14 @@ const btnStyle: React.CSSProperties = {
 function WorkspaceGate() {
   const { user, tier, loading } = useAuth();
   if (loading) return null;
-  // Allow if Supabase user exists, or legacy localStorage auth is present
+  // Allow if Supabase user exists, or legacy ERIN50 unlock is present.
+  // ERIN50 flags moved from localStorage → sessionStorage on 2026-05-31 so the
+  // unlock expires when the tab/browser closes (see auth/AuthContext.tsx).
+  // We accept either location for one-session backwards compat.
   const legacyOk =
-    localStorage.getItem("designerAuth") === "true" &&
-    localStorage.getItem("freeformAuth") === "true" &&
-    localStorage.getItem("erin2DAuth") === "true";
+    (sessionStorage.getItem("designerAuth") === "true" || localStorage.getItem("designerAuth") === "true") &&
+    (sessionStorage.getItem("freeformAuth") === "true" || localStorage.getItem("freeformAuth") === "true") &&
+    (sessionStorage.getItem("erin2DAuth")    === "true" || localStorage.getItem("erin2DAuth")    === "true");
   if (!user && !legacyOk) return <Navigate to="/auth" replace />;
   return <WorkspaceHome />;
 }

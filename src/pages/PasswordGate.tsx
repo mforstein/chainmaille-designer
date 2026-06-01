@@ -23,10 +23,12 @@ export default function PasswordGate({ onSuccess }: PasswordGateProps) {
     const code = input.trim().toUpperCase();
 
     if (code === "ERIN50") {
-      // 🔓 unlock all tools (shared session)
-      localStorage.setItem("designerAuth", "true");
-      localStorage.setItem("freeformAuth", "true");
-      localStorage.setItem("erin2DAuth", "true");
+      // 🔓 unlock all tools — sessionStorage so the unlock expires when the
+      // browser/tab closes (or on explicit signOut). Was localStorage before
+      // 2026-05-31 (persistent forever, which became a security concern).
+      sessionStorage.setItem("designerAuth", "true");
+      sessionStorage.setItem("freeformAuth", "true");
+      sessionStorage.setItem("erin2DAuth", "true");
 
       // Optional inline success hook
       onSuccess?.();

@@ -1,24 +1,25 @@
 # Chainmail Studio — User Manual
 
 **Chainmail Studio by Woven Rainbows by Erin**
-Version 1.0 · Updated 2026-05-30
+Version 1.0 · Updated 2026-05-31
 
 ---
 
 ## Contents
 
 1. [Read first — assumptions](#1-read-first--assumptions)
-2. [Home page](#2-home-page)
-3. [Workspace navigator](#3-workspace-navigator)
-4. [Freeform Studio](#4-freeform-studio)
-5. [3D Designer](#5-3d-designer)
-6. [Ring Size Chart](#6-ring-size-chart)
-7. [Weave Tuner](#7-weave-tuner)
-8. [Weave Atlas](#8-weave-atlas)
-9. [Erin Pattern 2D (Basic)](#9-erin-pattern-2d-basic)
-10. [Export — BOM, CSV, PDF, 3D](#10-export--bom-csv-pdf-3d)
-11. [How-to recipes](#11-how-to-recipes)
-12. [Keyboard shortcuts](#12-keyboard-shortcuts)
+2. [Accounts, ERIN50 unlock, and subscriptions](#2-accounts-erin50-unlock-and-subscriptions)
+3. [Home page](#3-home-page)
+4. [Workspace navigator](#4-workspace-navigator)
+5. [Freeform Studio](#5-freeform-studio)
+6. [3D Designer](#6-3d-designer)
+7. [Ring Size Chart](#7-ring-size-chart)
+8. [Weave Tuner](#8-weave-tuner)
+9. [Weave Atlas](#9-weave-atlas)
+10. [Basic 2D Designer](#10-basic-2d-designer)
+11. [Export — BOM, CSV, PDF, 3D](#11-export--bom-csv-pdf-3d)
+12. [How-to recipes](#12-how-to-recipes)
+13. [Keyboard shortcuts](#13-keyboard-shortcuts)
 
 > **📷 Note on screenshots**: every section has a `[SCREENSHOT:]` placeholder describing what to capture. When you're filling this in, open the relevant page in the app and grab the indicated view.
 
@@ -58,7 +59,81 @@ Everything here assumes the following. Read once; later sections won't repeat th
 
 ---
 
-## 2. Home page
+## 2. Accounts, ERIN50 unlock, and subscriptions
+
+### Three ways to gain access
+
+| Path | Who it's for | How long it lasts |
+|---|---|---|
+| **Free browsing** | First-time visitors | No account needed for Home, Ring Chart, Atlas browse, Tuner preview, Basic 2D |
+| **ERIN50 passcode** | Existing beta users (legacy) | Browser-session-scoped — clears when the tab/browser closes |
+| **Paid subscription** (Maker / Crafter / Studio) | Customers who want the paid tools | Persistent — tied to your account, paid monthly via Stripe |
+
+### Creating a Supabase account
+
+1. Go to [chainmaildesigner.com/auth](https://chainmaildesigner.com/auth).
+2. Click **Sign up**, enter your email + password.
+3. Confirm via the verification email.
+4. New accounts start on the **Free** tier.
+
+You can sign in/out at any time. Signing out clears any local unlocks too (ERIN50 flags, dev overrides) so a hard "Sign out" always drops you back to Free.
+
+### ERIN50 — the legacy beta passcode
+
+ERIN50 is **one single passcode** typed into one field. **Not a username + password combo.**
+
+Three places it works:
+
+1. The dedicated unlock page: [chainmaildesigner.com/password-gate](https://chainmaildesigner.com/password-gate) — type `ERIN50` and press Enter.
+2. The in-app paywall modal that appears when you try to use a Studio-tier feature without access — same single-field input.
+3. As a URL parameter: visit [chainmaildesigner.com/?unlock=ERIN50](https://chainmaildesigner.com/?unlock=ERIN50) — auto-activates and persists.
+
+Case-insensitive (`ERIN50`, `erin50`, `Erin50` all work).
+
+**Important — temporary access**: starting 2026-05-31, ERIN50 unlocks are **session-scoped** — they live in `sessionStorage`, not `localStorage`. The unlock lasts until you close the browser tab/window or click Sign Out. Re-enter ERIN50 next time you visit. This change protects shared and public computers from inadvertently leaving a Studio-tier session active.
+
+### Upgrading via subscription
+
+Subscriptions use **Stripe Payment Links** for checkout — no credit card data ever touches our site, Stripe handles the hosted checkout page.
+
+**Steps to upgrade:**
+
+1. Sign in at [chainmaildesigner.com](https://chainmaildesigner.com) (account required so we can match the subscription to you).
+2. Go to [chainmaildesigner.com/pricing](https://chainmaildesigner.com/pricing).
+3. Click the **"Start Maker"** / **"Start Crafter"** / **"Start Studio"** button on the tier you want.
+4. You'll be redirected to Stripe's secure checkout page. Your email is pre-filled.
+5. Enter card details, confirm.
+6. Stripe charges your card, then sends a webhook to our server which updates your tier in your account profile.
+7. Return to chainmaildesigner.com — refresh the page — the new tier badge appears in the top-right of the home page and your previously-locked tools unlock immediately.
+
+### Test mode (development)
+
+The site is currently in **Stripe test mode**. To test the flow without real charges, use Stripe's test card:
+
+| Field | Value |
+|---|---|
+| Card number | `4242 4242 4242 4242` |
+| Expiry | any future date (e.g. `12/30`) |
+| CVC | any 3 digits (e.g. `123`) |
+| ZIP | any (e.g. `12345`) |
+
+No real money moves. When live-mode launches, the buttons will use real Stripe live keys and real cards only.
+
+### Managing or cancelling a subscription
+
+On the [pricing page](https://chainmaildesigner.com/pricing), the tier you currently have shows a **"Manage subscription"** button instead of an upgrade button. Click it to open Stripe's Customer Portal where you can:
+
+- Update card or billing info
+- Switch to a different tier (upgrade/downgrade)
+- Cancel — your access continues through the end of the current billing month, then drops to Free
+
+### Commercial-use license
+
+Studio tier ($9.99/mo) includes a commercial-use license — see [chainmaildesigner.com/commercial-license](https://chainmaildesigner.com/commercial-license) for full terms. Maker and Crafter tiers are for personal/hobby use only.
+
+---
+
+## 3. Home page
 
 **URL**: `/wovenrainbowsbyerin`
 **Access**: public, no account required
@@ -77,7 +152,7 @@ The public landing page. Loads live data from Erin's Etsy shop, the designer fea
 
 ---
 
-## 3. Workspace navigator
+## 4. Workspace navigator
 
 **URL**: `/workspace`
 **Access**: any signed-in user (login is optional in v1)
@@ -98,7 +173,7 @@ The launchpad after signing in. Shows your account tier and links to every desig
 
 ---
 
-## 4. Freeform Studio
+## 5. Freeform Studio
 
 **URL**: `/freeform`
 **Access**: Studio tier (preview-only on free)
@@ -159,7 +234,7 @@ Shows live counters: rings, colors used, geometry params (ID, WD, center spacing
 
 ---
 
-## 5. 3D Designer
+## 6. 3D Designer
 
 **URL**: `/designer`
 **Access**: Maker tier (Crafter+ for spline fill, image overlay)
@@ -184,7 +259,7 @@ Inner diameter, wire diameter, center spacing, and tilt angles come from the Tun
 
 ---
 
-## 6. Ring Size Chart
+## 7. Ring Size Chart
 
 **URL**: `/chart`
 **Access**: public, always free
@@ -202,7 +277,7 @@ Interactive 3D visualization of every common ring size combination. Use it to **
 
 ---
 
-## 7. Weave Tuner
+## 8. Weave Tuner
 
 **URL**: `/tuner`
 **Access**: preview free, save/load requires Maker
@@ -226,29 +301,50 @@ The Tuner snapshot is written to `localStorage["freeform.tunerSnapshot.v1"]` and
 
 Range: **−5 to +5**. Negative values sink scales behind ring plane.
 
+### 3-state weave status (when saving)
+
+When you save a Tuner entry, you set its status — this colors the matching cell in the Weave Atlas so other users (and you) can tell at a glance whether the combination is usable.
+
+| Status | Meaning | Atlas cell color |
+|---|---|---|
+| **Rings + Scales** | Both ring and ring+scale weaves succeed at this ID / wire pair | 🟢 Green |
+| **Rings only (no scales)** | Rings close cleanly, but the scale hole won't admit the ring at this AR. Still usable as a ring-only section. | 🟠 Orange |
+| **No Solution** | Neither rings nor scales work at this combination | 🔴 Red |
+
+### Grid X / Y under the lock
+
+With **"Lock hole to ring center"** on, scales snap to ring centers — but the **Grid X** and **Grid Y** sliders are still editable. They apply a uniform offset to the whole scale plane: every scale shifts by the same vector, so registration to ring centers is preserved. Use them to dial in horizontal/vertical scale-vs-ring alignment without unlocking. (Scale Center Spacing stays disabled with the lock — that one is genuinely determined by the ring grid.)
+
 ---
 
-## 8. Weave Atlas
+## 9. Weave Atlas
 
 **URL**: `/atlas`
 **Access**: browse free, apply requires Maker
 
 [SCREENSHOT: Weave Atlas grid with multiple weave types in cells, status colors visible]
 
-Curated preset catalog. Browse weaves by category and apply directly to the Designer.
+Matrix of **inner diameter (rows)** × **wire diameter (columns)**. Each saved Tuner entry colors its cell by the 3-state status from the Tuner.
 
-| Status color | Meaning |
+### Cell colors
+
+| Color | Meaning |
 |---|---|
-| Bright (blue background) | Currently active in the Designer |
-| Faint green | Tested, ready to apply |
-| Faint yellow | Drafted, may need tuning |
-| Faint red | Known-broken, do not apply |
+| 🟢 Green | Both rings and ring+scale weave at this combination |
+| 🟠 Orange | Rings close cleanly, scales don't at this AR — ring-only sections still usable |
+| 🔴 Red | No solution at this combination |
+| `+` (empty) | Untested — open the Tuner to calibrate |
 
-Click a weave to preview; "Apply" loads it into the Designer.
+> ⚠️ **The matrix is populated entirely by *your* Tuner saves — it's per-device.** Two users on different devices see independent matrices until they share a JSON export.
+
+### Clicking cells
+
+- **Click an active cell**: Applies that weave's geometry (ID, WD, center spacing, tilt) to the currently-active design tool. Does NOT change colors or layout — apply, then paint freely on top.
+- **Click a `+` cell**: Opens the Tuner pre-loaded with that ID + wire combination and a guided setup flow (tune rings first, then scales, then save with a 3-state status).
 
 ---
 
-## 9. Erin Pattern 2D (Basic)
+## 10. Basic 2D Designer
 
 **URL**: `/erin2d`
 **Access**: Crafter tier
@@ -261,7 +357,7 @@ Grid-based 2D pattern designer for traditional pixel-style chainmaille charting.
 
 ---
 
-## 10. Export — BOM, CSV, PDF, 3D
+## 11. Export — BOM, CSV, PDF, 3D
 
 [SCREENSHOT: Finalize & Export panel open over a finished design, ring counts visible]
 
@@ -290,7 +386,7 @@ Live ring count by color and size. Updates as you design.
 
 ---
 
-## 11. How-to recipes
+## 12. How-to recipes
 
 ### Copy a heart with image colors and paste it elsewhere
 
@@ -316,6 +412,41 @@ Live ring count by color and size. Updates as you design.
 5. Open **Tuner** → load that weave's snapshot → tweak if needed → save.
 6. Open **Designer** or **Freeform** → start placing rings.
 
+### Add a custom scale shape and make it the default
+
+1. In **Freeform**, click the S-shape picker icon (the emoji button in the toolbar).
+2. Click **+ Add custom shape**. The Custom Shape Editor opens.
+3. Trace your outline by clicking points on the editor canvas, or paste polygon coordinates.
+4. Save the shape. **It renders immediately on the design** — no reload required. (The renderer's lookup cache is invalidated on save; before this fix, freshly-created customs fell back to the legacy "teardrop" silhouette until you reloaded the page.)
+5. Back in the picker, click the brush icon next to your shape's row, check **"Set as default"**, and apply. The next session will start with this shape as the default.
+
+### Mark a tuned ring/wire pair as "rings only" in the Atlas
+
+1. Open **Atlas**. Click a `+` (untested) cell at the ring ID × wire combo you want to tune.
+2. The Tuner opens with the geometry pre-filled. Tune rings until they close cleanly on the AR.
+3. Switch to **Calibrate Scales** → **Tune Scales** and observe whether scales weave at this geometry. If the scale hole won't pass over the ring, scales fail.
+4. In the Tune Rings panel, set **Status → Rings only (no scales)**.
+5. Click **Save**. Return to the Atlas — the cell now renders 🟠 orange.
+
+### Shift the entire scale plane relative to the rings (without unlocking)
+
+1. Open **Tuner** → **Tune Weave** panel.
+2. Keep **Lock hole to ring center** checked. **Grid X** and **Grid Y** are now editable (Scale Center stays disabled — that one is determined by the ring grid).
+3. Drag **Grid X** to nudge all scales left/right by the same amount; **Grid Y** nudges them up/down. Registration to ring centers is preserved.
+4. Click **Save**. Freeform Studio picks up the offset on the next snapshot read — no reload.
+
+### Upgrade your subscription tier
+
+1. Sign in at [chainmaildesigner.com](https://chainmaildesigner.com).
+2. Visit [chainmaildesigner.com/pricing](https://chainmaildesigner.com/pricing).
+3. Click the **Start Maker / Crafter / Studio** button for the tier you want.
+4. Stripe's hosted checkout page opens; your email is pre-filled.
+5. Enter card details (in test mode use `4242 4242 4242 4242`, any future date, any 3-digit CVC, any ZIP). Click **Subscribe**.
+6. Stripe processes payment, fires a webhook, and your account's tier flips within seconds.
+7. Return to the app, refresh, and the locked tools are unlocked.
+
+To **manage or cancel**, return to the pricing page — your current tier shows **"Manage subscription"** instead of an upgrade button. That opens Stripe's Customer Portal where you can switch tiers, update card info, or cancel.
+
 ### Get a printable pattern for a 6-color design
 
 1. Finish the design in **Freeform** or **Designer**.
@@ -326,7 +457,7 @@ Live ring count by color and size. Updates as you design.
 
 ---
 
-## 12. Keyboard shortcuts
+## 13. Keyboard shortcuts
 
 | Keys | What it does | Available in |
 |---|---|---|
@@ -340,6 +471,29 @@ Live ring count by color and size. Updates as you design.
 | `Mouse wheel` | Zoom in/out | All canvases |
 | `Pinch (touch)` | Zoom in/out | All canvases |
 | `Two-finger drag (touch)` | Pan | All canvases |
+
+---
+
+## Signing out and clearing local access
+
+Click **Sign out** in the auth bar (top-right of the home page when signed in) to fully reset your session:
+
+- Supabase session ends
+- ERIN50 unlock flags (`designerAuth` / `freeformAuth` / `erin2DAuth`) are removed from sessionStorage AND localStorage
+- Dev override (`chainmail_dev_tier`) is removed from sessionStorage AND localStorage
+- Tier resets to Free
+
+You can also clear access without signing in by closing the browser tab/window — sessionStorage-scoped unlocks die automatically with the tab.
+
+To manually clear from DevTools Console (paste this into any chainmaildesigner.com page):
+
+```javascript
+['designerAuth','freeformAuth','erin2DAuth','chainmail_dev_tier'].forEach(k => {
+  localStorage.removeItem(k);
+  sessionStorage.removeItem(k);
+});
+location.reload();
+```
 
 ---
 

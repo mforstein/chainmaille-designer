@@ -22,29 +22,51 @@ export function tierAtLeast(userTier: Tier, required: Tier): boolean {
   return TIER_RANK[userTier] >= TIER_RANK[required];
 }
 
-// ─── Legacy localStorage bridge ──────────────────────────────────────────────
+// ─── Legacy sessionStorage bridge ────────────────────────────────────────────
 // Existing ERIN50 users have designerAuth/freeformAuth/erin2DAuth set to "true".
-// Until they create a real account we treat them as Studio for the 90-day window.
+// As of 2026-05-31 these flags live in sessionStorage instead of localStorage —
+// they expire when the browser/tab is closed (closest thing to "logout" for a
+// no-account flow). Existing localStorage flags are migrated to sessionStorage
+// on first read for one-session continuity, then removed.
+const LEGACY_FLAG_KEYS = ["designerAuth", "freeformAuth", "erin2DAuth"] as const;
+
+function migrateLegacyFlagsFromLocalStorage() {
+  try {
+    for (const key of LEGACY_FLAG_KEYS) {
+      const v = localStorage.getItem(key);
+      if (v === "true" && !sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, "true");
+      }
+      localStorage.removeItem(key);
+    }
+  } catch {/* private mode / blocked storage */}
+}
+
 function legacyTier(): Tier | null {
-  if (
-    localStorage.getItem("designerAuth") === "true" &&
-    localStorage.getItem("freeformAuth") === "true" &&
-    localStorage.getItem("erin2DAuth") === "true"
-  ) {
-    return "studio";
-  }
+  migrateLegacyFlagsFromLocalStorage();
+  try {
+    if (
+      sessionStorage.getItem("designerAuth") === "true" &&
+      sessionStorage.getItem("freeformAuth") === "true" &&
+      sessionStorage.getItem("erin2DAuth") === "true"
+    ) {
+      return "studio";
+    }
+  } catch {/* private mode */}
   return null;
 }
 
 // ─── Developer tier override (dev / QA / testing backdoor) ───────────────────
 // Activate by visiting any URL with:   ?devtier=<tier>&devkey=<DEV_TOKEN>
 //   where <tier> is one of:  free | maker | crafter | studio
-// Once activated the override is persisted in localStorage as `chainmail_dev_tier`
-// and survives across navigations and sessions. Beats every other tier source
-// (Supabase metadata, ERIN50 legacy bridge).
+// As of 2026-05-31 the override is persisted in **sessionStorage** as
+// `chainmail_dev_tier` — it survives navigations and reloads in the same tab,
+// but is cleared when the browser/tab is closed or on explicit signOut.
+// Beats every other tier source (Supabase metadata, ERIN50 legacy bridge).
 //
 // To deactivate:  visit any URL with  ?devtier=clear   (no token required)
-//                 OR in devtools:     localStorage.removeItem('chainmail_dev_tier')
+//                 OR close the tab    (sessionStorage dies with it)
+//                 OR in devtools:     sessionStorage.removeItem('chainmail_dev_tier')
 //
 // The token is only mild obscurity — keeps casual users from stumbling onto
 // it, but anyone who reads the JS bundle can find it. Rotate by editing
@@ -56,25 +78,34 @@ const VALID_TIER_NAMES: readonly Tier[] = ["free", "maker", "crafter", "studio"]
 function devOverrideTier(): Tier | null {
   if (typeof window === "undefined") return null;
   try {
+    // Migrate any pre-existing localStorage value once (same compat pattern as
+    // legacyTier) so devs who already activated via the old persistent path
+    // keep their override for one more browser session.
+    const stale = localStorage.getItem(DEV_TIER_KEY);
+    if (stale && !sessionStorage.getItem(DEV_TIER_KEY)) {
+      sessionStorage.setItem(DEV_TIER_KEY, stale);
+    }
+    localStorage.removeItem(DEV_TIER_KEY);
+
     const params = new URLSearchParams(window.location.search);
     const fromUrl = params.get("devtier");
     if (fromUrl !== null) {
       const lowered = fromUrl.toLowerCase();
       if (lowered === "clear") {
-        localStorage.removeItem(DEV_TIER_KEY);
+        sessionStorage.removeItem(DEV_TIER_KEY);
       } else if (
         params.get("devkey") === DEV_TIER_TOKEN &&
         (VALID_TIER_NAMES as readonly string[]).includes(lowered)
       ) {
-        localStorage.setItem(DEV_TIER_KEY, lowered);
+        sessionStorage.setItem(DEV_TIER_KEY, lowered);
       }
     }
-    const stored = localStorage.getItem(DEV_TIER_KEY);
+    const stored = sessionStorage.getItem(DEV_TIER_KEY);
     if (stored && (VALID_TIER_NAMES as readonly string[]).includes(stored)) {
       return stored as Tier;
     }
   } catch {
-    // localStorage / window access denied (private mode, etc.) — silently no-op
+    // sessionStorage / window access denied (private mode, etc.) — silently no-op
   }
   return null;
 }
@@ -161,10 +192,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     if (!supabase) return;
     await supabase.auth.signOut();
-    // Clear legacy flags too
-    localStorage.removeItem("designerAuth");
-    localStorage.removeItem("freeformAuth");
-    localStorage.removeItem("erin2DAuth");
+    // Clear all backdoor flags (both old localStorage and new sessionStorage)
+    // so signing out hard-resets to Free, no matter how the user got elevated.
+    for (const key of LEGACY_FLAG_KEYS) {
+      localStorage.removeItem(key);
+      try { sessionStorage.removeItem(key); } catch { /* ignore */ }
+    }
+    localStorage.removeItem(DEV_TIER_KEY);
+    try { sessionStorage.removeItem(DEV_TIER_KEY); } catch { /* ignore */ }
     setTier("free");
   }, []);
 
