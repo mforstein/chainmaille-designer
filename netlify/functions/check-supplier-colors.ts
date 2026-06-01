@@ -1,0 +1,285 @@
+// netlify/functions/check-supplier-colors.ts
+// Scrapes a user-supplied URL for color information (hex codes and named
+// chainmail-relevant color words). Returns a deduplicated list of swatches
+// so the Freeform "Check available colors" panel can show whatever's there
+// — or surface a clean error if the page can't be read.
+//
+// CORS is the reason this lives server-side: a typical chainmail supplier
+// site won't allow cross-origin fetches from chainmaildesigner.com, so a
+// browser-side fetch would fail. The function loads the page server-side,
+// pulls hex strings out, and ships them back as JSON.
+//
+// The matcher is intentionally simple — chainmail catalogs typically render
+// each colored ring as a swatch with the color name nearby in alt/title
+// text. We pull every #RRGGBB / #RGB occurrence in the HTML plus any
+// adjacent text-node that looks like a color name; the merger keeps the
+// first name we see for a given hex and discards bare hexes if no name was
+// nearby. If nothing matches the user gets a clean "no colors detected"
+// message; the front end keeps the user's default palette active.
+
+export const handler = async (event: any) => {
+  if (event.httpMethod !== "POST") {
+    return jsonResponse(405, { ok: false, message: "Method not allowed" });
+  }
+
+  let url: string;
+  try {
+    const body = JSON.parse(event.body || "{}");
+    url = String(body.url ?? "").trim();
+  } catch {
+    return jsonResponse(400, { ok: false, message: "Body must be JSON with a url field." });
+  }
+  if (!url) {
+    return jsonResponse(400, { ok: false, message: "No URL provided." });
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return jsonResponse(400, { ok: false, message: "That URL is malformed." });
+  }
+  if (!/^https?:$/.test(parsed.protocol)) {
+    return jsonResponse(400, { ok: false, message: "Only http(s) URLs are supported." });
+  }
+  // Defense: refuse to fetch internal / loopback hosts. The Netlify Lambda
+  // runtime shouldn't be able to reach internal AWS endpoints either, but
+  // an explicit check is cheap insurance.
+  const host = parsed.hostname.toLowerCase();
+  if (
+    host === "localhost" ||
+    host === "127.0.0.1" ||
+    host === "::1" ||
+    host.endsWith(".internal") ||
+    host.endsWith(".local") ||
+    host.startsWith("169.254.")
+  ) {
+    return jsonResponse(400, { ok: false, message: "That host is not reachable from the server." });
+  }
+
+  let html: string;
+  try {
+    const ctrl = new AbortController();
+    const timeoutId = setTimeout(() => ctrl.abort(), 8000);
+    const res = await fetch(parsed.toString(), {
+      method: "GET",
+      headers: {
+        // Identify ourselves so the supplier can block us if they want.
+        "user-agent": "ChainmailStudio-color-check/1.0 (+https://chainmaildesigner.com)",
+        accept: "text/html,application/xhtml+xml",
+      },
+      redirect: "follow",
+      signal: ctrl.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      return jsonResponse(200, {
+        ok: false,
+        message: `That site returned ${res.status}. Your default palette is unchanged.`,
+      });
+    }
+    const ct = res.headers.get("content-type") || "";
+    if (!/text\/html|application\/xhtml/.test(ct)) {
+      return jsonResponse(200, {
+        ok: false,
+        message: "That URL didn't serve an HTML page. Your default palette is unchanged.",
+      });
+    }
+    // Cap the response we read to ~2 MB so a hostile page can't blow our
+    // Lambda memory. 2 MB of HTML is far more than any color catalog page.
+    const reader = res.body?.getReader();
+    if (!reader) {
+      html = await res.text();
+    } else {
+      const chunks: Uint8Array[] = [];
+      let total = 0;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          total += value.length;
+          if (total > 2 * 1024 * 1024) {
+            // Stop reading; we have plenty.
+            try { await reader.cancel(); } catch { /* ignore */ }
+            break;
+          }
+        }
+      }
+      html = new TextDecoder("utf-8").decode(concatChunks(chunks));
+    }
+  } catch (err: any) {
+    return jsonResponse(200, {
+      ok: false,
+      message:
+        err?.name === "AbortError"
+          ? "That site took too long to respond. Your default palette is unchanged."
+          : `Couldn't reach that site (${err?.message ?? "network error"}). Your default palette is unchanged.`,
+    });
+  }
+
+  const swatches = extractSwatches(html);
+  return jsonResponse(200, {
+    ok: true,
+    count: swatches.length,
+    swatches,
+  });
+};
+
+function jsonResponse(statusCode: number, body: unknown) {
+  return {
+    statusCode,
+    headers: {
+      "content-type": "application/json",
+      "cache-control": "no-store",
+    },
+    body: JSON.stringify(body),
+  };
+}
+
+function concatChunks(chunks: Uint8Array[]): Uint8Array {
+  let len = 0;
+  for (const c of chunks) len += c.length;
+  const out = new Uint8Array(len);
+  let off = 0;
+  for (const c of chunks) {
+    out.set(c, off);
+    off += c.length;
+  }
+  return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HTML scanning
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface ScrapedSwatch {
+  colorHex: string;            // #rrggbb (lowercase)
+  colorName: string;           // best-effort label
+  source?: "ring" | "scale" | "both";
+}
+
+// Hex code matcher — matches both #RRGGBB and #RGB (we expand the latter).
+const HEX_RE = /#([0-9a-f]{3}|[0-9a-f]{6})\b/gi;
+
+// Word-list of color names commonly used in chainmail supplier catalogs.
+// We treat any short text near a hex code containing one of these as the
+// candidate name for that swatch. Not exhaustive — best-effort.
+const COLOR_NAME_WORDS = [
+  "anodized", "bright", "matte", "satin", "polished", "brushed", "natural",
+  "champagne", "rose", "rainbow", "pearl", "burnished",
+  "aluminum", "aluminium", "stainless", "steel", "copper", "brass", "bronze",
+  "sterling", "silver", "gold", "niobium", "titanium", "argentium",
+  "red", "orange", "yellow", "green", "blue", "indigo", "violet", "purple",
+  "pink", "magenta", "cyan", "teal", "turquoise", "lime", "olive", "navy",
+  "black", "white", "gray", "grey", "charcoal",
+  "rust", "burgundy", "maroon", "wine",
+  "ring", "scale", "ringer",
+];
+const NAME_RE = new RegExp(`\\b(${COLOR_NAME_WORDS.join("|")})\\b`, "gi");
+
+function expandShortHex(h: string): string {
+  // #abc → #aabbcc
+  if (h.length === 4) {
+    return ("#" + h[1] + h[1] + h[2] + h[2] + h[3] + h[3]).toLowerCase();
+  }
+  return h.toLowerCase();
+}
+
+function isProbablyChromeShade(hex: string): boolean {
+  // Pages have endless framework greys (#fff, #000, #f3f4f6, #e5e7eb…).
+  // We filter pure-white/black/near-neutral-grey because they're almost
+  // never an interesting product color.
+  const v = hex.slice(1);
+  if (v === "ffffff" || v === "000000") return true;
+  const r = parseInt(v.slice(0, 2), 16);
+  const g = parseInt(v.slice(2, 4), 16);
+  const b = parseInt(v.slice(4, 6), 16);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const sat = max === 0 ? 0 : (max - min) / max;
+  // Greys with saturation < 5% and high lightness — probably chrome.
+  if (sat < 0.05 && max > 200) return true;
+  return false;
+}
+
+function detectItemType(context: string): "ring" | "scale" | "both" | undefined {
+  const hasRing = /ring/i.test(context);
+  const hasScale = /scale/i.test(context);
+  if (hasRing && hasScale) return "both";
+  if (hasRing) return "ring";
+  if (hasScale) return "scale";
+  return undefined;
+}
+
+function extractSwatches(html: string): ScrapedSwatch[] {
+  // Strip script/style nodes — they're full of CSS color noise.
+  const cleaned = html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ");
+
+  // Find every hex code and grab the surrounding ~120 chars for naming.
+  const found = new Map<string, ScrapedSwatch>();
+  let m: RegExpExecArray | null;
+  HEX_RE.lastIndex = 0;
+  while ((m = HEX_RE.exec(cleaned)) !== null) {
+    const hex = expandShortHex(m[0]);
+    if (isProbablyChromeShade(hex)) continue;
+
+    const start = Math.max(0, m.index - 120);
+    const end = Math.min(cleaned.length, m.index + 120);
+    const context = cleaned.slice(start, end).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+
+    let name = "";
+    NAME_RE.lastIndex = 0;
+    const words: string[] = [];
+    let nm: RegExpExecArray | null;
+    while ((nm = NAME_RE.exec(context)) !== null) {
+      const w = nm[1];
+      if (!words.find((x) => x.toLowerCase() === w.toLowerCase())) {
+        words.push(w);
+      }
+      if (words.length >= 3) break;
+    }
+    if (words.length) {
+      name = titleCase(words.join(" "));
+    }
+
+    const itemType = detectItemType(context);
+    const existing = found.get(hex);
+    if (!existing) {
+      found.set(hex, {
+        colorHex: hex,
+        colorName: name || "Unnamed",
+        source: itemType,
+      });
+    } else {
+      if (!existing.colorName || existing.colorName === "Unnamed") {
+        if (name) existing.colorName = name;
+      }
+      if (itemType && existing.source !== "both") {
+        if (!existing.source) existing.source = itemType;
+        else if (existing.source !== itemType) existing.source = "both";
+      }
+    }
+    if (found.size > 80) break; // sanity cap
+  }
+
+  // Discard hexes with NO color-related name nearby AND no ring/scale
+  // context — they're probably just framework brand colors leaked from
+  // somewhere generic.
+  const final: ScrapedSwatch[] = [];
+  for (const s of found.values()) {
+    if (s.colorName === "Unnamed" && !s.source) continue;
+    final.push(s);
+  }
+  return final;
+}
+
+function titleCase(s: string): string {
+  return s
+    .toLowerCase()
+    .split(/\s+/)
+    .map((w) => (w.length ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
