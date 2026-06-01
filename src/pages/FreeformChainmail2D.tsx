@@ -4777,11 +4777,15 @@ const derived = useMemo(() => {
     ],
   );
   // ======================================================
-  // SPLINE -> RINGS (CLOSED POLYGON FILL)
-  // Uses the SAME logic as circle/rect fill (cells + resolvePlacement)
-  // polygonScreen is in SCREEN px (from SplineSandbox)
+  // SPLINE -> CLOSED POLYGON FILL (rings OR scales, per R/S layer toggle)
+  // Uses the SAME cell-enumeration logic as circle/rect fill.
+  // polygonScreen is in SCREEN px (from SplineSandbox).
+  // When activeLayer === "scales", paints scaleColors at every cell inside
+  // the polygon (using the active color, falling back to the active scale
+  // settings color if the active color is empty). Previously this fill was
+  // hard-coded to rings — user-reported regression 2026-06-01.
   // ======================================================
-  const applyClosedSplineAsRings = useCallback(
+  const applyClosedSpline = useCallback(
     (polygonScreen: { x: number; y: number }[], colorHex: string) => {
       if (!polygonScreen || polygonScreen.length < 3) return;
       const paint = normalizeColor6(colorHex);
@@ -4836,7 +4840,42 @@ const derived = useMemo(() => {
       // Deterministic order
       cells.sort((u, v) => u.row - v.row || u.col - v.col);
 
-      // Apply like circle/rect
+      // Layer dispatch — match the R/S toolbar toggle. The "scales" branch
+      // mirrors the bulk-apply scales path (eraseModeRef + scaleImagePatches
+      // invalidation) so spline fill on scales feels identical to the
+      // marquee/shape-fill path. Erase mode removes scales (or rings)
+      // inside the polygon instead of painting them.
+      if (activeLayerRef.current === "scales") {
+        const nextScaleColors = new Map(scaleColorsRef.current);
+        const scaleColor = eraseModeRef.current
+          ? null
+          : normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex || paint);
+
+        if (eraseModeRef.current) {
+          for (const cell of cells) nextScaleColors.delete(`${cell.row},${cell.col}`);
+        } else if (scaleColor) {
+          for (const cell of cells) nextScaleColors.set(`${cell.row},${cell.col}`, scaleColor);
+        }
+
+        // Spline-fill on scales must also drop any image-overlay patches at
+        // those cells, otherwise a previously-transferred image would
+        // continue to show through the new paint color. Same invalidation
+        // pattern the marquee path uses.
+        const nextPatches = new Map(scaleImagePatchesRef.current);
+        let patchesChanged = false;
+        for (const cell of cells) {
+          const k = `${cell.row},${cell.col}`;
+          if (nextPatches.has(k)) {
+            nextPatches.delete(k);
+            patchesChanged = true;
+          }
+        }
+        setScaleColors(nextScaleColors);
+        if (patchesChanged) setScaleImagePatches(nextPatches);
+        return;
+      }
+
+      // Apply like circle/rect (rings branch — original behavior).
       const mapCopy: RingMap = new Map(rings);
       let clusterId = nextClusterId;
 
@@ -4870,6 +4909,9 @@ const derived = useMemo(() => {
       rcToLogical,
       setRings,
       setnextClusterId,
+      activeScaleSettings,
+      setScaleColors,
+      setScaleImagePatches,
     ],
   );
 
@@ -8614,7 +8656,7 @@ const scales3D = useMemo(() => {
             currentColorHex={normalizeColor6(activeColor)}
             onRequestClose={() => setShowSplineTool(false)}
             onApplyClosedSpline={({ polygon }) => {
-              applyClosedSplineAsRings(
+              applyClosedSpline(
                 polygon,
                 normalizeColor6(activeColor),
               );
