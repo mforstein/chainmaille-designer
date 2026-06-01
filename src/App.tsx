@@ -55,7 +55,8 @@
 
 import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
 import { useViewport } from "./hooks/useViewport";
-import SupplierColorRefreshButton from "./components/SupplierColorRefreshButton";
+// SupplierColorRefreshButton removed 2026-06-01 — no longer surfaced anywhere
+// in the 3D Designer UI (was a "Refresh supplier color cache" affordance).
 import { Routes, Route, Navigate, useNavigate, Link } from "react-router-dom";
 import { calculateBOM } from "./BOM/bomCalculator";
 import "./index.css";
@@ -87,7 +88,10 @@ import {
 // Shared UI + Data
 // ==============================
 import { MATERIALS, UNIVERSAL_COLORS } from "./utils/colors";
-import SupplierMenu from "./components/SupplierMenu";
+// SupplierMenu removed from 3D Designer 2026-06-01 — supplier-specific color
+// browsing (The Ring Lord, Chainmail Joe, Metal Designz, Steampunk Garage)
+// is gone here and stays only in Freeform via the generic Check-Available-
+// Colors URL-based flow.
 import AtlasPalette from "./components/AtlasPalette";
 import {
   ImageOverlayPanel,
@@ -1612,7 +1616,6 @@ onChange={(e) => {
                 />
               ))}
             </div>
-            <SupplierColorRefreshButton compact style={{ alignSelf: "stretch", justifyContent: "center" }} />
           </div>
         </DraggablePill>
       )}
@@ -1741,123 +1744,6 @@ onChange={(e) => {
               style={{ background: "none", border: "none", color: "#64748b", fontSize: 18, cursor: "pointer", lineHeight: 1, padding: "0 4px" }}
             >×</button>
           </div>
-
-          {/* Supplier section */}
-          <div
-            style={{
-              background: "rgba(17,24,39,.96)",
-              borderRadius: 10,
-              padding: 10,
-              border: "1px solid #1f2937",
-              flexShrink: 0,
-            }}
-          >
-              <SupplierMenu
-                onApplyPalette={(sel: any) => {
-                  const isDefault =
-                    sel?.name === "Default" ||
-                    sel?.id === "default" ||
-                    sel?.color === "Default Colors" ||
-                    sel?.material === "Default";
-
-                  if (isDefault) {
-                    const defaultWeave = {
-                      id: "default",
-                      name: "Default",
-                      innerDiameter: 7.94,
-                      wireDiameter: 1.6,
-                      centerSpacing: 7.5,
-                      angleIn: 25,
-                      angleOut: -25,
-                      layout: [],
-                      status: "valid",
-                    };
-
-                    localStorage.setItem(
-                      "chainmailSelected",
-                      JSON.stringify(defaultWeave),
-                    );
-
-                    localStorage.setItem(
-                      "cmd.params",
-                      JSON.stringify({
-                        rows: 20,
-                        cols: 20,
-                        innerDiameter: defaultWeave.innerDiameter,
-                        wireDiameter: defaultWeave.wireDiameter,
-                        centerSpacing: defaultWeave.centerSpacing,
-                        angleIn: defaultWeave.angleIn,
-                        angleOut: defaultWeave.angleOut,
-                      }),
-                    );
-
-                    setLastWeave(defaultWeave);
-                    setParams((prev) => ({
-                      ...prev,
-                      innerDiameter: defaultWeave.innerDiameter,
-                      wireDiameter: defaultWeave.wireDiameter,
-                      centerSpacing: defaultWeave.centerSpacing,
-                      angleIn: defaultWeave.angleIn,
-                      angleOut: defaultWeave.angleOut,
-                      ringSpec: `ID ${defaultWeave.innerDiameter.toFixed(
-                        2,
-                      )} mm / WD ${defaultWeave.wireDiameter.toFixed(2)} mm`,
-                    }));
-
-                    window.dispatchEvent(new Event("weave-updated"));
-                    console.log("✅ Default weave applied and geometry rebuilt");
-                    return;
-                  }
-
-                  const parseNumber = (v: any) => {
-                    if (v == null) return NaN;
-                    if (typeof v === "number") return v;
-                    if (typeof v === "string") {
-                      const m = v.match(/-?\d+(\.\d+)?/);
-                      return m ? parseFloat(m[0]) : NaN;
-                    }
-                    return NaN;
-                  };
-
-                  const ID = parseNumber(sel?.innerDiameter ?? sel?.ringID);
-                  const WD = parseNumber(sel?.wireDiameter ?? sel?.wireGauge);
-                  const spacing =
-                    parseNumber(sel?.centerSpacing) || params.centerSpacing || 7.5;
-
-                  const weave = {
-                    id: sel?.name ?? sel?.id ?? "unnamed",
-                    name: sel?.name ?? sel?.material ?? "Unnamed",
-                    innerDiameter: ID,
-                    wireDiameter: WD,
-                    centerSpacing: spacing,
-                    angleIn: sel?.angleIn ?? 25,
-                    angleOut: sel?.angleOut ?? -25,
-                    layout: sel?.layout ?? [],
-                    status: sel?.status ?? "valid",
-                  };
-
-                  localStorage.setItem("chainmailSelected", JSON.stringify(weave));
-                  setLastWeave(weave);
-
-                  setParams((prev) => ({
-                    ...prev,
-                    innerDiameter: ID,
-                    wireDiameter: WD,
-                    centerSpacing: spacing,
-                    angleIn: weave.angleIn,
-                    angleOut: weave.angleOut,
-                    ringSpec:
-                      Number.isFinite(ID) && Number.isFinite(WD) && WD > 0
-                        ? `ID ${ID.toFixed(2)} mm / WD ${WD.toFixed(
-                            2,
-                          )} mm (AR≈${(ID / WD).toFixed(2)})`
-                        : prev.ringSpec,
-                  }));
-
-                  window.dispatchEvent(new Event("weave-updated"));
-                }}
-              />
-            </div>
 
           {/* Atlas Palette section */}
           <div

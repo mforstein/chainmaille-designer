@@ -8,7 +8,7 @@ import {
   loadActiveCalibration,
   saveAndApplyCalibration,
 } from "../utils/colorCalibration";
-import SupplierColorRefreshButton from "../components/SupplierColorRefreshButton";
+// SupplierColorRefreshButton import removed 2026-06-01 (dev calibration page).
 
 /**
  * Builds a per-color Gain/Gamma table by comparing:
@@ -747,7 +747,6 @@ export default function ColorCalibrationTest() {
             {m === "ring" ? "💍 Ring Cal." : "🪙 Scale Cal."}
           </button>
         ))}
-        <SupplierColorRefreshButton compact />
       </div>
 
       {/* Top controls */}

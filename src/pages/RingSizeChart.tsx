@@ -5,7 +5,8 @@ import { ALL_PRODUCTS, SUPPLIER_INFO } from "../data/supplierCatalog";
 import type { SupplierProduct } from "../data/supplierCatalog";
 import { DraggableCompassNav, DraggablePill } from "../App";
 import { IconHamburger } from "../components/icons/ToolIcons";
-import SupplierColorRefreshButton from "../components/SupplierColorRefreshButton";
+// SupplierColorRefreshButton import removed 2026-06-01 — Refresh Colors UI
+// is no longer surfaced on Ring Size Chart.
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 const ID_OPTIONS = [
@@ -689,11 +690,6 @@ export default function RingSizeChart() {
       </DraggablePill>
 
       {showCompass && <DraggableCompassNav onNavigate={() => setShowCompass(false)} />}
-
-      {/* Supplier color refresh button — top right, clears the info panel which starts at top:68 */}
-      <div style={{ position: "fixed", top: 16, right: 12, zIndex: 50 }}>
-        <SupplierColorRefreshButton compact />
-      </div>
     </div>
   );
 }

@@ -37,8 +37,8 @@ import { computeShapeCells } from "../utils/shapeFill";
 import { useAuth, tierAtLeast } from "../auth/AuthContext";
 import defaultFreeformDesign from "../data/defaultFreeformDesign";
 import SupplierColorPalette from "../components/SupplierColorPalette";
-import SupplierColorRefreshButton from "../components/SupplierColorRefreshButton";
-import FreeformCostPanel from "../components/FreeformCostPanel";
+// SupplierColorRefreshButton + FreeformCostPanel imports removed 2026-06-01
+// (Refresh-Colors button and Cost Estimator panel both retired from Freeform UI).
 import CustomShapeEditor from "../components/CustomShapeEditor";
 import {
   type CustomScaleShape,
@@ -873,13 +873,8 @@ const FreeformChainmail2D: React.FC = () => {
   // Finalize & Export (must be inside the component)
   const [finalizeOpen, setFinalizeOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
-  // FEATURE FLAG: Cost Estimator hidden from UI per product decision (2026-05-30).
-  // The 💰 toolbar button and the FreeformCostPanel render are both gated below.
-  // Implementation (FreeformCostPanel, supplierMatcher, estimateCost) is preserved
-  // in the codebase — flip this to `true` to restore. While disabled, there is no
-  // reachable UI path that can open the panel.
-  const COST_ESTIMATOR_FEATURE_ENABLED = false;
-  const [costPanelOpen, setCostPanelOpen] = useState(false);
+  // Cost Estimator removed 2026-06-01 — both the toolbar button and the
+  // panel render are gone. Old hidden-feature flag and state retired.
 
   // Canvas background color — persisted across sessions
   const [canvasBg, setCanvasBg] = useState<string>(() => {
@@ -7168,20 +7163,9 @@ const scales3D = useMemo(() => {
               📚
             </ToolBtn>
 
-            {/* Cost Estimator — DISABLED. Flip COST_ESTIMATOR_FEATURE_ENABLED to restore. */}
-            {COST_ESTIMATOR_FEATURE_ENABLED && (
-              <ToolBtn
-                active={costPanelOpen}
-                onClick={() => {
-                  if (isStudioTier) setCostPanelOpen((v) => !v);
-                  else window.location.href = "/pricing";
-                }}
-                title={isStudioTier ? "Material cost estimator" : "Cost Estimator (Studio)"}
-                style={{ opacity: isStudioTier ? 1 : 0.45, position: "relative" }}
-              >
-                💰{!isStudioTier && <span style={{ position: "absolute", top: 2, right: 2, fontSize: 8, lineHeight: 1 }}>🔒</span>}
-              </ToolBtn>
-            )}
+            {/* Cost Estimator removed 2026-06-01 — no longer a product
+                feature. (Old toolbar 💰 button + FreeformCostPanel render
+                + COST_ESTIMATOR_FEATURE_ENABLED flag all gone.) */}
 
             {/* Canvas background — dark/light toggle */}
             <button
@@ -7550,10 +7534,10 @@ const scales3D = useMemo(() => {
             ))}
           </div>
 
-          {/* Refresh supplier colors */}
-          <SupplierColorRefreshButton compact style={{ marginTop: 6 }} />
-
-          {/* Supplier color browser */}
+          {/* Supplier color browser — will be replaced in Wave 4 with a
+              generic URL-based 'Check Available Colors' flow that doesn't
+              name any specific supplier. For now the existing browser
+              still mounts when toggled on; the auto-refresh button is gone. */}
           {showSupplierColors && (
             <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 8 }}>
               <SupplierColorPalette
@@ -8344,34 +8328,8 @@ const scales3D = useMemo(() => {
         </DraggablePill>
       )}
 
-      {COST_ESTIMATOR_FEATURE_ENABLED && costPanelOpen && isStudioTier && (
-        <DraggablePill
-          id="freeform-cost"
-          defaultPosition={{ x: Math.max(8, window.innerWidth - 444), y: 60 }}
-          style={{
-            background: "transparent",
-            border: "none",
-            boxShadow: "none",
-            borderRadius: 0,
-            padding: 0,
-          }}
-        >
-          <FreeformCostPanel
-            ringColorCounts={ringStats?.byColor ?? []}
-            innerDiameterMm={innerIDmm}
-            wireDiameterMm={wireMm}
-            scaleColorCounts={scaleStats?.byColor ?? []}
-            scaleWidthMm={activeScaleSettings.widthMm}
-            scaleHeightMm={activeScaleSettings.heightMm}
-            scaleHoleIdMm={activeScaleSettings.holeIdMm}
-            onChangeRingSize={(idMm, wd) => {
-              setInnerIDmm(idMm);
-              setWireMm(wd);
-            }}
-            onClose={() => setCostPanelOpen(false)}
-          />
-        </DraggablePill>
-      )}
+      {/* Cost estimator panel removed 2026-06-01 (see comment near
+          the toolbar 💰 button site above). */}
 
       {/* ============================= */}
       {/* ✅ SUBMENU / NAVIGATION (Designer style) */}
