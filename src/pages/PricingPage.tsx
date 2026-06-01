@@ -14,6 +14,7 @@ interface Plan {
   tagline: string;
   color: string;
   priceEnvKey: string;
+  paymentLinkUrl: string;
   features: string[];
   cta: string;
 }
@@ -27,6 +28,7 @@ const PLANS: Plan[] = [
     tagline: "Explore the tools",
     color: "#374151",
     priceEnvKey: "",
+    paymentLinkUrl: "",
     features: [
       "Ring Size Chart & AR calculator",
       "Weave Atlas — browse presets",
@@ -44,6 +46,7 @@ const PLANS: Plan[] = [
     tagline: "Build for yourself",
     color: "#0369a1",
     priceEnvKey: import.meta.env.VITE_STRIPE_PRICE_MAKER ?? "",
+    paymentLinkUrl: import.meta.env.VITE_STRIPE_PAYMENT_LINK_MAKER ?? "",
     features: [
       "Everything in Free",
       "Weave Atlas — apply presets to 3D Designer",
@@ -61,6 +64,7 @@ const PLANS: Plan[] = [
     tagline: "Sell at markets & online",
     color: "#7c3aed",
     priceEnvKey: import.meta.env.VITE_STRIPE_PRICE_CRAFTER ?? "",
+    paymentLinkUrl: import.meta.env.VITE_STRIPE_PAYMENT_LINK_CRAFTER ?? "",
     features: [
       "Everything in Maker",
       "3D Designer — spline fill & flood fill",
@@ -78,6 +82,7 @@ const PLANS: Plan[] = [
     tagline: "Full-time makers & shops",
     color: "#b45309",
     priceEnvKey: import.meta.env.VITE_STRIPE_PRICE_STUDIO ?? "",
+    paymentLinkUrl: import.meta.env.VITE_STRIPE_PAYMENT_LINK_STUDIO ?? "",
     features: [
       "Everything in Crafter",
       "Freeform 2D Designer — full ring & scale placement",
@@ -312,35 +317,19 @@ export default function PricingPage() {
 
   const stripeCustomerId = (user as any)?.user_metadata?.stripeCustomerId as string | undefined;
 
-  const handleSubscribe = async (plan: Plan) => {
-    if (!user || !plan.priceEnvKey) return;
+  const handleSubscribe = (plan: Plan) => {
+    if (!user || !plan.paymentLinkUrl) {
+      setError(!user ? "Please sign in first." : "Payment link not configured for this tier.");
+      return;
+    }
     setBusy(true);
     setError(null);
-    try {
-      const res = await fetch("/.netlify/functions/create-checkout-session", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          priceId: plan.priceEnvKey,
-          userId: user.id,
-          userEmail: user.email,
-        }),
-      });
-      let data: any = {};
-      try { data = await res.json(); } catch { /* empty body */ }
-      if (data.url) {
-        window.location.href = data.url;
-      } else if (!res.ok) {
-        setError(res.status === 404 ? "Checkout unavailable — visit the live site to subscribe." : (data.error ?? `Server error (${res.status})`));
-        setBusy(false);
-      } else {
-        setError(data.error ?? "Something went wrong. Please try again.");
-        setBusy(false);
-      }
-    } catch (e: any) {
-      setError(e.message ?? "Network error");
-      setBusy(false);
-    }
+    // Stripe Payment Links accept client_reference_id and prefilled_email as query params.
+    // The webhook uses client_reference_id to match the resulting subscription back to the Supabase user.
+    const url = new URL(plan.paymentLinkUrl);
+    url.searchParams.set("client_reference_id", user.id);
+    if (user.email) url.searchParams.set("prefilled_email", user.email);
+    window.location.href = url.toString();
   };
 
   const handlePortal = async () => {

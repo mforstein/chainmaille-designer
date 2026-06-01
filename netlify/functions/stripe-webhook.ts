@@ -66,18 +66,36 @@ export const handler = async (event: any) => {
 
   try {
     switch (stripeEvent.type) {
-      // ── New subscription created via Checkout ────────────────────────────
+      // ── New subscription created via Checkout or Payment Link ────────────
       case "checkout.session.completed": {
         const session = stripeEvent.data.object as Stripe.Checkout.Session;
         if (session.mode !== "subscription") break;
 
-        const userId = session.subscription_data?.metadata?.supabaseUserId
+        // userId can arrive via three paths in priority order:
+        //  1. Payment Link query param → session.client_reference_id  ← Phase 2 (Payment Links)
+        //  2. Checkout Session create call → subscription_data.metadata.supabaseUserId
+        //  3. Pre-existing customer with supabaseUserId in its metadata
+        const userId = session.client_reference_id
+          ?? session.subscription_data?.metadata?.supabaseUserId
           ?? await supabaseUserIdFromCustomer(session.customer as string);
         if (!userId) { console.warn("No supabaseUserId on session", session.id); break; }
 
         const sub = await stripe.subscriptions.retrieve(session.subscription as string);
         const priceId = sub.items.data[0].price.id;
         const tier = priceIdToTier(priceId);
+
+        // Persist supabaseUserId onto the Stripe customer so later
+        // customer.subscription.* events can resolve the user without
+        // relying on session.client_reference_id (which only fires once).
+        if (session.customer) {
+          try {
+            await stripe.customers.update(session.customer as string, {
+              metadata: { supabaseUserId: userId },
+            });
+          } catch (e: any) {
+            console.error("Failed to backfill customer metadata:", e?.message);
+          }
+        }
 
         await setUserTier(userId, tier, {
           stripeCustomerId:     session.customer as string,
