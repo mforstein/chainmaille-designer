@@ -128,6 +128,103 @@ const grid: React.CSSProperties = {
   margin: "0 auto",
 };
 
+// ── Contact block ─────────────────────────────────────────────────────────────
+// "Contact us" used to be a single mailto: link, which silently no-ops on
+// browsers without a default mail client (e.g. Brave on macOS with no
+// Mail.app handler configured). This expands into a small popover of
+// real, working choices: Gmail compose, default mail app, and "copy the
+// address". At least one of those works for every visitor.
+const CONTACT_EMAIL = "micahforstein@gmail.com";
+const CONTACT_SUBJECT = "Chainmail Studio question";
+
+function ContactBlock() {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const gmailUrl =
+    `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(CONTACT_EMAIL)}` +
+    `&su=${encodeURIComponent(CONTACT_SUBJECT)}`;
+  const mailtoUrl = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(CONTACT_SUBJECT)}`;
+  return (
+    <div style={{ position: "relative", display: "inline-block" }}>
+      <p style={{ margin: 0 }}>
+        Questions? Email{" "}
+        <button
+          type="button"
+          onClick={() => setOpen(o => !o)}
+          style={{
+            background: "none", border: "none", padding: 0,
+            color: "#7c3aed", cursor: "pointer", fontSize: "inherit",
+            textDecoration: "underline",
+          }}
+        >
+          {CONTACT_EMAIL}
+        </button>
+      </p>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 8px)",
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#111827",
+            border: "1px solid #374151",
+            borderRadius: 10,
+            padding: 12,
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            minWidth: 240,
+            zIndex: 10,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+            animation: "cm-fade-in 120ms ease-out",
+          }}
+        >
+          <a
+            href={gmailUrl}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => setOpen(false)}
+            style={{
+              padding: "8px 10px", background: "#0f172a", borderRadius: 7,
+              color: "#e5e7eb", textDecoration: "none", fontSize: 13, fontWeight: 600,
+            }}
+          >
+            ✉️ Open in Gmail
+          </a>
+          <a
+            href={mailtoUrl}
+            onClick={() => setOpen(false)}
+            style={{
+              padding: "8px 10px", background: "#0f172a", borderRadius: 7,
+              color: "#e5e7eb", textDecoration: "none", fontSize: 13, fontWeight: 600,
+            }}
+          >
+            📬 Open in default mail app
+          </a>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard?.writeText(CONTACT_EMAIL).then(() => {
+                setCopied(true);
+                setTimeout(() => { setCopied(false); setOpen(false); }, 900);
+              }).catch(() => {});
+            }}
+            style={{
+              padding: "8px 10px", background: copied ? "#064e3b" : "#0f172a",
+              border: copied ? "1px solid #059669" : "none",
+              color: copied ? "#6ee7b7" : "#e5e7eb",
+              borderRadius: 7, cursor: "pointer", fontSize: 13, fontWeight: 600, textAlign: "left",
+            }}
+          >
+            {copied ? "✓ Address copied" : "📋 Copy address"}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Pricing card ──────────────────────────────────────────────────────────────
 
 function PlanCard({
@@ -416,38 +513,8 @@ export default function PricingPage() {
       <div style={{ maxWidth: 700, margin: "48px auto 0", textAlign: "center", color: "#4b5563", fontSize: 13, lineHeight: 1.7 }}>
         <p>All plans include mobile app access. Cancel any time — no lock-in.</p>
         <p>Existing ERIN50 password users receive a complimentary 90-day Studio trial on first sign-up.</p>
-        <p>
-          Questions? Email{" "}
-          <a
-            href="mailto:micahforstein@gmail.com?subject=Chainmail%20Studio%20question"
-            style={{ color: "#7c3aed" }}
-            onClick={(e) => {
-              // mailto silently no-ops on browsers without a default mail
-              // client (common on Brave/Chrome with web-only setups). Copy
-              // the address to the clipboard as a fallback so the click
-              // does *something* useful either way.
-              navigator.clipboard?.writeText("micahforstein@gmail.com").catch(() => {});
-              // Don't preventDefault — let mailto try; if it fails the
-              // clipboard copy already happened. Use a brief delay to give
-              // the OS time to launch a handler before we surface the toast.
-              setTimeout(() => {
-                if (document.visibilityState === "visible") {
-                  // Mail handler didn't take focus → tab still visible.
-                  // Show a lightweight inline confirmation.
-                  e.currentTarget?.setAttribute("data-copied", "1");
-                  const el = e.currentTarget;
-                  if (el) {
-                    const orig = el.textContent ?? "";
-                    el.textContent = "micahforstein@gmail.com (copied to clipboard)";
-                    setTimeout(() => { el.textContent = orig; }, 2200);
-                  }
-                }
-              }, 350);
-            }}
-          >
-            micahforstein@gmail.com
-          </a>
-        </p>
+        <ContactBlock />
+        <style>{`@keyframes cm-fade-in { from { opacity:0; transform: translateY(-4px); } to { opacity:1; transform: none; } }`}</style>
         <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 16 }}>
           <a
             href="/eula"
