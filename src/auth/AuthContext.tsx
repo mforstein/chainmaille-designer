@@ -117,7 +117,10 @@ interface AuthContextValue {
   tier: Tier;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signUp: (email: string, password: string) => Promise<{ error: string | null }>;
+  // Returns { error, needsEmailConfirm }. needsEmailConfirm=true when Supabase
+  // didn't return a session on signup (= email confirmation is enabled in
+  // project settings and the user must click an email link before signing in).
+  signUp: (email: string, password: string) => Promise<{ error: string | null; needsEmailConfirm: boolean }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
@@ -176,16 +179,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signUp = useCallback(
-    async (email: string, password: string): Promise<{ error: string | null }> => {
-      if (!supabase) return { error: "Auth not configured" };
-      const { error } = await supabase.auth.signUp({
+    async (email: string, password: string): Promise<{ error: string | null; needsEmailConfirm: boolean }> => {
+      if (!supabase) return { error: "Auth not configured", needsEmailConfirm: false };
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
           data: { tier: "free" },
         },
       });
-      return { error: error?.message ?? null };
+      // If Supabase returns a session, the user is already signed in →
+      // email confirmation is disabled in project settings. Otherwise they
+      // need to click the email link before they can sign in.
+      const needsEmailConfirm = !error && !data?.session;
+      return { error: error?.message ?? null, needsEmailConfirm };
     },
     []
   );

@@ -71,11 +71,19 @@ export default function AuthPage() {
     if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
     setBusy(true);
     setError("");
-    const { error: err } = await signUp(email, password);
+    const { error: err, needsEmailConfirm } = await signUp(email, password);
     setBusy(false);
     if (err) { setError(err); return; }
-    setInfo("Check your email to confirm your account, then sign in.");
-    setMode("signin");
+    if (needsEmailConfirm) {
+      // Supabase email confirmation is on; user must click the email link first.
+      setInfo("Check your email to confirm your account, then sign in.");
+      setMode("signin");
+    } else {
+      // Supabase returned an active session; user is logged in immediately.
+      // The AuthContext useEffect will pick up the session and update state.
+      setInfo("Account created. Redirecting…");
+      setTimeout(() => navigate(redirectTo, { replace: true }), 600);
+    }
   }
 
   async function handleForgot(e: React.FormEvent) {
