@@ -1,6 +1,6 @@
 // src/pages/PricingPage.tsx
-import React, { useState } from "react";
-import { useSearchParams, Link } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { useAuth, tierAtLeast } from "../auth/AuthContext";
 import type { Tier } from "../auth/AuthContext";
 
@@ -405,13 +405,34 @@ function PlanCard({
 export default function PricingPage() {
   const { user, tier } = useAuth();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const success = searchParams.get("success") === "1";
   const cancelled = searchParams.get("cancelled") === "1";
+  // Tier purchased — Stripe Payment Links append ?tier=maker|crafter|studio
+  // on their redirect_to URL so we can show a tier-specific success message
+  // and route the user to the right destination.
+  const purchasedTier = searchParams.get("tier") as Tier | null;
 
   const stripeCustomerId = (user as any)?.user_metadata?.stripeCustomerId as string | undefined;
+
+  // After a successful Stripe checkout return-trip, send the user into the
+  // app automatically. The webhook updates user_metadata.tier server-side;
+  // AuthContext's refreshSession-on-visibilitychange pulls the new tier into
+  // the in-memory session. We give it ~3 seconds for that round-trip to land
+  // and the user to read the success banner, then jump them to the workspace.
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
+  useEffect(() => {
+    if (!success) return;
+    setSecondsLeft(3);
+    const tick = setInterval(() => {
+      setSecondsLeft((s) => (s === null ? null : s - 1));
+    }, 1000);
+    const done = setTimeout(() => navigate("/workspace", { replace: true }), 3000);
+    return () => { clearInterval(tick); clearTimeout(done); };
+  }, [success, navigate]);
 
   const handleSubscribe = (plan: Plan) => {
     if (!user || !plan.paymentLinkUrl) {
@@ -478,8 +499,29 @@ export default function PricingPage() {
 
       {/* Success / cancelled banners */}
       {success && (
-        <div style={{ maxWidth: 600, margin: "0 auto 28px", background: "#052e16", border: "1px solid #16a34a", borderRadius: 10, padding: "12px 18px", color: "#bbf7d0", textAlign: "center", fontSize: 14 }}>
-          🎉 Subscription active — your account has been upgraded. Welcome!
+        <div style={{ maxWidth: 600, margin: "0 auto 28px", background: "#052e16", border: "1px solid #16a34a", borderRadius: 10, padding: "16px 18px", color: "#bbf7d0", textAlign: "center", fontSize: 14, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>
+            🎉 Subscription active{purchasedTier ? ` — ${purchasedTier.charAt(0).toUpperCase() + purchasedTier.slice(1)} tier unlocked` : ""}!
+          </div>
+          <div style={{ marginBottom: 10 }}>
+            Welcome to Chainmail Studio. Your account is upgrading now.
+          </div>
+          <div style={{ color: "#86efac", fontSize: 13 }}>
+            {secondsLeft !== null && secondsLeft > 0
+              ? `Redirecting to your workspace in ${secondsLeft}…`
+              : "Opening your workspace…"}
+            {" "}
+            <button
+              type="button"
+              onClick={() => navigate("/workspace", { replace: true })}
+              style={{
+                background: "none", border: "none", color: "#bbf7d0",
+                textDecoration: "underline", cursor: "pointer", fontSize: 13, padding: 0,
+              }}
+            >
+              Go now →
+            </button>
+          </div>
         </div>
       )}
       {cancelled && (
