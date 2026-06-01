@@ -31,7 +31,7 @@ export default function AuthPage() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { signIn, signUp, resetPassword, user, loading } = useAuth();
+  const { signIn, signUp, resetPassword, updatePassword, user, loading } = useAuth();
 
   const initialMode = (searchParams.get("mode") as Mode) ?? "signin";
   const [mode, setMode] = useState<Mode>(initialMode);
@@ -45,9 +45,12 @@ export default function AuthPage() {
   const redirectTo =
     (location.state as { redirect?: string })?.redirect ?? "/workspace";
 
-  // Already logged in and not upgrading — bounce straight through
+  // Already logged in — bounce straight through, UNLESS:
+  //   - mode is "upgrade" (canonical pricing page lives elsewhere)
+  //   - mode is "reset" (Supabase issued a recovery session; user MUST stay
+  //     on this page to set a new password before the session is useful)
   useEffect(() => {
-    if (!loading && user && mode !== "upgrade") {
+    if (!loading && user && mode !== "upgrade" && mode !== "reset") {
       navigate(redirectTo, { replace: true });
     }
   }, [user, loading, mode, navigate, redirectTo]);
@@ -85,6 +88,21 @@ export default function AuthPage() {
     setInfo("Password reset email sent — check your inbox.");
   }
 
+  async function handleResetSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setInfo("");
+    if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
+    if (password !== confirm) { setError("Passwords don't match."); return; }
+    setBusy(true);
+    const { error: err } = await updatePassword(password);
+    setBusy(false);
+    if (err) { setError(err); return; }
+    setInfo("Password updated. Redirecting…");
+    // Brief delay so the success message is visible, then go to workspace.
+    setTimeout(() => navigate("/workspace", { replace: true }), 900);
+  }
+
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0F1115", color: "#9ca3af" }}>
@@ -119,10 +137,11 @@ export default function AuthPage() {
           {mode === "signin" && "Sign in to your account"}
           {mode === "signup" && "Create a free account"}
           {mode === "forgot" && "Reset your password"}
+          {mode === "reset"  && "Set a new password"}
         </p>
 
         {/* Tab strip */}
-        {mode !== "forgot" && (
+        {mode !== "forgot" && mode !== "reset" && (
           <div style={{ display: "flex", gap: 0, marginBottom: 20, borderRadius: 8, overflow: "hidden", border: "1px solid #374151" }}>
             {(["signin", "signup"] as const).map((m) => (
               <button
@@ -194,6 +213,23 @@ export default function AuthPage() {
             </button>
             <button type="button" onClick={() => { setMode("signin"); setError(""); setInfo(""); }} style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 13 }}>
               ← Back to sign in
+            </button>
+          </form>
+        )}
+
+        {/* Reset (after clicking the email link) */}
+        {mode === "reset" && (
+          <form onSubmit={handleResetSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <p style={{ color: "#9ca3af", fontSize: 13, margin: 0, textAlign: "center" }}>
+              {user ? <>Signed in as <strong style={{ color: "#e5e7eb" }}>{user.email}</strong> via reset link.</> : "Loading your reset session…"}
+            </p>
+            <input type="password" required placeholder="New password (8+ chars)" value={password} onChange={(e) => setPassword(e.target.value)} style={fieldStyle} minLength={8} autoFocus />
+            <input type="password" required placeholder="Confirm new password" value={confirm} onChange={(e) => setConfirm(e.target.value)} style={fieldStyle} minLength={8} />
+            <button type="submit" disabled={busy || !user} style={{ ...btnPrimary, opacity: (busy || !user) ? 0.6 : 1 }}>
+              {busy ? "Saving…" : "Set New Password"}
+            </button>
+            <button type="button" onClick={() => { setMode("signin"); setError(""); setInfo(""); setPassword(""); setConfirm(""); }} style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: 13 }}>
+              ← Cancel and sign in
             </button>
           </form>
         )}
