@@ -93,15 +93,14 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
         // Teardrop bezier removed 2026-06-01 (per Erin).
         // eslint-disable-next-line no-fallthrough
         default:
-          // Standard chainmaille scale (almond/lancet). Match
-          // RingRenderer.makeScaleShapeRR(case "leaf") so the test preview
-          // canvas in this panel shows the same silhouette as the rendered
-          // scene.
+          // Standard chainmaille scale — almond / vesica piscis. Match
+          // RingRenderer.makeScaleShapeRR else-branch so the test preview
+          // canvas in this panel shows the same silhouette as the
+          // rendered scene.
+          void midY;
           outer.moveTo(0, topY);
-          outer.bezierCurveTo(halfW * 0.75, h * 0.07, halfW * 1.00, midY, halfW * 0.55, h * 0.78);
-          outer.bezierCurveTo(halfW * 0.28, h * 0.90, halfW * 0.08, h * 0.97, 0, tipY);
-          outer.bezierCurveTo(-halfW * 0.08, h * 0.97, -halfW * 0.28, h * 0.90, -halfW * 0.55, h * 0.78);
-          outer.bezierCurveTo(-halfW * 1.00, midY, -halfW * 0.75, h * 0.07, 0, topY);
+          outer.bezierCurveTo(halfW * 1.10, h * 0.20, halfW * 1.10, h * 0.82, 0, tipY);
+          outer.bezierCurveTo(-halfW * 1.10, h * 0.82, -halfW * 1.10, h * 0.20, 0, topY);
           outer.closePath();
           break;
       }

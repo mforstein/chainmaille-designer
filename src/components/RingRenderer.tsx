@@ -286,18 +286,27 @@ function makeScaleShapeRR(
     s.lineTo(-hw * 0.96, bodyOffY - h * 0.3);
     s.closePath();
   } else {
-    // "Standard" chainmaille scale (leaf) — almond / lancet silhouette
-    // matching the physical scale (see scale.jpg). Top rounds gently from
-    // the shoulder, widens smoothly to max belly around 45–55% of height,
-    // then tapers to a pointed tip at the bottom. This is also the
-    // fallback for shape === "teardrop" and any unknown shape value;
-    // the legacy teardrop bezier was removed 2026-06-01 (per Erin:
-    // teardrop is gone completely from every renderer).
+    // "Standard" chainmaille scale — almond / vesica piscis silhouette
+    // matching the physical scale photo (scale.jpg). Both top AND bottom
+    // are gently rounded (no sharp tip); max width is at vertical midpoint.
+    // Two cubic beziers, one per side, with horizontally-mirrored control
+    // points so the top/bottom transitions are tangent-continuous.
+    // This is also the fallback for legacy "teardrop" and any unknown
+    // shape value — teardrop bezier removed 2026-06-01 per Erin.
+    // Use bellyY (~0.45h) and lowerY (~0.78h) just for reference — actual
+    // control points pulled from those vertical bands.
+    void bellyY; void lowerY;
     s.moveTo(0, shoulderY);
-    s.bezierCurveTo(hw * 0.75, bodyOffY - h * 0.15, hw * 1.00, bellyY, hw * 0.55, lowerY);
-    s.bezierCurveTo(hw * 0.28, bodyOffY - h * 0.88, hw * 0.08, bodyOffY - h * 0.97, 0, tipY);
-    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.97, -hw * 0.28, bodyOffY - h * 0.88, -hw * 0.55, lowerY);
-    s.bezierCurveTo(-hw * 1.00, bellyY, -hw * 0.75, bodyOffY - h * 0.15, 0, shoulderY);
+    s.bezierCurveTo(
+      hw * 1.10, bodyOffY - h * 0.20,
+      hw * 1.10, bodyOffY - h * 0.82,
+      0, tipY,
+    );
+    s.bezierCurveTo(
+      -hw * 1.10, bodyOffY - h * 0.82,
+      -hw * 1.10, bodyOffY - h * 0.20,
+      0, shoulderY,
+    );
   }
   const hole = new THREE.Path();
   hole.absellipse(0, 0, holeDia / 2, holeDia / 2, 0, Math.PI * 2, true, 0);

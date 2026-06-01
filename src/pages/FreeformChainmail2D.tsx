@@ -3403,17 +3403,26 @@ const derived = useMemo(() => {
         case "leaf":
         // Legacy "teardrop" saves fall through to leaf as of 2026-06-01.
         // No teardrop bezier remains in the renderer; the Standard
-        // (almond/lancet) silhouette is the only fallback path.
+        // (almond / vesica piscis) silhouette is the only fallback path.
         // eslint-disable-next-line no-fallthrough
         default:
-          // Standard chainmaille scale (almond/lancet) — see RingRenderer
-          // `makeScaleShapeRR` for the rationale. Kept in sync with the 3D
-          // mesh path so 2D preview = 3D render.
+          // Standard chainmaille scale — almond / vesica piscis matching
+          // the physical scale photo (scale.jpg). Both top AND bottom
+          // are gently rounded; max width at vertical midpoint. Kept in
+          // sync with RingRenderer.makeScaleShapeRR else-branch so the 2D
+          // preview matches the 3D render exactly.
+          void midY;
           outer.moveTo(0, topY);
-          outer.bezierCurveTo(halfW * 0.75, h * 0.15 + dy, halfW * 1.00, midY, halfW * 0.55, h * 0.78 + dy);
-          outer.bezierCurveTo(halfW * 0.28, h * 0.9 + dy, halfW * 0.08, h * 0.97 + dy, 0, tipY);
-          outer.bezierCurveTo(-halfW * 0.08, h * 0.97 + dy, -halfW * 0.28, h * 0.9 + dy, -halfW * 0.55, h * 0.78 + dy);
-          outer.bezierCurveTo(-halfW * 1.00, midY, -halfW * 0.75, h * 0.15 + dy, 0, topY);
+          outer.bezierCurveTo(
+            halfW * 1.10, h * 0.20 + dy,
+            halfW * 1.10, h * 0.82 + dy,
+            0, tipY,
+          );
+          outer.bezierCurveTo(
+            -halfW * 1.10, h * 0.82 + dy,
+            -halfW * 1.10, h * 0.20 + dy,
+            0, topY,
+          );
           outer.closePath();
           break;
       }
@@ -3820,14 +3829,12 @@ const derived = useMemo(() => {
         let d = "";
         switch (shapeStr) {
           case "leaf":
-            // Standard chainmaille scale (almond/lancet). Keep in sync with
-            // the 3D mesh path in RingRenderer.makeScaleShapeRR (case "leaf")
-            // so the overlay preview matches the rendered scale.
+            // Standard chainmaille scale — almond / vesica piscis. Both
+            // top and bottom rounded; max width at vertical midpoint.
+            // Kept in sync with RingRenderer.makeScaleShapeRR else-branch.
             d = `M 0 ${topY} ` +
-                `C ${halfW * 0.75} ${h * 0.15 - dy}, ${halfW * 1.00} ${midY}, ${halfW * 0.55} ${h * 0.78 - dy} ` +
-                `C ${halfW * 0.28} ${h * 0.9 - dy}, ${halfW * 0.08} ${h * 0.97 - dy}, 0 ${tipY} ` +
-                `C ${-halfW * 0.08} ${h * 0.97 - dy}, ${-halfW * 0.28} ${h * 0.9 - dy}, ${-halfW * 0.55} ${h * 0.78 - dy} ` +
-                `C ${-halfW * 1.00} ${midY}, ${-halfW * 0.75} ${h * 0.15 - dy}, 0 ${topY} Z`;
+                `C ${halfW * 1.10} ${h * 0.20 - dy}, ${halfW * 1.10} ${h * 0.82 - dy}, 0 ${tipY} ` +
+                `C ${-halfW * 1.10} ${h * 0.82 - dy}, ${-halfW * 1.10} ${h * 0.20 - dy}, 0 ${topY} Z`;
             break;
           case "round":
             // 3D mesh round: control at (hw*1.05, bodyOff - 0.52*h)
@@ -3841,13 +3848,10 @@ const derived = useMemo(() => {
             break;
           default:
             // Anything else (including legacy "teardrop" saves) → render
-            // the Standard leaf silhouette. Teardrop bezier removed
-            // 2026-06-01 (per Erin: teardrop is gone completely).
+            // the Standard almond silhouette. Same path as case "leaf".
             d = `M 0 ${topY} ` +
-                `C ${halfW * 0.75} ${h * 0.15 - dy}, ${halfW * 1.00} ${midY}, ${halfW * 0.55} ${h * 0.78 - dy} ` +
-                `C ${halfW * 0.28} ${h * 0.9 - dy}, ${halfW * 0.08} ${h * 0.97 - dy}, 0 ${tipY} ` +
-                `C ${-halfW * 0.08} ${h * 0.97 - dy}, ${-halfW * 0.28} ${h * 0.9 - dy}, ${-halfW * 0.55} ${h * 0.78 - dy} ` +
-                `C ${-halfW * 1.00} ${midY}, ${-halfW * 0.75} ${h * 0.15 - dy}, 0 ${topY} Z`;
+                `C ${halfW * 1.10} ${h * 0.20 - dy}, ${halfW * 1.10} ${h * 0.82 - dy}, 0 ${tipY} ` +
+                `C ${-halfW * 1.10} ${h * 0.82 - dy}, ${-halfW * 1.10} ${h * 0.20 - dy}, 0 ${topY} Z`;
         }
         // Translate to hole.x/hole.y and apply the same x/y squash as the 2D
         // draw so the clip matches the visible scale exactly.

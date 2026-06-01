@@ -73,14 +73,22 @@ function makeScaleShapeRR(
     s.lineTo(-hw * 0.96, bodyOffY - h * 0.3);
     s.closePath();
   } else {
-    // Standard chainmaille scale (leaf) — almond / lancet silhouette.
-    // Also the fallback for legacy "teardrop" and unknown shape values
-    // (teardrop bezier removed 2026-06-01 per Erin).
+    // Standard chainmaille scale — almond / vesica piscis. See
+    // RingRenderer.tsx makeScaleShapeRR (else branch) for the rationale;
+    // kept in sync so the instanced renderer (used at high ring counts)
+    // matches the standard renderer.
+    void bellyY; void lowerY;
     s.moveTo(0, shoulderY);
-    s.bezierCurveTo(hw * 0.95, bodyOffY - h * 0.16, hw * 1.05, bellyY, hw * 0.34, lowerY);
-    s.bezierCurveTo(hw * 0.18, bodyOffY - h * 0.9, hw * 0.08, bodyOffY - h * 0.96, 0, tipY);
-    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.96, -hw * 0.18, bodyOffY - h * 0.9, -hw * 0.34, lowerY);
-    s.bezierCurveTo(-hw * 1.05, bellyY, -hw * 0.95, bodyOffY - h * 0.16, 0, shoulderY);
+    s.bezierCurveTo(
+      hw * 1.10, bodyOffY - h * 0.20,
+      hw * 1.10, bodyOffY - h * 0.82,
+      0, tipY,
+    );
+    s.bezierCurveTo(
+      -hw * 1.10, bodyOffY - h * 0.82,
+      -hw * 1.10, bodyOffY - h * 0.20,
+      0, shoulderY,
+    );
   }
   const hole = new THREE.Path();
   hole.absellipse(0, 0, holeDia / 2, holeDia / 2, 0, Math.PI * 2, true, 0);

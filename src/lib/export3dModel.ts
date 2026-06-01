@@ -40,15 +40,23 @@ function makeScaleShape3D(
     s.lineTo(-hw * 0.96, bodyOffY - h * 0.3);
     s.closePath();
   } else {
-    // Standard chainmaille scale (leaf, almond/lancet). Match
-    // RingRenderer.tsx makeScaleShapeRR exactly so STL/GLB export matches
-    // the rendered scene. Also the fallback for legacy "teardrop" and any
-    // unknown shape — teardrop bezier removed 2026-06-01 per Erin.
+    // Standard chainmaille scale — almond / vesica piscis. Match
+    // RingRenderer.tsx makeScaleShapeRR exactly so STL/GLB export
+    // matches the rendered scene. Also the fallback for legacy
+    // "teardrop" and any unknown shape — teardrop bezier removed
+    // 2026-06-01 per Erin.
+    void bellyY; void lowerY;
     s.moveTo(0, shoulderY);
-    s.bezierCurveTo(hw * 0.75, bodyOffY - h * 0.15, hw * 1.00, bellyY, hw * 0.55, lowerY);
-    s.bezierCurveTo(hw * 0.28, bodyOffY - h * 0.88, hw * 0.08, bodyOffY - h * 0.97, 0, tipY);
-    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.97, -hw * 0.28, bodyOffY - h * 0.88, -hw * 0.55, lowerY);
-    s.bezierCurveTo(-hw * 1.00, bellyY, -hw * 0.75, bodyOffY - h * 0.15, 0, shoulderY);
+    s.bezierCurveTo(
+      hw * 1.10, bodyOffY - h * 0.20,
+      hw * 1.10, bodyOffY - h * 0.82,
+      0, tipY,
+    );
+    s.bezierCurveTo(
+      -hw * 1.10, bodyOffY - h * 0.82,
+      -hw * 1.10, bodyOffY - h * 0.20,
+      0, shoulderY,
+    );
   }
 
   const hole = new THREE.Path();
