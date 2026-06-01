@@ -97,7 +97,8 @@ export function saveBuiltinOverrides(overrides: BuiltinOverrides): void {
 }
 
 /** Default scale shape ID that should be selected on app startup. Returns
- *  `null` when no default has been pinned (callers fall back to "teardrop"). */
+ *  `null` when no default has been pinned (callers fall back to "leaf",
+ *  the Standard almond/lancet shape; never teardrop). */
 export function loadDefaultScaleShape(): string | null {
   try {
     const v = localStorage.getItem(KEY_DEFAULT_SHAPE);

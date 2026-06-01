@@ -1512,8 +1512,9 @@ if (scaleEnabled) {
                           saveCustomShapes(next);
                           notifyCustomShapesChanged();
                           // Fall back to first visible built-in, or any remaining custom.
+                          // Final default is "leaf" (Standard almond/lancet) — never teardrop.
                           const fallback =
-                            visibleBuiltins[0] ?? next[0]?.id ?? "teardrop";
+                            visibleBuiltins[0] ?? next[0]?.id ?? "leaf";
                           setScaleShape(fallback);
                           if (loadDefaultScaleShape() === scaleShape) {
                             saveDefaultScaleShape(null);
@@ -1747,7 +1748,7 @@ if (scaleEnabled) {
             notifyCustomShapesChanged();
             const newShapeValue =
               saved.source === "base"
-                ? (saved.baseShape ?? "teardrop")
+                ? (saved.baseShape ?? "leaf") // Standard — never teardrop
                 : saved.id;
             setScaleShape(newShapeValue);
             if (makeDefault) saveDefaultScaleShape(newShapeValue);

@@ -454,7 +454,7 @@ function normalizeScales(
               scaleSettings?.shape === "kite" ||
               scaleSettings?.shape === "teardrop"
             ? scaleSettings.shape
-            : "teardrop",
+            : "leaf", // Standard almond/lancet — never default to teardrop
       drop: Number(s.drop_mm ?? scaleSettings?.dropMm ?? 3),
       holeOffsetY: Number(
         s.holeOffsetY_mm ?? scaleSettings?.holeOffsetYMm ?? 0,

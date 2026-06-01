@@ -1222,8 +1222,8 @@ const FreeformChainmail2D: React.FC = () => {
       id: e.id,
       baseShape:
         e.source === "base"
-          ? (e.baseShape ?? "teardrop")
-          : ("teardrop" as ScaleShapeName), // unused — see shapeForRenderer
+          ? (e.baseShape ?? "leaf") // Standard almond/lancet — never teardrop
+          : ("leaf" as ScaleShapeName), // unused — see shapeForRenderer
       emoji: e.emoji,
       label: e.label,
       builtin: false,
@@ -3381,9 +3381,10 @@ const derived = useMemo(() => {
     } else {
       // Base-source custom shapes fall through to the underlying built-in
       // geometry via customShape?.baseShape; otherwise use scale.shape directly.
+      // Default fallback is "leaf" (Standard almond/lancet), never teardrop.
       const baseName =
         customShape?.source === "base"
-          ? (customShape.baseShape ?? "teardrop")
+          ? (customShape.baseShape ?? "leaf")
           : (scale.shape as string);
       switch (baseName) {
         case "leaf":
@@ -6888,7 +6889,7 @@ const scales3D = useMemo(() => {
                     setSelectedShapeMenuId(saved.id);
                     const rendererShape =
                       saved.source === "base"
-                        ? (saved.baseShape ?? "teardrop")
+                        ? (saved.baseShape ?? "leaf") // Standard, never teardrop
                         : saved.id;
                     setScaleSettingsOverride((prev) => ({
                       ...prev,

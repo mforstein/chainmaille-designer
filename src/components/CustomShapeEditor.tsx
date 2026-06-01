@@ -184,9 +184,11 @@ export default function CustomShapeEditor({ initial, onSave, onCancel }: Props) 
   // Rotation (degrees, 0.5° resolution). Applied to image / freehand polygons.
   const [rotationDeg, setRotationDeg] = useState(0);
 
-  // Base state
+  // Base state. Default fallback is the Standard ("leaf") almond/lancet
+  // shape — never teardrop. Per Erin (2026-05-31): the only default
+  // anywhere in the app is the Standard shape.
   const [baseShape, setBaseShape] = useState<BuiltinScaleShape>(
-    initial?.source === "base" ? (initial.baseShape ?? "teardrop") : "teardrop",
+    initial?.source === "base" ? (initial.baseShape ?? "leaf") : "leaf",
   );
 
   const previewPolygon = useMemo<Array<[number, number]> | null>(() => {
