@@ -9,7 +9,18 @@
 //   - y ∈ [-0.5, +0.5] (positive Y points DOWN to match canvas / our scale layout)
 // To render at a given width/height, multiply by (width, height) directly.
 
-export type BuiltinScaleShape = "teardrop" | "leaf" | "round" | "kite";
+// "teardrop" was removed as a selectable built-in on 2026-06-01 per Erin —
+// it must not appear as a default, picker option, or rendered shape anywhere.
+// We keep the string "teardrop" reachable as legacy data via migrateLegacyShape
+// below, which silently rewrites it to "leaf" (Standard almond/lancet) on read.
+export type BuiltinScaleShape = "leaf" | "round" | "kite";
+
+/** Coerces any legacy "teardrop" string to "leaf". Use on every read path
+ *  that loads a saved shape ID, so previously-saved Tuner snapshots,
+ *  Freeform designs, custom-shape defaults, etc. silently upgrade. */
+export function migrateLegacyShape<T extends string | null | undefined>(s: T): T {
+  return (s === "teardrop" ? ("leaf" as unknown as T) : s);
+}
 
 export type CustomShapeSource = "base" | "image" | "freehand";
 
@@ -41,7 +52,7 @@ const KEY_HIDDEN_PRESETS = "chainmail.hiddenScalePresets.v1";
 const KEY_HIDDEN_BUILTIN_SHAPES = "chainmail.hiddenBuiltinScaleShapes.v1";
 const KEY_FIRST_RUN_DONE = "chainmail.scaleShapeFirstRunSeeded.v1";
 
-const VALID_BUILTINS: BuiltinScaleShape[] = ["teardrop", "leaf", "round", "kite"];
+const VALID_BUILTINS: BuiltinScaleShape[] = ["leaf", "round", "kite"];
 
 export function safeShapeId(): string {
   const cryptoLike = (globalThis as any).crypto;
@@ -102,7 +113,14 @@ export function saveBuiltinOverrides(overrides: BuiltinOverrides): void {
 export function loadDefaultScaleShape(): string | null {
   try {
     const v = localStorage.getItem(KEY_DEFAULT_SHAPE);
-    return v && typeof v === "string" ? v : null;
+    if (!v || typeof v !== "string") return null;
+    // Migrate legacy "teardrop" → "leaf" silently, then persist the upgrade
+    // so the next read is clean too.
+    if (v === "teardrop") {
+      localStorage.setItem(KEY_DEFAULT_SHAPE, "leaf");
+      return "leaf";
+    }
+    return v;
   } catch {
     return null;
   }
@@ -137,8 +155,8 @@ export function saveHiddenPresetIds(ids: string[]): void {
   } catch {}
 }
 
-/** IDs of built-in shape menu entries (teardrop/leaf/round/kite) the user has
- *  hidden from the shape picker. */
+/** IDs of built-in shape menu entries (leaf/round/kite) the user has hidden
+ *  from the shape picker. Legacy "teardrop" entries are dropped silently. */
 export function loadHiddenBuiltinShapeIds(): BuiltinScaleShape[] {
   try {
     const v = localStorage.getItem(KEY_HIDDEN_BUILTIN_SHAPES);
@@ -147,7 +165,7 @@ export function loadHiddenBuiltinShapeIds(): BuiltinScaleShape[] {
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(
       (s): s is BuiltinScaleShape =>
-        s === "teardrop" || s === "leaf" || s === "round" || s === "kite",
+        s === "leaf" || s === "round" || s === "kite",
     );
   } catch {
     return [];
@@ -173,9 +191,11 @@ export function seedFirstRunDefaults(allDragonPresetIds: string[]): void {
       );
     }
     if (localStorage.getItem(KEY_HIDDEN_BUILTIN_SHAPES) === null) {
+      // First run: hide every built-in by default so the user gets a clean
+      // picker. Teardrop intentionally absent — it was removed as a builtin.
       localStorage.setItem(
         KEY_HIDDEN_BUILTIN_SHAPES,
-        JSON.stringify(["teardrop", "leaf", "round", "kite"]),
+        JSON.stringify(["leaf", "round", "kite"]),
       );
     }
     localStorage.setItem(KEY_FIRST_RUN_DONE, "1");

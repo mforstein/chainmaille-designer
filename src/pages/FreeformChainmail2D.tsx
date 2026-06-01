@@ -137,10 +137,12 @@ function safeLSRemove(key: string) {
 type SavedColorPalettes = Record<string, string[]>;
 
 // Available scale shapes for the toolbar picker. The shape string MUST match
-// what makeScaleShapeRR / drawScaleFromExport / ScaleRenderItem.shape expect
-// ("teardrop" | "leaf" | "round" | "kite"). Emojis are picked to roughly
-// suggest the silhouette.
-type ScaleShapeName = "teardrop" | "leaf" | "round" | "kite";
+// what makeScaleShapeRR / drawScaleFromExport / ScaleRenderItem.shape expect.
+// "teardrop" was retired as a selectable shape 2026-06-01 (per Erin) — it
+// stays as a (string & {}) widening below so legacy saves still load, but
+// the union no longer offers it. Emojis are picked to roughly suggest the
+// silhouette.
+type ScaleShapeName = "leaf" | "round" | "kite";
 const SCALE_SHAPE_OPTIONS: Array<{
   shape: ScaleShapeName;
   emoji: string;
@@ -154,7 +156,6 @@ const SCALE_SHAPE_OPTIONS: Array<{
   { shape: "leaf", emoji: "💧", label: "Standard" },
 ];
 const SCALE_SHAPE_EMOJI: Record<ScaleShapeName, string> = {
-  teardrop: "💧",
   leaf: "💧",
   round: "💧",
   kite: "💧",
@@ -654,7 +655,9 @@ const SCALE_SETTINGS_OVERRIDE_KEY = "freeform.scaleSettingsOverride.v1";
 const DEG = Math.PI / 180;
 
 // Includes "custom:<uuid>" entries that resolve to user-defined polygons.
-type ScaleShape = "teardrop" | "leaf" | "round" | "kite" | (string & {});
+// The (string & {}) widening also covers legacy "teardrop" strings from
+// pre-2026-06-01 saves — those are coerced to "leaf" at the rendering layer.
+type ScaleShape = "leaf" | "round" | "kite" | (string & {});
 type ScaleWeaveMode = "independent" | "interlocked";
 
 type FreeformScaleSettings = {
@@ -3382,17 +3385,6 @@ const derived = useMemo(() => {
           ? (customShape.baseShape ?? "leaf")
           : (scale.shape as string);
       switch (baseName) {
-        case "leaf":
-          // Standard chainmaille scale (almond/lancet) — see RingRenderer
-          // `makeScaleShapeRR` for the rationale. Kept in sync with the 3D
-          // mesh path so 2D preview = 3D render.
-          outer.moveTo(0, topY);
-          outer.bezierCurveTo(halfW * 0.75, h * 0.15 + dy, halfW * 1.00, midY, halfW * 0.55, h * 0.78 + dy);
-          outer.bezierCurveTo(halfW * 0.28, h * 0.9 + dy, halfW * 0.08, h * 0.97 + dy, 0, tipY);
-          outer.bezierCurveTo(-halfW * 0.08, h * 0.97 + dy, -halfW * 0.28, h * 0.9 + dy, -halfW * 0.55, h * 0.78 + dy);
-          outer.bezierCurveTo(-halfW * 1.00, midY, -halfW * 0.75, h * 0.15 + dy, 0, topY);
-          outer.closePath();
-          break;
         case "round":
           outer.moveTo(0, topY);
           outer.bezierCurveTo(halfW * 0.95, topY, halfW * 1.05, h * 0.46 + dy, 0, tipY);
@@ -3408,11 +3400,20 @@ const derived = useMemo(() => {
           outer.lineTo(-halfW * 0.96, h * 0.2 + dy);
           outer.closePath();
           break;
-        case "teardrop":
+        case "leaf":
+        // Legacy "teardrop" saves fall through to leaf as of 2026-06-01.
+        // No teardrop bezier remains in the renderer; the Standard
+        // (almond/lancet) silhouette is the only fallback path.
+        // eslint-disable-next-line no-fallthrough
         default:
+          // Standard chainmaille scale (almond/lancet) — see RingRenderer
+          // `makeScaleShapeRR` for the rationale. Kept in sync with the 3D
+          // mesh path so 2D preview = 3D render.
           outer.moveTo(0, topY);
-          outer.bezierCurveTo(halfW, h * 0.16 + dy, halfW, midY, 0, tipY);
-          outer.bezierCurveTo(-halfW, midY, -halfW, h * 0.16 + dy, 0, topY);
+          outer.bezierCurveTo(halfW * 0.75, h * 0.15 + dy, halfW * 1.00, midY, halfW * 0.55, h * 0.78 + dy);
+          outer.bezierCurveTo(halfW * 0.28, h * 0.9 + dy, halfW * 0.08, h * 0.97 + dy, 0, tipY);
+          outer.bezierCurveTo(-halfW * 0.08, h * 0.97 + dy, -halfW * 0.28, h * 0.9 + dy, -halfW * 0.55, h * 0.78 + dy);
+          outer.bezierCurveTo(-halfW * 1.00, midY, -halfW * 0.75, h * 0.15 + dy, 0, topY);
           outer.closePath();
           break;
       }
@@ -3839,12 +3840,14 @@ const derived = useMemo(() => {
             d = `M 0 ${topY} L ${halfW * 0.96} ${h * 0.3 - dy} L ${halfW * 0.56} ${h * 0.78 - dy} L 0 ${tipY} L ${-halfW * 0.56} ${h * 0.78 - dy} L ${-halfW * 0.96} ${h * 0.3 - dy} Z`;
             break;
           default:
-            // Built-in teardrop (default branch in 3D mesh).
+            // Anything else (including legacy "teardrop" saves) → render
+            // the Standard leaf silhouette. Teardrop bezier removed
+            // 2026-06-01 (per Erin: teardrop is gone completely).
             d = `M 0 ${topY} ` +
-                `C ${halfW * 1.08} ${h * 0.14 - dy}, ${halfW * 1.16} ${midY}, ${halfW * 0.36} ${h * 0.78 - dy} ` +
-                `C ${halfW * 0.18} ${h * 0.88 - dy}, ${halfW * 0.08} ${h * 0.95 - dy}, 0 ${tipY} ` +
-                `C ${-halfW * 0.08} ${h * 0.95 - dy}, ${-halfW * 0.18} ${h * 0.88 - dy}, ${-halfW * 0.36} ${h * 0.78 - dy} ` +
-                `C ${-halfW * 1.16} ${midY}, ${-halfW * 1.08} ${h * 0.14 - dy}, 0 ${topY} Z`;
+                `C ${halfW * 0.75} ${h * 0.15 - dy}, ${halfW * 1.00} ${midY}, ${halfW * 0.55} ${h * 0.78 - dy} ` +
+                `C ${halfW * 0.28} ${h * 0.9 - dy}, ${halfW * 0.08} ${h * 0.97 - dy}, 0 ${tipY} ` +
+                `C ${-halfW * 0.08} ${h * 0.97 - dy}, ${-halfW * 0.28} ${h * 0.9 - dy}, ${-halfW * 0.55} ${h * 0.78 - dy} ` +
+                `C ${-halfW * 1.00} ${midY}, ${-halfW * 0.75} ${h * 0.15 - dy}, 0 ${topY} Z`;
         }
         // Translate to hole.x/hole.y and apply the same x/y squash as the 2D
         // draw so the clip matches the visible scale exactly.

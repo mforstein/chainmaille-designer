@@ -273,18 +273,7 @@ function makeScaleShapeRR(
     }
   }
 
-  if (shape === "leaf") {
-    // "Standard" chainmaille scale — almond / lancet silhouette matching the
-    // physical scale (see scale.jpg). Top rounds gently from the shoulder,
-    // widens smoothly to max belly around 45–55% of height, then tapers to a
-    // pointed tip at the bottom. Earlier curve widened too aggressively near
-    // the top and read as a leaf rather than a scale.
-    s.moveTo(0, shoulderY);
-    s.bezierCurveTo(hw * 0.75, bodyOffY - h * 0.15, hw * 1.00, bellyY, hw * 0.55, lowerY);
-    s.bezierCurveTo(hw * 0.28, bodyOffY - h * 0.88, hw * 0.08, bodyOffY - h * 0.97, 0, tipY);
-    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.97, -hw * 0.28, bodyOffY - h * 0.88, -hw * 0.55, lowerY);
-    s.bezierCurveTo(-hw * 1.00, bellyY, -hw * 0.75, bodyOffY - h * 0.15, 0, shoulderY);
-  } else if (shape === "round") {
+  if (shape === "round") {
     s.moveTo(0, shoulderY);
     s.bezierCurveTo(hw * 0.95, shoulderY, hw * 1.05, bodyOffY - h * 0.52, 0, tipY);
     s.bezierCurveTo(-hw * 1.05, bodyOffY - h * 0.52, -hw * 0.95, shoulderY, 0, shoulderY);
@@ -297,11 +286,18 @@ function makeScaleShapeRR(
     s.lineTo(-hw * 0.96, bodyOffY - h * 0.3);
     s.closePath();
   } else {
+    // "Standard" chainmaille scale (leaf) — almond / lancet silhouette
+    // matching the physical scale (see scale.jpg). Top rounds gently from
+    // the shoulder, widens smoothly to max belly around 45–55% of height,
+    // then tapers to a pointed tip at the bottom. This is also the
+    // fallback for shape === "teardrop" and any unknown shape value;
+    // the legacy teardrop bezier was removed 2026-06-01 (per Erin:
+    // teardrop is gone completely from every renderer).
     s.moveTo(0, shoulderY);
-    s.bezierCurveTo(hw * 1.08, bodyOffY - h * 0.14, hw * 1.16, bellyY, hw * 0.36, lowerY);
-    s.bezierCurveTo(hw * 0.18, bodyOffY - h * 0.88, hw * 0.08, bodyOffY - h * 0.95, 0, tipY);
-    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.95, -hw * 0.18, bodyOffY - h * 0.88, -hw * 0.36, lowerY);
-    s.bezierCurveTo(-hw * 1.16, bellyY, -hw * 1.08, bodyOffY - h * 0.14, 0, shoulderY);
+    s.bezierCurveTo(hw * 0.75, bodyOffY - h * 0.15, hw * 1.00, bellyY, hw * 0.55, lowerY);
+    s.bezierCurveTo(hw * 0.28, bodyOffY - h * 0.88, hw * 0.08, bodyOffY - h * 0.97, 0, tipY);
+    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.97, -hw * 0.28, bodyOffY - h * 0.88, -hw * 0.55, lowerY);
+    s.bezierCurveTo(-hw * 1.00, bellyY, -hw * 0.75, bodyOffY - h * 0.15, 0, shoulderY);
   }
   const hole = new THREE.Path();
   hole.absellipse(0, 0, holeDia / 2, holeDia / 2, 0, Math.PI * 2, true, 0);

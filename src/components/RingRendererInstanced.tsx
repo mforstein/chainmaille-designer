@@ -60,13 +60,7 @@ function makeScaleShapeRR(
   const bellyY = bodyOffY - h * 0.45;
   const lowerY = bodyOffY - h * 0.78;
   const s = new THREE.Shape();
-  if (shape === "leaf") {
-    s.moveTo(0, shoulderY);
-    s.bezierCurveTo(hw * 0.95, bodyOffY - h * 0.16, hw * 1.05, bellyY, hw * 0.34, lowerY);
-    s.bezierCurveTo(hw * 0.18, bodyOffY - h * 0.9, hw * 0.08, bodyOffY - h * 0.96, 0, tipY);
-    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.96, -hw * 0.18, bodyOffY - h * 0.9, -hw * 0.34, lowerY);
-    s.bezierCurveTo(-hw * 1.05, bellyY, -hw * 0.95, bodyOffY - h * 0.16, 0, shoulderY);
-  } else if (shape === "round") {
+  if (shape === "round") {
     s.moveTo(0, shoulderY);
     s.bezierCurveTo(hw * 0.95, shoulderY, hw * 1.05, bodyOffY - h * 0.52, 0, tipY);
     s.bezierCurveTo(-hw * 1.05, bodyOffY - h * 0.52, -hw * 0.95, shoulderY, 0, shoulderY);
@@ -79,11 +73,14 @@ function makeScaleShapeRR(
     s.lineTo(-hw * 0.96, bodyOffY - h * 0.3);
     s.closePath();
   } else {
+    // Standard chainmaille scale (leaf) — almond / lancet silhouette.
+    // Also the fallback for legacy "teardrop" and unknown shape values
+    // (teardrop bezier removed 2026-06-01 per Erin).
     s.moveTo(0, shoulderY);
-    s.bezierCurveTo(hw * 1.08, bodyOffY - h * 0.14, hw * 1.16, bellyY, hw * 0.36, lowerY);
-    s.bezierCurveTo(hw * 0.18, bodyOffY - h * 0.88, hw * 0.08, bodyOffY - h * 0.95, 0, tipY);
-    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.95, -hw * 0.18, bodyOffY - h * 0.88, -hw * 0.36, lowerY);
-    s.bezierCurveTo(-hw * 1.16, bellyY, -hw * 1.08, bodyOffY - h * 0.14, 0, shoulderY);
+    s.bezierCurveTo(hw * 0.95, bodyOffY - h * 0.16, hw * 1.05, bellyY, hw * 0.34, lowerY);
+    s.bezierCurveTo(hw * 0.18, bodyOffY - h * 0.9, hw * 0.08, bodyOffY - h * 0.96, 0, tipY);
+    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.96, -hw * 0.18, bodyOffY - h * 0.9, -hw * 0.34, lowerY);
+    s.bezierCurveTo(-hw * 1.05, bellyY, -hw * 0.95, bodyOffY - h * 0.16, 0, shoulderY);
   }
   const hole = new THREE.Path();
   hole.absellipse(0, 0, holeDia / 2, holeDia / 2, 0, Math.PI * 2, true, 0);

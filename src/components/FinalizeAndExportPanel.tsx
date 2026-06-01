@@ -200,7 +200,7 @@ function drawScaleGlyph(args: {
   heightPx: number;
   holePx: number;
   colorHex: string;
-  shape: "teardrop" | "leaf" | "round" | "kite";
+  shape: "leaf" | "round" | "kite";
   dropPx?: number;
   holeOffsetPx?: number;
   opacity?: number;
@@ -350,7 +350,7 @@ type ExportScale = {
   // Accepts the four built-in shapes plus custom shape IDs ("custom:..." etc.)
   // via the (string & {}) tail — keeps autocomplete for the literals but allows
   // any string. Mirrors the ScaleShape type in FreeformChainmail2D.
-  shape?: "teardrop" | "leaf" | "round" | "kite" | (string & {});
+  shape?: "leaf" | "round" | "kite" | (string & {});
   drop_mm?: number;
   holeOffsetY_mm?: number;
 };
@@ -364,7 +364,7 @@ type ScaleSettings = {
   // Accepts the four built-in shapes plus custom shape IDs ("custom:..." etc.)
   // via the (string & {}) tail — keeps autocomplete for the literals but allows
   // any string. Mirrors the ScaleShape type in FreeformChainmail2D.
-  shape?: "teardrop" | "leaf" | "round" | "kite" | (string & {});
+  shape?: "leaf" | "round" | "kite" | (string & {});
   dropMm?: number;
   holeOffsetYMm?: number;
 };
@@ -391,7 +391,7 @@ type NormScale = {
   holeId: number;
   width: number;
   height: number;
-  shape: "teardrop" | "leaf" | "round" | "kite";
+  shape: "leaf" | "round" | "kite";
   drop: number;
   holeOffsetY: number;
 };
@@ -443,18 +443,20 @@ function normalizeScales(
       holeId: Number(s.holeId_mm ?? scaleSettings?.holeIdMm ?? 6.6),
       width: Number(s.width_mm ?? scaleSettings?.widthMm ?? 15.9),
       height: Number(s.height_mm ?? scaleSettings?.heightMm ?? 26.6),
+      // Legacy "teardrop" saves coerce to "leaf" here so downstream
+      // renderers never see teardrop. Teardrop bezier removed 2026-06-01.
       shape:
         s.shape === "leaf" ||
         s.shape === "round" ||
-        s.shape === "kite" ||
-        s.shape === "teardrop"
+        s.shape === "kite"
           ? s.shape
-          : scaleSettings?.shape === "leaf" ||
-              scaleSettings?.shape === "round" ||
-              scaleSettings?.shape === "kite" ||
-              scaleSettings?.shape === "teardrop"
-            ? scaleSettings.shape
-            : "leaf", // Standard almond/lancet — never default to teardrop
+          : (s.shape === "teardrop")
+            ? "leaf"
+            : (scaleSettings?.shape === "leaf" ||
+                scaleSettings?.shape === "round" ||
+                scaleSettings?.shape === "kite")
+              ? (scaleSettings.shape as "leaf" | "round" | "kite")
+              : "leaf",
       drop: Number(s.drop_mm ?? scaleSettings?.dropMm ?? 3),
       holeOffsetY: Number(
         s.holeOffsetY_mm ?? scaleSettings?.holeOffsetYMm ?? 0,

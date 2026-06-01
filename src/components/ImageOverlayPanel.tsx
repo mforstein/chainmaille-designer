@@ -16,7 +16,7 @@ export interface OverlayState {
   // Inset from scale edge (0–50%): 0 = image covers edge-to-edge, larger = framed.
   boundaryPct?: number;
   // Optional shape hint for the in-panel test preview (matches active scale shape).
-  testScaleShape?: "teardrop" | "leaf" | "round" | "kite";
+  testScaleShape?: "leaf" | "round" | "kite";
 }
 
 interface Props {
@@ -62,7 +62,7 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
   /* ----- scale outline path (matches drawScaleFromExport / RingRenderer shapes) ----- */
   const buildScalePath = useCallback(
     (
-      shape: "teardrop" | "leaf" | "round" | "kite",
+      shape: "leaf" | "round" | "kite" | string,
       w: number,
       h: number,
       holeR: number,
@@ -73,18 +73,6 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
       const tipY = h * 0.98;
       const outer = new Path2D();
       switch (shape) {
-        case "leaf":
-          // Standard chainmaille scale (almond/lancet). Match
-          // RingRenderer.makeScaleShapeRR(case "leaf") so the test preview
-          // canvas in this panel shows the same silhouette as the rendered
-          // scene.
-          outer.moveTo(0, topY);
-          outer.bezierCurveTo(halfW * 0.75, h * 0.07, halfW * 1.00, midY, halfW * 0.55, h * 0.78);
-          outer.bezierCurveTo(halfW * 0.28, h * 0.90, halfW * 0.08, h * 0.97, 0, tipY);
-          outer.bezierCurveTo(-halfW * 0.08, h * 0.97, -halfW * 0.28, h * 0.90, -halfW * 0.55, h * 0.78);
-          outer.bezierCurveTo(-halfW * 1.00, midY, -halfW * 0.75, h * 0.07, 0, topY);
-          outer.closePath();
-          break;
         case "round":
           outer.moveTo(0, topY);
           outer.bezierCurveTo(halfW * 0.95, topY, halfW * 1.05, h * 0.46, 0, tipY);
@@ -100,11 +88,20 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
           outer.lineTo(-halfW * 0.96, h * 0.2);
           outer.closePath();
           break;
-        case "teardrop":
+        case "leaf":
+        // Legacy "teardrop" + any unknown shape → leaf (Standard).
+        // Teardrop bezier removed 2026-06-01 (per Erin).
+        // eslint-disable-next-line no-fallthrough
         default:
+          // Standard chainmaille scale (almond/lancet). Match
+          // RingRenderer.makeScaleShapeRR(case "leaf") so the test preview
+          // canvas in this panel shows the same silhouette as the rendered
+          // scene.
           outer.moveTo(0, topY);
-          outer.bezierCurveTo(halfW, h * 0.16, halfW, midY, 0, tipY);
-          outer.bezierCurveTo(-halfW, midY, -halfW, h * 0.16, 0, topY);
+          outer.bezierCurveTo(halfW * 0.75, h * 0.07, halfW * 1.00, midY, halfW * 0.55, h * 0.78);
+          outer.bezierCurveTo(halfW * 0.28, h * 0.90, halfW * 0.08, h * 0.97, 0, tipY);
+          outer.bezierCurveTo(-halfW * 0.08, h * 0.97, -halfW * 0.28, h * 0.90, -halfW * 0.55, h * 0.78);
+          outer.bezierCurveTo(-halfW * 1.00, midY, -halfW * 0.75, h * 0.07, 0, topY);
           outer.closePath();
           break;
       }
@@ -729,7 +726,6 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
                   setOverlay((s) => ({
                     ...s,
                     testScaleShape: e.target.value as
-                      | "teardrop"
                       | "leaf"
                       | "round"
                       | "kite",

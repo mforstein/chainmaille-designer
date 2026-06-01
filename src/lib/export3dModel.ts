@@ -27,16 +27,7 @@ function makeScaleShape3D(
   const lowerY = bodyOffY - h * 0.78;
   const s = new THREE.Shape();
 
-  if (shape === "leaf") {
-    // Standard chainmaille scale (almond/lancet). Match RingRenderer.tsx
-    // makeScaleShapeRR(case "leaf") exactly so STL/GLB export matches the
-    // rendered scene.
-    s.moveTo(0, shoulderY);
-    s.bezierCurveTo(hw * 0.75, bodyOffY - h * 0.15, hw * 1.00, bellyY, hw * 0.55, lowerY);
-    s.bezierCurveTo(hw * 0.28, bodyOffY - h * 0.88, hw * 0.08, bodyOffY - h * 0.97, 0, tipY);
-    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.97, -hw * 0.28, bodyOffY - h * 0.88, -hw * 0.55, lowerY);
-    s.bezierCurveTo(-hw * 1.00, bellyY, -hw * 0.75, bodyOffY - h * 0.15, 0, shoulderY);
-  } else if (shape === "round") {
+  if (shape === "round") {
     s.moveTo(0, shoulderY);
     s.bezierCurveTo(hw * 0.95, shoulderY, hw * 1.05, bodyOffY - h * 0.52, 0, tipY);
     s.bezierCurveTo(-hw * 1.05, bodyOffY - h * 0.52, -hw * 0.95, shoulderY, 0, shoulderY);
@@ -49,12 +40,15 @@ function makeScaleShape3D(
     s.lineTo(-hw * 0.96, bodyOffY - h * 0.3);
     s.closePath();
   } else {
-    // teardrop (default)
+    // Standard chainmaille scale (leaf, almond/lancet). Match
+    // RingRenderer.tsx makeScaleShapeRR exactly so STL/GLB export matches
+    // the rendered scene. Also the fallback for legacy "teardrop" and any
+    // unknown shape — teardrop bezier removed 2026-06-01 per Erin.
     s.moveTo(0, shoulderY);
-    s.bezierCurveTo(hw * 1.08, bodyOffY - h * 0.14, hw * 1.16, bellyY, hw * 0.36, lowerY);
-    s.bezierCurveTo(hw * 0.18, bodyOffY - h * 0.88, hw * 0.08, bodyOffY - h * 0.95, 0, tipY);
-    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.95, -hw * 0.18, bodyOffY - h * 0.88, -hw * 0.36, lowerY);
-    s.bezierCurveTo(-hw * 1.16, bellyY, -hw * 1.08, bodyOffY - h * 0.14, 0, shoulderY);
+    s.bezierCurveTo(hw * 0.75, bodyOffY - h * 0.15, hw * 1.00, bellyY, hw * 0.55, lowerY);
+    s.bezierCurveTo(hw * 0.28, bodyOffY - h * 0.88, hw * 0.08, bodyOffY - h * 0.97, 0, tipY);
+    s.bezierCurveTo(-hw * 0.08, bodyOffY - h * 0.97, -hw * 0.28, bodyOffY - h * 0.88, -hw * 0.55, lowerY);
+    s.bezierCurveTo(-hw * 1.00, bellyY, -hw * 0.75, bodyOffY - h * 0.15, 0, shoulderY);
   }
 
   const hole = new THREE.Path();

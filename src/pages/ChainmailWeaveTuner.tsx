@@ -32,7 +32,9 @@ const ID_OPTIONS = [
   "5/16", "3/8", "7/16", "1/2", "5/8",
 ] as const;
 const WIRE_OPTIONS = [0.9, 1.2, 1.6, 2.0, 2.5, 3.0] as const;
-const SCALE_SHAPES = ["teardrop", "leaf", "round", "kite"] as const;
+// "teardrop" removed 2026-06-01 — silently coerced to "leaf" on load via
+// migrateLegacyShape from ../lib/customScaleShapes.
+const SCALE_SHAPES = ["leaf", "round", "kite"] as const;
 type BuiltinScaleShape = (typeof SCALE_SHAPES)[number];
 // Includes "custom:<uuid>" entries that resolve to user-defined polygons.
 type ScaleShape = BuiltinScaleShape | (string & {});
@@ -525,7 +527,9 @@ export default function ChainmailWeaveTuner() {
   const [scaleShape, setScaleShape] = useState<ScaleShape>(() => {
     const pinned = loadDefaultScaleShape();
     if (pinned && pinned.startsWith("custom:")) return pinned as ScaleShape;
-    if (pinned === "teardrop" || pinned === "leaf" || pinned === "round" || pinned === "kite") {
+    // Legacy teardrop pins are migrated to leaf in loadDefaultScaleShape; we
+    // also coerce here defensively in case any other code path slipped through.
+    if (pinned === "leaf" || pinned === "round" || pinned === "kite") {
       return pinned as ScaleShape;
     }
     return "leaf";
@@ -1471,7 +1475,7 @@ if (scaleEnabled) {
                   >
                     {visibleBuiltins.map((v) => (
                       <option key={v} value={v}>
-                        {v === "leaf" || v === "teardrop" ? "Standard" : v}
+                        {v === "leaf" ? "Standard" : v}
                       </option>
                     ))}
                     {customShapes.length > 0 && <option disabled>──────────</option>}
@@ -1748,7 +1752,9 @@ if (scaleEnabled) {
             notifyCustomShapesChanged();
             const newShapeValue =
               saved.source === "base"
-                ? (saved.baseShape ?? "leaf") // Standard — never teardrop
+                // baseShape went through migrateLegacyShape on load, so this
+                // can no longer be "teardrop". Fall back to leaf (Standard).
+                ? (saved.baseShape ?? "leaf")
                 : saved.id;
             setScaleShape(newShapeValue);
             if (makeDefault) saveDefaultScaleShape(newShapeValue);
