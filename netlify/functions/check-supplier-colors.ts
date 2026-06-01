@@ -177,6 +177,82 @@ const COLOR_NAME_WORDS = [
 ];
 const NAME_RE = new RegExp(`\\b(${COLOR_NAME_WORDS.join("|")})\\b`, "gi");
 
+// ─── Color name → hex fallback ───────────────────────────────────────────────
+// Supplier sites typically use product PHOTOS for color swatches, not inline
+// hex codes — so HEX_RE alone returns nothing useful on homepages and most
+// catalog pages. As a fallback, we scan the page text for color names and
+// emit a swatch with a standard hex value when one matches. This is generic
+// (no supplier specifics) and covers the colors that appear across nearly
+// every chainmail supplier's anodized aluminum, niobium, and base-metal
+// lines. Multiline regexes match either "Blue" or "Anodized Aluminum Blue"
+// — the longest-name match wins for the swatch label.
+const COLOR_NAME_HEX_TABLE: Array<{
+  /** Regex against page text (case-insensitive). The longest-matching name
+   *  takes the swatch label; the hex below is the canonical color value. */
+  re: RegExp;
+  hex: string;
+  label: string;
+  source?: "ring" | "scale" | "both";
+}> = [
+  // ── Anodized aluminum (the rainbow line every chainmail shop carries) ──
+  { re: /\banodized\s+(?:aluminum\s+)?(?:jet\s+)?black\b/i,   hex: "#1a1a1a", label: "Anodized Black" },
+  { re: /\banodized\s+(?:aluminum\s+)?(?:royal\s+|sky\s+)?blue\b/i, hex: "#1d4ed8", label: "Anodized Blue" },
+  { re: /\banodized\s+(?:aluminum\s+)?(?:red|crimson)\b/i,    hex: "#dc2626", label: "Anodized Red" },
+  { re: /\banodized\s+(?:aluminum\s+)?green\b/i,              hex: "#16a34a", label: "Anodized Green" },
+  { re: /\banodized\s+(?:aluminum\s+)?(?:yellow|gold)\b/i,    hex: "#facc15", label: "Anodized Gold" },
+  { re: /\banodized\s+(?:aluminum\s+)?(?:purple|violet)\b/i,  hex: "#7c3aed", label: "Anodized Purple" },
+  { re: /\banodized\s+(?:aluminum\s+)?(?:pink|magenta)\b/i,   hex: "#ec4899", label: "Anodized Pink" },
+  { re: /\banodized\s+(?:aluminum\s+)?orange\b/i,             hex: "#f97316", label: "Anodized Orange" },
+  { re: /\banodized\s+(?:aluminum\s+)?(?:turquoise|teal|cyan)\b/i, hex: "#0ea5e9", label: "Anodized Turquoise" },
+  { re: /\banodized\s+(?:aluminum\s+)?lime\b/i,               hex: "#84cc16", label: "Anodized Lime" },
+  { re: /\banodized\s+(?:aluminum\s+)?bronze\b/i,             hex: "#a16207", label: "Anodized Bronze" },
+  { re: /\banodized\s+(?:aluminum\s+)?champagne\b/i,          hex: "#e5d4a8", label: "Anodized Champagne" },
+  { re: /\banodized\s+(?:aluminum\s+)?(?:burnt\s+)?(?:rust|burgundy)\b/i, hex: "#a52a2a", label: "Anodized Burgundy" },
+  { re: /\banodized\s+(?:aluminum\s+)?rainbow\b/i,            hex: "#8b5cf6", label: "Anodized Rainbow" },
+
+  // ── Bare metal materials ─────────────────────────────────────────────
+  { re: /\bbright\s+aluminum\b/i,                             hex: "#c0c0c0", label: "Bright Aluminum" },
+  { re: /\bmatte\s+aluminum\b/i,                              hex: "#a8a8a8", label: "Matte Aluminum" },
+  { re: /\b(?:bare|raw)\s+aluminum\b/i,                       hex: "#b8b8b8", label: "Bare Aluminum" },
+  { re: /\bstainless(?:\s+steel)?\b/i,                        hex: "#9aa0a6", label: "Stainless Steel" },
+  { re: /\bsterling(?:\s+silver)?\b/i,                        hex: "#c9c9c9", label: "Sterling Silver" },
+  { re: /\bargentium\b/i,                                     hex: "#d3d3d3", label: "Argentium" },
+  { re: /\bcopper\b/i,                                        hex: "#b87333", label: "Copper" },
+  { re: /\bbrass\b/i,                                         hex: "#d4af37", label: "Brass" },
+  { re: /\bbronze\b/i,                                        hex: "#cd7f32", label: "Bronze" },
+  { re: /\bniobium\s+(?:blue)\b/i,                            hex: "#3b82f6", label: "Niobium Blue" },
+  { re: /\bniobium\s+(?:purple|violet)\b/i,                   hex: "#a855f7", label: "Niobium Purple" },
+  { re: /\bniobium\s+(?:green|teal)\b/i,                      hex: "#10b981", label: "Niobium Green" },
+  { re: /\bniobium\s+(?:gold|yellow)\b/i,                     hex: "#eab308", label: "Niobium Gold" },
+  { re: /\bniobium\b/i,                                       hex: "#6b7280", label: "Niobium" },
+  { re: /\btitanium\b/i,                                      hex: "#878787", label: "Titanium" },
+  { re: /\bgold[-\s]?filled\b/i,                              hex: "#d4af37", label: "Gold Filled" },
+];
+
+function findColorWords(text: string): Array<{ hex: string; label: string; source?: "ring"|"scale"|"both"; nearText?: string }> {
+  const hits: Array<{ hex: string; label: string; source?: "ring"|"scale"|"both"; nearText?: string }> = [];
+  const seen = new Set<string>();
+  for (const entry of COLOR_NAME_HEX_TABLE) {
+    const re = new RegExp(entry.re.source, "gi"); // fresh regex w/ global flag for exec loop
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      if (seen.has(entry.hex)) break;
+      seen.add(entry.hex);
+      const start = Math.max(0, m.index - 80);
+      const end = Math.min(text.length, m.index + 80);
+      const near = text.slice(start, end).replace(/\s+/g, " ");
+      hits.push({
+        hex: entry.hex,
+        label: entry.label,
+        source: entry.source ?? detectItemType(near),
+        nearText: near,
+      });
+      break; // first hit per entry is enough
+    }
+  }
+  return hits;
+}
+
 function expandShortHex(h: string): string {
   // #abc → #aabbcc
   if (h.length === 4) {
@@ -217,6 +293,11 @@ function extractSwatches(html: string): ScrapedSwatch[] {
     .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
     .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
     .replace(/<!--[\s\S]*?-->/g, " ");
+
+  // Plain-text view used for color-name detection (alt text, title attrs,
+  // visible copy). Lets us catch supplier sites that show colors as product
+  // photos instead of inline hex codes (most of them).
+  const textOnly = cleaned.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
 
   // Find every hex code and grab the surrounding ~120 chars for naming.
   const found = new Map<string, ScrapedSwatch>();
@@ -273,6 +354,23 @@ function extractSwatches(html: string): ScrapedSwatch[] {
     if (s.colorName === "Unnamed" && !s.source) continue;
     final.push(s);
   }
+
+  // Name-based fallback: scan the page text for color names (e.g.
+  // "Anodized Aluminum Blue", "Bright Aluminum", "Copper") and emit a
+  // swatch with a standard hex value for each match. This is what makes
+  // searching supplier homepages and category pages useful — most of
+  // them never expose color hexes in the HTML, only product photos.
+  const nameHits = findColorWords(textOnly);
+  const existingHexes = new Set(final.map((s) => s.colorHex.toLowerCase()));
+  for (const hit of nameHits) {
+    if (existingHexes.has(hit.hex.toLowerCase())) continue;
+    final.push({
+      colorHex: hit.hex,
+      colorName: hit.label,
+      source: hit.source,
+    });
+  }
+
   return final;
 }
 
