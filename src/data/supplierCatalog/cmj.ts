@@ -1,6 +1,6 @@
-// Chainmail Joe — curated catalog
+// Catalog B — curated catalog
 // Last verified: 2026-04-27
-// Source: chainmailjoe.com
+// Source: supplier-b.example
 import type { SupplierProduct } from "./schema";
 
 const LAST = "2026-04-27";
@@ -34,7 +34,7 @@ const rings: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   colorHex: c.colorHex,
   priceUsd: 4.50,
   unitQty: 100,
-  url: `https://chainmailjoe.com/rings?color=${i}`,
+  url: `https://supplier-b.example/rings?color=${i}`,
   inStock: true,
   lastUpdated: LAST,
 }));
@@ -51,7 +51,7 @@ const rings18g: SupplierProduct[] = AA_COLORS.slice(0, 6).map((c, i) => ({
   colorHex: c.colorHex,
   priceUsd: 3.75,
   unitQty: 150,
-  url: `https://chainmailjoe.com/rings?color=${100 + i}`,
+  url: `https://supplier-b.example/rings?color=${100 + i}`,
   inStock: true,
   lastUpdated: LAST,
 }));
@@ -68,7 +68,7 @@ const rings18g794: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   colorHex: c.colorHex,
   priceUsd: 5.25,
   unitQty: 100,
-  url: `https://chainmailjoe.com/rings?color=${200 + i}`,
+  url: `https://supplier-b.example/rings?color=${200 + i}`,
   inStock: true,
   lastUpdated: LAST,
 }));
@@ -85,7 +85,7 @@ const rings16g6: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   colorHex: c.colorHex,
   priceUsd: 5.25,
   unitQty: 100,
-  url: `https://chainmailjoe.com/rings?color=${300 + i}`,
+  url: `https://supplier-b.example/rings?color=${300 + i}`,
   inStock: true,
   lastUpdated: LAST,
 }));
@@ -103,7 +103,7 @@ const ssRing: SupplierProduct = {
   colorHex: "#a8a29e",
   priceUsd: 5.25,
   unitQty: 100,
-  url: "https://chainmailjoe.com/rings?material=stainless",
+  url: "https://supplier-b.example/rings?material=stainless",
   inStock: true,
   lastUpdated: LAST,
 };
@@ -122,7 +122,7 @@ const scales: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   colorHex: c.colorHex,
   priceUsd: 5.50,
   unitQty: 100,
-  url: `https://chainmailjoe.com/scales?color=${i}`,
+  url: `https://supplier-b.example/scales?color=${i}`,
   inStock: true,
   lastUpdated: LAST,
 }));

@@ -183,7 +183,9 @@ export default function ImageOverlayPanel({
         />
       </div>
 
-      {/* Palette Source */}
+      {/* Palette Source — supplier names removed 2026-06-01. The internal
+          cmj/trl/mdz IDs remain as catalog identifiers (anonymous to the user)
+          for backwards compat with previously-saved projects. */}
       <div>
         <label className="text-xs mr-2">Palette Source:</label>
         <select
@@ -195,11 +197,8 @@ export default function ImageOverlayPanel({
           }
           className="bg-slate-800 text-xs border border-slate-700 rounded p-1"
         >
-          <option value="current">Current Supplier</option>
-          <option value="cmj">Chainmail Joe</option>
-          <option value="trl">The Ring Lord</option>
-          <option value="mdz">MetalDesignz</option>
-          <option value="all">All Suppliers Combined</option>
+          <option value="current">Current palette</option>
+          <option value="all">All catalogs combined</option>
         </select>
       </div>
 

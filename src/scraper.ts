@@ -23,15 +23,15 @@ export async function scrapeSuppliers() {
   const updatedSuppliers = { ...suppliers };
   const updatedColors: Record<string, Set<string>> = {};
 
-  // Scrape The Ring Lord
+  // Scrape Catalog A
   const trlRings = await scrapeTheRingLord();
-  updatedSuppliers["The Ring Lord"] = trlRings;
-  updatedColors["The Ring Lord"] = new Set(trlRings.map((r) => r.color));
+  updatedSuppliers["Catalog A"] = trlRings;
+  updatedColors["Catalog A"] = new Set(trlRings.map((r) => r.color));
 
-  // Scrape Chainmail Joe
+  // Scrape Catalog B
   const cmjRings = await scrapeChainmailJoe();
-  updatedSuppliers["Chainmail Joe"] = cmjRings;
-  updatedColors["Chainmail Joe"] = new Set(cmjRings.map((r) => r.color));
+  updatedSuppliers["Catalog B"] = cmjRings;
+  updatedColors["Catalog B"] = new Set(cmjRings.map((r) => r.color));
 
   // Write suppliers.ts
   fs.writeFileSync(

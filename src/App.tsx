@@ -89,9 +89,7 @@ import {
 // ==============================
 import { MATERIALS, UNIVERSAL_COLORS } from "./utils/colors";
 // SupplierMenu removed from 3D Designer 2026-06-01 — supplier-specific color
-// browsing (The Ring Lord, Chainmail Joe, Metal Designz, Steampunk Garage)
-// is gone here and stays only in Freeform via the generic Check-Available-
-// Colors URL-based flow.
+// browsing is gone here. Generic catalog references only remain in Freeform.
 import AtlasPalette from "./components/AtlasPalette";
 import {
   ImageOverlayPanel,

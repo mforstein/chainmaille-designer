@@ -1,7 +1,10 @@
 // src/pages/RingSizeChart.tsx
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { computeRingVars } from "../utils/computeRingVars";
-import { ALL_PRODUCTS, SUPPLIER_INFO } from "../data/supplierCatalog";
+import { ALL_PRODUCTS } from "../data/supplierCatalog";
+// SUPPLIER_INFO import removed 2026-06-01 — Ring Size Chart no longer
+// displays supplier names. The aggregated color swatches are shown
+// without attribution.
 import type { SupplierProduct } from "../data/supplierCatalog";
 import { DraggableCompassNav, DraggablePill } from "../App";
 import { IconHamburger } from "../components/icons/ToolIcons";
@@ -211,15 +214,8 @@ function InfoPanel({ ring, onClose }: { ring: RingData; onClose: () => void }) {
     );
   }, [ring.ID_mm, ring.WD_mm]);
 
-  const bySupplier = useMemo(() => {
-    const map = new Map<string, SupplierProduct[]>();
-    for (const p of matches) {
-      const arr = map.get(p.supplierId) ?? [];
-      arr.push(p);
-      map.set(p.supplierId, arr);
-    }
-    return map;
-  }, [matches]);
+  // bySupplier grouping removed 2026-06-01 — aggregated swatches no longer
+  // need to be split by supplierId now that names aren't displayed.
 
   const materials = [...new Set(matches.map((p) => p.material.replace(/_/g, " ")))];
   const col = arColor(ring.AR);
@@ -288,52 +284,36 @@ function InfoPanel({ ring, onClose }: { ring: RingData; onClose: () => void }) {
         </div>
       )}
 
-      {/* Suppliers + colors */}
-      {bySupplier.size > 0 ? (
-        <div>
-          <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
-            Available From
+      {/* Available colors (aggregated across catalogs, supplier names
+          intentionally hidden 2026-06-01). Shown only if at least one
+          colored product matches this ring size. */}
+      {(() => {
+        const allColored = [...new Map(
+          matches.filter((p) => p.colorHex).map((p) => [p.colorHex!, p])
+        ).values()];
+        if (allColored.length === 0) return null;
+        return (
+          <div>
+            <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 8 }}>
+              Available Colors
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+              {allColored.map((p) => (
+                <div
+                  key={p.sku}
+                  title={p.colorName ?? ""}
+                  style={{
+                    width: 18, height: 18, borderRadius: "50%",
+                    background: p.colorHex ?? "#808080",
+                    border: "1px solid rgba(255,255,255,0.14)",
+                    flexShrink: 0,
+                  }}
+                />
+              ))}
+            </div>
           </div>
-          {Array.from(bySupplier.entries()).map(([suppId, products]) => {
-            const info = SUPPLIER_INFO[suppId as keyof typeof SUPPLIER_INFO];
-            const colorProducts = [...new Map(
-              products.filter((p) => p.colorHex).map((p) => [p.colorHex!, p])
-            ).values()];
-            return (
-              <div key={suppId} style={{ marginBottom: 12 }}>
-                <a
-                  href={info.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: info.color, fontWeight: 700, fontSize: 12, textDecoration: "none" }}
-                >
-                  {info.name} ↗
-                </a>
-                {colorProducts.length > 0 && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 7 }}>
-                    {colorProducts.map((p) => (
-                      <div
-                        key={p.sku}
-                        title={p.colorName ?? ""}
-                        style={{
-                          width: 18, height: 18, borderRadius: "50%",
-                          background: p.colorHex ?? "#808080",
-                          border: "1px solid rgba(255,255,255,0.14)",
-                          flexShrink: 0,
-                        }}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div style={{ color: "#4b5563", fontSize: 12 }}>
-          No supplier catalog data for this size.
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

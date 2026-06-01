@@ -1,10 +1,10 @@
 export const SupplierColors = [
   {
-    supplier: "The Ring Lord",
+    supplier: "Catalog A",
     colors: ["Natural", "Anodized Blue"],
   },
   {
-    supplier: "Chainmail Joe",
+    supplier: "Catalog B",
     colors: ["Anodized Green", "Anodized Purple"],
   },
 ];

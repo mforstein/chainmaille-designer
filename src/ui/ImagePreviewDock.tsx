@@ -132,11 +132,8 @@ export default function ImagePreviewDock({
                 value={paletteSource}
                 onChange={(e) => setPaletteSource(e.target.value as any)}
               >
-                <option value="current">Current Supplier</option>
-                <option value="cmj">Chainmail Joe</option>
-                <option value="trl">The Ring Lord</option>
-                <option value="mdz">MetalDesignz</option>
-                <option value="all">All Suppliers Combined</option>
+                <option value="current">Current palette</option>
+                <option value="all">All catalogs combined</option>
               </select>
             </div>
 

@@ -1,6 +1,6 @@
-// Steampunk Garage — curated catalog
+// Catalog D — curated catalog
 // Last verified: 2026-04-27
-// Source: steampunkgarage.com — boutique supplier, emphasis on metals + specialty colors
+// Source: supplier-d.example — boutique supplier, emphasis on metals + specialty colors
 import type { SupplierProduct, Material } from "./schema";
 
 const LAST = "2026-04-27";
@@ -31,7 +31,7 @@ const aaRings: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   colorHex: c.colorHex,
   priceUsd: 4.75,
   unitQty: 100,
-  url: `https://steampunkgarage.com/rings?i=${i}`,
+  url: `https://supplier-d.example/rings?i=${i}`,
   inStock: true,
   lastUpdated: LAST,
 }));
@@ -50,7 +50,7 @@ const metalRings: SupplierProduct[] = [
     colorHex: "#b5a642",
     priceUsd: 7.99,
     unitQty: 100,
-    url: "https://steampunkgarage.com/rings?material=brass",
+    url: "https://supplier-d.example/rings?material=brass",
     inStock: true,
     lastUpdated: LAST,
   },
@@ -66,7 +66,7 @@ const metalRings: SupplierProduct[] = [
     colorHex: "#cd7f32",
     priceUsd: 8.49,
     unitQty: 100,
-    url: "https://steampunkgarage.com/rings?material=bronze",
+    url: "https://supplier-d.example/rings?material=bronze",
     inStock: true,
     lastUpdated: LAST,
   },
@@ -82,7 +82,7 @@ const metalRings: SupplierProduct[] = [
     colorHex: "#b87333",
     priceUsd: 7.49,
     unitQty: 100,
-    url: "https://steampunkgarage.com/rings?material=copper",
+    url: "https://supplier-d.example/rings?material=copper",
     inStock: true,
     lastUpdated: LAST,
   },
@@ -98,7 +98,7 @@ const metalRings: SupplierProduct[] = [
     colorHex: "#a8a29e",
     priceUsd: 5.99,
     unitQty: 100,
-    url: "https://steampunkgarage.com/rings?material=stainless",
+    url: "https://supplier-d.example/rings?material=stainless",
     inStock: true,
     lastUpdated: LAST,
   },
@@ -117,7 +117,7 @@ const aaRings18g794: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   colorHex: c.colorHex,
   priceUsd: 5.49,
   unitQty: 100,
-  url: `https://steampunkgarage.com/rings?i=${100 + i}`,
+  url: `https://supplier-d.example/rings?i=${100 + i}`,
   inStock: true,
   lastUpdated: LAST,
 }));
@@ -135,7 +135,7 @@ const aaRings16g6: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   colorHex: c.colorHex,
   priceUsd: 5.25,
   unitQty: 100,
-  url: `https://steampunkgarage.com/rings?i=${200 + i}`,
+  url: `https://supplier-d.example/rings?i=${200 + i}`,
   inStock: true,
   lastUpdated: LAST,
 }));
@@ -154,7 +154,7 @@ const scales: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   colorHex: c.colorHex,
   priceUsd: 5.99,
   unitQty: 100,
-  url: `https://steampunkgarage.com/scales?i=${i}`,
+  url: `https://supplier-d.example/scales?i=${i}`,
   inStock: true,
   lastUpdated: LAST,
 }));
@@ -173,7 +173,7 @@ const metalScales: Array<SupplierProduct & { material: Material }> = [
     colorHex: "#b5a642",
     priceUsd: 9.99,
     unitQty: 50,
-    url: "https://steampunkgarage.com/scales?material=brass",
+    url: "https://supplier-d.example/scales?material=brass",
     inStock: true,
     lastUpdated: LAST,
   },
@@ -190,7 +190,7 @@ const metalScales: Array<SupplierProduct & { material: Material }> = [
     colorHex: "#cd7f32",
     priceUsd: 10.49,
     unitQty: 50,
-    url: "https://steampunkgarage.com/scales?material=bronze",
+    url: "https://supplier-d.example/scales?material=bronze",
     inStock: true,
     lastUpdated: LAST,
   },
@@ -207,7 +207,7 @@ const metalScales: Array<SupplierProduct & { material: Material }> = [
     colorHex: "#b87333",
     priceUsd: 9.49,
     unitQty: 50,
-    url: "https://steampunkgarage.com/scales?material=copper",
+    url: "https://supplier-d.example/scales?material=copper",
     inStock: true,
     lastUpdated: LAST,
   },

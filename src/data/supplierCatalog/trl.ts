@@ -1,10 +1,10 @@
-// The Ring Lord — curated catalog
+// Catalog A — curated catalog
 // Last verified: 2026-04-27
-// Source: theringlord.com — update prices quarterly
+// Source: supplier-a.example — update prices quarterly
 import type { SupplierProduct, Material } from "./schema";
 
 const LAST = "2026-04-27";
-const BASE = "https://theringlord.com/cart/shopdisplayproducts.asp";
+const BASE = "https://supplier-a.example/cart/shopdisplayproducts.asp";
 
 // ── Anodized Aluminum color palette ──────────────────────────────────────────
 const AA_COLORS: { colorName: string; colorHex: string }[] = [

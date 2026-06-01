@@ -37,9 +37,14 @@ export interface SupplierProduct {
   lastUpdated: string;      // ISO date — when price/stock was verified
 }
 
+// Supplier display names and URLs were stripped 2026-06-01. The catalogs
+// themselves are still loaded internally (so ring-size matching keeps
+// working) but no specific supplier is named or linked in the UI.
+// Generic labels (Catalog A/B/C/D) are kept here in case any straggler
+// reference renders the name field — but no live UI path should render it.
 export const SUPPLIER_INFO: Record<SupplierId, { name: string; url: string; color: string }> = {
-  trl: { name: "The Ring Lord", url: "https://theringlord.com", color: "#c2410c" },
-  cmj: { name: "Chainmail Joe",  url: "https://chainmailjoe.com",  color: "#1d4ed8" },
-  mdz: { name: "Metal Designz",  url: "https://metaldesignz.com",  color: "#047857" },
-  spg: { name: "Steampunk Garage", url: "https://steampunkgarage.com", color: "#7c3aed" },
+  trl: { name: "Catalog A", url: "", color: "#c2410c" },
+  cmj: { name: "Catalog B", url: "", color: "#1d4ed8" },
+  mdz: { name: "Catalog C", url: "", color: "#047857" },
+  spg: { name: "Catalog D", url: "", color: "#7c3aed" },
 };

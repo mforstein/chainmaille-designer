@@ -59,8 +59,8 @@ const TUNER_SCALE_PREFS_KEY = "chainmailTuner.scalePrefs.v4.same3dscene.holelock
 const FREEFORM_TUNER_SNAPSHOT_KEY = "freeform.tunerSnapshot.v1";
 
 // ─── Commercially available scale presets ─────────────────────────────────────
-// Dimensions sourced from The Ring Lord (TRL) dragon scale product line and
-// common sizes from other major suppliers. Fine-tune with sliders after selecting.
+// Dimensions sourced from common dragon-scale product lines across major
+// chainmail suppliers. Fine-tune with sliders after selecting.
 interface ScalePreset {
   id: string;
   label: string;

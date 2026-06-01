@@ -1,5 +1,5 @@
 export const suppliers = {
-  "Chainmail Joe": [
+  "Catalog B": [
     {
       name: "6mm Green Anodized",
       color: "Anodized Green",
@@ -9,7 +9,7 @@ export const suppliers = {
       color: "Anodized Purple",
     },
   ],
-  "The Ring Lord": [
+  "Catalog A": [
     {
       name: "6mm Bright Aluminum",
       color: "Natural",

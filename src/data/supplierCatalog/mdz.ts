@@ -1,6 +1,6 @@
-// Metal Designz — curated catalog
+// Catalog C — curated catalog
 // Last verified: 2026-04-27
-// Source: metaldesignz.com — focus on scales and anodized aluminum
+// Source: supplier-c.example — focus on scales and anodized aluminum
 import type { SupplierProduct } from "./schema";
 
 const LAST = "2026-04-27";
@@ -32,7 +32,7 @@ const rings: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   colorHex: c.colorHex,
   priceUsd: 4.25,
   unitQty: 100,
-  url: `https://metaldesignz.com/rings?i=${i}`,
+  url: `https://supplier-c.example/rings?i=${i}`,
   inStock: true,
   lastUpdated: LAST,
 }));
@@ -49,7 +49,7 @@ const rings18g794: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   colorHex: c.colorHex,
   priceUsd: 5.25,
   unitQty: 100,
-  url: `https://metaldesignz.com/rings?i=${100 + i}`,
+  url: `https://supplier-c.example/rings?i=${100 + i}`,
   inStock: true,
   lastUpdated: LAST,
 }));
@@ -66,7 +66,7 @@ const rings16g6: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   colorHex: c.colorHex,
   priceUsd: 5.00,
   unitQty: 100,
-  url: `https://metaldesignz.com/rings?i=${200 + i}`,
+  url: `https://supplier-c.example/rings?i=${200 + i}`,
   inStock: true,
   lastUpdated: LAST,
 }));
@@ -85,7 +85,7 @@ const teardropScales: SupplierProduct[] = AA_COLORS.map((c, i) => ({
   colorHex: c.colorHex,
   priceUsd: 6.49,
   unitQty: 100,
-  url: `https://metaldesignz.com/scales?i=${i}`,
+  url: `https://supplier-c.example/scales?i=${i}`,
   inStock: true,
   lastUpdated: LAST,
 }));
@@ -104,7 +104,7 @@ const ssScale: SupplierProduct = {
   colorHex: "#a8a29e",
   priceUsd: 8.99,
   unitQty: 100,
-  url: "https://metaldesignz.com/scales?material=stainless",
+  url: "https://supplier-c.example/scales?material=stainless",
   inStock: true,
   lastUpdated: LAST,
 };
