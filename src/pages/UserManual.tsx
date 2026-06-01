@@ -270,8 +270,8 @@ export default function UserManual() {
           <Bullets items={[
             <><strong>Free</strong> ($0): Home, Basic, Ring Chart, Atlas browse, Tuner preview.</>,
             <><strong>Maker</strong> ($2.99/mo): 3D Designer (no image overlay), Tuner save, Atlas apply, CSV export.</>,
-            <><strong>Crafter</strong> ($5.99/mo): 3D Designer full (spline, flood fill, image overlay), Erin Pattern 2D full, PDF BOM, Physical Pattern PDF, Affiliate buy buttons.</>,
-            <><strong>Studio</strong> ($9.99/mo): Freeform (full), Freeform image overlay & transfer, shape/spline fill, Supplier cost estimator, GLB/STL export, Commercial-use license.</>,
+            <><strong>Crafter</strong> ($5.99/mo): 3D Designer full (spline, flood fill, image overlay), Erin Pattern 2D full, PDF BOM, Physical Pattern PDF.</>,
+            <><strong>Studio</strong> ($9.99/mo): Freeform (full), Freeform image overlay & transfer, shape/spline fill, check available colors at any supplier website, GLB/STL export, Commercial-use license.</>,
           ]} />
           <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.6, marginTop: 4 }}>
             Subscribe via <a href="/pricing" style={{ color: "#a78bfa" }}>chainmaildesigner.com/pricing</a>. Mobile apps (iOS/Android) ship with Free tier features only — subscribe from the website to unlock paid tools.
@@ -322,11 +322,6 @@ export default function UserManual() {
             <>Stripe's checkout page opens with your email pre-filled. Enter card details. Subscribe.</>,
             <>Webhook updates your tier within seconds. Refresh chainmaildesigner.com — locked tools unlock immediately.</>,
           ]} />
-
-          <Sub title="Test mode (currently active)" />
-          <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.7 }}>
-            The site is in Stripe test mode. Use card <code>4242 4242 4242 4242</code>, any future expiry, any 3-digit CVC, any ZIP. No real charges. Live mode launches after testing is verified.
-          </p>
 
           <Sub title="Managing or cancelling" />
           <p style={{ color: "#cbd5e1", fontSize: 13, lineHeight: 1.7 }}>
@@ -389,7 +384,7 @@ export default function UserManual() {
           <Feat title="☰ Navigation Menu">Opens the compass overlay for jumping between pages.</Feat>
           <Feat title="📦 Finalize & Export">Opens the export panel (PDF, CSV, GLB, STL, Physical Pattern).</Feat>
           <Feat title="▸ Collapse / ▾ Expand toolbar">Hides everything below it to maximize canvas. Tap again to restore.</Feat>
-          <Feat title="⚙️ Utility Panel">Toggles the secondary floating pill (Studio Geometry, Save/Load, Design Library, Cost Estimator, canvas BG, reset, Studio Stats).</Feat>
+          <Feat title="⚙️ Utility Panel">Toggles the secondary floating pill (Studio Geometry, Save/Load, Design Library, canvas BG, reset, Studio Stats).</Feat>
           <Feat title="🎨 Draw (Paint)">Primary placement tool. Click or drag to place rings at hex-grid positions in the active color. R/S toggle switches between ring and scale layer.</Feat>
           <Feat title="⌫ Eraser">Click or drag to remove rings/scales. <strong>Painting now wipes any prior image-fill patch on a scale</strong> — the new solid color takes precedence over the image transfer at that cell.</Feat>
           <Feat title="↩️ Undo / ↪️ Redo">Per-action history. <KS>Ctrl/Cmd+Z</KS> / <KS>Ctrl+Shift+Z</KS>.</Feat>
@@ -462,7 +457,7 @@ export default function UserManual() {
 
           <Sub title="Color palette" />
           <Feat title="Swatches">Tap to activate. Long-press to edit. Tap + to add. Drag the palette pill anywhere; position persists.</Feat>
-          <Feat title="Browse Supplier Colors">Live ring/scale color data from The Ring Lord, Chainmail Joe, Metal Designz, Steampunk Garage. Cached 1 hour; 🔄 Refresh forces a re-fetch.</Feat>
+          <Feat title="Check Available Colors at a Supplier Website (Freeform only)">Enter any supplier site's URL — the app attempts to scan that page for color names matching your palette. If the page can't be parsed or the site blocks the request, your default palette colors remain active unchanged.</Feat>
         </Sec>
 
         {/* ── 3D DESIGNER ─────────────────────────────────────────────────── */}
@@ -494,9 +489,9 @@ export default function UserManual() {
           <Feat title="Rotate (3D view)">When Paint Mode is off, click-drag orbits the camera. Pinch/scroll zooms.</Feat>
           <Feat title="▶ Grid size">Sets columns × rows. Up to 400 × 400 (memory-limited).</Feat>
 
-          <Sub title="Materials & supplier integration" />
-          <Feat title="Material picker">Quick presets (aluminum, sterling, stainless, brass, copper, etc.) plus a Supplier Colors browser.</Feat>
-          <Feat title="🧰 Supplier & Atlas panel">Apply an Atlas preset to instantly reconfigure ring geometry (ID, WD, spacing, tilt).</Feat>
+          <Sub title="Materials & geometry presets" />
+          <Feat title="Material picker">Quick presets (aluminum, sterling, stainless, brass, copper, etc.).</Feat>
+          <Feat title="🧰 Atlas panel">Apply an Atlas preset to instantly reconfigure ring geometry (ID, WD, spacing, tilt).</Feat>
         </Sec>
 
         {/* ── RING SIZE CHART ──────────────────────────────────────────────── */}
@@ -524,8 +519,7 @@ export default function UserManual() {
           </div>
 
           <Feat title="Tap a ring">Smoothly zooms to fill the view and opens the detail panel.</Feat>
-          <Feat title="Detail panel">Dimensions, AR badge, supplier matches (±0.35 mm) with available colors and product links.</Feat>
-          <Feat title="🔄 Refresh Colors">Re-fetches supplier color data (bypasses 1-hour cache).</Feat>
+          <Feat title="Detail panel">Dimensions and AR badge for the selected ring size.</Feat>
         </Sec>
 
         {/* ── WEAVE TUNER ─────────────────────────────────────────────────── */}
@@ -667,7 +661,7 @@ export default function UserManual() {
                 {[
                   ["PDF — BOM + Map", "BOM table + tiled overview map + color preview pages", "Sharing a finished design or filing as a record"],
                   ["Physical Pattern PDF (1:1)", "Per-color A4 pages; rings at true size; 10 mm ruler ticks; new almond/lancet scale silhouette", "Print at 100% as a physical weaving template"],
-                  ["CSV", "Row-per-ring spreadsheet: color, position, ID, WD", "Supplier order entry / inventory"],
+                  ["CSV", "Row-per-ring spreadsheet: color, position, ID, WD", "Order entry / inventory"],
                   ["GLB (binary GLTF)", "Full 3D model; each color = one named mesh group; scale meshes use the updated Standard silhouette", "VR/AR, Unity, WebXR, Bambu/Prusa slicers"],
                   ["Per-Color STLs", "One STL per unique color", "Multi-material 3D printing"],
                 ].map(([fmt, what, use]) => (

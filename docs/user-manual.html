@@ -1,26 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Chainmail Studio — User Manual</title>
-<style>
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; max-width: 860px; margin: 32px auto; padding: 0 24px; color: #1f2937; line-height: 1.55; }
-  h1 { font-size: 30px; margin-top: 0; }
-  h2 { border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; margin-top: 36px; }
-  h3 { margin-top: 24px; }
-  table { border-collapse: collapse; width: 100%; margin: 14px 0; }
-  th, td { border: 1px solid #d1d5db; padding: 6px 10px; text-align: left; vertical-align: top; }
-  th { background: #f3f4f6; }
-  code { background: #f3f4f6; padding: 1px 5px; border-radius: 3px; font-size: 90%; }
-  pre { background: #0f172a; color: #e5e7eb; padding: 12px; border-radius: 6px; overflow-x: auto; }
-  pre code { background: transparent; padding: 0; color: inherit; }
-  blockquote { border-left: 3px solid #7c3aed; padding-left: 14px; color: #4b5563; margin: 14px 0; }
-  hr { border: none; border-top: 1px solid #e5e7eb; margin: 28px 0; }
-  a { color: #7c3aed; }
-</style>
-</head>
-<body>
-<h1>Chainmail Studio — User Manual</h1>
+<head><meta charset="utf-8"><title>Chainmail Studio — User Manual</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;max-width:860px;margin:32px auto;padding:0 24px;color:#1f2937;line-height:1.55}h1{font-size:30px;margin-top:0}h2{border-bottom:1px solid #e5e7eb;padding-bottom:6px;margin-top:36px}h3{margin-top:24px}table{border-collapse:collapse;width:100%;margin:14px 0}th,td{border:1px solid #d1d5db;padding:6px 10px;text-align:left;vertical-align:top}th{background:#f3f4f6}code{background:#f3f4f6;padding:1px 5px;border-radius:3px;font-size:90%}pre{background:#0f172a;color:#e5e7eb;padding:12px;border-radius:6px;overflow-x:auto}pre code{background:transparent;padding:0;color:inherit}blockquote{border-left:3px solid #7c3aed;padding-left:14px;color:#4b5563;margin:14px 0}hr{border:none;border-top:1px solid #e5e7eb;margin:28px 0}a{color:#7c3aed}</style>
+</head><body><h1>Chainmail Studio — User Manual</h1>
 <p><strong>Chainmail Studio by Woven Rainbows by Erin</strong>
 Version 1.0 · Updated 2026-05-31</p>
 <hr />
@@ -80,7 +62,7 @@ Version 1.0 · Updated 2026-05-31</p>
 <tr>
 <td><strong>Studio</strong></td>
 <td>$9.99/mo</td>
-<td>Freeform full + image overlay/transfer, shape &amp; spline fill, supplier cost estimator, GLB/STL export, commercial-use license</td>
+<td>Freeform full + image overlay/transfer, shape &amp; spline fill, check available colors at any supplier website, GLB/STL export, commercial-use license</td>
 </tr>
 </tbody>
 </table>
@@ -145,35 +127,6 @@ Version 1.0 · Updated 2026-05-31</p>
 <li>Stripe charges your card, then sends a webhook to our server which updates your tier in your account profile.</li>
 <li>Return to chainmaildesigner.com — refresh the page — the new tier badge appears in the top-right of the home page and your previously-locked tools unlock immediately.</li>
 </ol>
-<h3>Test mode (development)</h3>
-<p>The site is currently in <strong>Stripe test mode</strong>. To test the flow without real charges, use Stripe's test card:</p>
-<table>
-<thead>
-<tr>
-<th>Field</th>
-<th>Value</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Card number</td>
-<td><code>4242 4242 4242 4242</code></td>
-</tr>
-<tr>
-<td>Expiry</td>
-<td>any future date (e.g. <code>12/30</code>)</td>
-</tr>
-<tr>
-<td>CVC</td>
-<td>any 3 digits (e.g. <code>123</code>)</td>
-</tr>
-<tr>
-<td>ZIP</td>
-<td>any (e.g. <code>12345</code>)</td>
-</tr>
-</tbody>
-</table>
-<p>No real money moves. When live-mode launches, the buttons will use real Stripe live keys and real cards only.</p>
 <h3>Managing or cancelling a subscription</h3>
 <p>On the <a href="https://chainmaildesigner.com/pricing">pricing page</a>, the tier you currently have shows a <strong>&quot;Manage subscription&quot;</strong> button instead of an upgrade button. Click it to open Stripe's Customer Portal where you can:</p>
 <ul>
@@ -550,7 +503,7 @@ Version 1.0 · Updated 2026-05-31</p>
 <tr>
 <td><strong>CSV</strong></td>
 <td>Maker+</td>
-<td>Spreadsheets, supplier order forms, raw data</td>
+<td>Spreadsheets, order forms, raw data</td>
 </tr>
 <tr>
 <td><strong>PDF Overview</strong></td>
@@ -636,7 +589,7 @@ Version 1.0 · Updated 2026-05-31</p>
 <li>Visit <a href="https://chainmaildesigner.com/pricing">chainmaildesigner.com/pricing</a>.</li>
 <li>Click the <strong>Start Maker / Crafter / Studio</strong> button for the tier you want.</li>
 <li>Stripe's hosted checkout page opens; your email is pre-filled.</li>
-<li>Enter card details (in test mode use <code>4242 4242 4242 4242</code>, any future date, any 3-digit CVC, any ZIP). Click <strong>Subscribe</strong>.</li>
+<li>Enter card details and click <strong>Subscribe</strong>.</li>
 <li>Stripe processes payment, fires a webhook, and your account's tier flips within seconds.</li>
 <li>Return to the app, refresh, and the locked tools are unlocked.</li>
 </ol>
@@ -727,6 +680,4 @@ Version 1.0 · Updated 2026-05-31</p>
 <hr />
 <p><em>© 2026 Woven Rainbows by Erin · Chainmail Studio</em>
 <em>Built with React, Three.js, and a lot of actual chainmaille at the workbench.</em></p>
-
-</body>
-</html>
+</body></html>

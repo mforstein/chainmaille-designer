@@ -40,7 +40,7 @@ Everything here assumes the following. Read once; later sections won't repeat th
 | **Free** | $0 | Home, Basic, Ring Chart, Atlas browse, Tuner preview |
 | **Maker** | $2.99/mo | 3D Designer (no image overlay), Tuner save, Atlas apply, CSV export |
 | **Crafter** | $5.99/mo | 3D Designer full (spline, flood fill, image overlay), Erin Pattern 2D full, PDF BOM, Physical Pattern PDF |
-| **Studio** | $9.99/mo | Freeform full + image overlay/transfer, shape & spline fill, supplier cost estimator, GLB/STL export, commercial-use license |
+| **Studio** | $9.99/mo | Freeform full + image overlay/transfer, shape & spline fill, check available colors at any supplier website, GLB/STL export, commercial-use license |
 
 **iPhone/iPad/Android apps** ship with **Free tier features only**. Subscribe at [chainmaildesigner.com](https://chainmaildesigner.com) to unlock paid tools.
 
@@ -90,19 +90,6 @@ Subscriptions use **Stripe Payment Links** for checkout — no credit card data 
 5. Enter card details, confirm.
 6. Stripe charges your card, then sends a webhook to our server which updates your tier in your account profile.
 7. Return to chainmaildesigner.com — refresh the page — the new tier badge appears in the top-right of the home page and your previously-locked tools unlock immediately.
-
-### Test mode (development)
-
-The site is currently in **Stripe test mode**. To test the flow without real charges, use Stripe's test card:
-
-| Field | Value |
-|---|---|
-| Card number | `4242 4242 4242 4242` |
-| Expiry | any future date (e.g. `12/30`) |
-| CVC | any 3 digits (e.g. `123`) |
-| ZIP | any (e.g. `12345`) |
-
-No real money moves. When live-mode launches, the buttons will use real Stripe live keys and real cards only.
 
 ### Managing or cancelling a subscription
 
@@ -356,7 +343,7 @@ Live ring count by color and size. Updates as you design.
 
 | Format | Tier | Best for |
 |---|---|---|
-| **CSV** | Maker+ | Spreadsheets, supplier order forms, raw data |
+| **CSV** | Maker+ | Spreadsheets, order forms, raw data |
 | **PDF Overview** | Crafter+ | Print a copy of your design with BOM table |
 | **Physical Pattern PDF** | Crafter+ | True 1:1 scale per-color pages. Lay rings directly on the paper. |
 | **GLB** | Studio | 3D model for Blender/Cinema 4D/etc. |
@@ -426,7 +413,7 @@ Live ring count by color and size. Updates as you design.
 2. Visit [chainmaildesigner.com/pricing](https://chainmaildesigner.com/pricing).
 3. Click the **Start Maker / Crafter / Studio** button for the tier you want.
 4. Stripe's hosted checkout page opens; your email is pre-filled.
-5. Enter card details (in test mode use `4242 4242 4242 4242`, any future date, any 3-digit CVC, any ZIP). Click **Subscribe**.
+5. Enter card details and click **Subscribe**.
 6. Stripe processes payment, fires a webhook, and your account's tier flips within seconds.
 7. Return to the app, refresh, and the locked tools are unlocked.
 
