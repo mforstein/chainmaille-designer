@@ -736,11 +736,11 @@ function normalizeFreeformScaleSettings(src: Record<string, any>): FreeformScale
   const next: FreeformScaleSettings = {
     enabled: true,
     behindRings: false,
-    holeIdMm: 7.94,       // 5/16 inch — matches Tuner default scaleHoleId
-    widthMm: 9.1,          // matches Tuner default scaleWidth
-    heightMm: 22.2,        // matches Tuner default scaleHeight
-    shape: "leaf",         // Standard silhouette (elongated, pointed ends)
-    dropMm: 9.2,           // matches Tuner default scaleDrop
+    holeIdMm: 6.35,        // 1/4 inch — matches Tuner default scaleHoleId
+    widthMm: 12.5,         // matches Tuner default scaleWidth
+    heightMm: 23.5,        // matches Tuner default scaleHeight
+    shape: "leaf",         // Standard symmetric almond/pointed-oval (scale.jpg)
+    dropMm: 11.0,          // matches Tuner default scaleDrop
     colorHex: "#4dd0e1",
     onEveryCell: true,
     lockScaleHolesToRingCenters: true,

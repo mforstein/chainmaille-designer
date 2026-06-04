@@ -72,7 +72,7 @@ interface ScalePreset {
   dropMm: number;      // body drop from hole shoulder
 }
 
-// All presets keep width/holeDia ratio ≥ 1.5 so the teardrop bezier curves
+// All presets keep width/holeDia ratio ≥ 1.5 so the almond bezier curves
 // have enough room to produce a well-formed shape (narrower ratios cause the
 // shoulder to degenerate into a flat arch).
 const SCALE_PRESETS: readonly ScalePreset[] = [
@@ -303,8 +303,7 @@ function makeScaleShape(
   const halfW = width / 2;
   const tipY = bodyOffsetY - height;
   const shoulderY = bodyOffsetY - height * 0.08;
-  const bellyY = bodyOffsetY - height * 0.45;
-  const lowerY = bodyOffsetY - height * 0.78;
+  const lowerY = bodyOffsetY - height * 0.78; // still used by the "kite" case
 
   const s = new THREE.Shape();
 
@@ -350,11 +349,15 @@ function makeScaleShape(
 
   switch (shape) {
     case "leaf": {
+      // Standard chainmaille scale — symmetric almond / pointed-oval matching
+      // the physical scale photo (scale.jpg): gently pointed at BOTH top and
+      // bottom, widest at the vertical midpoint. Mirrors RingRenderer.tsx's
+      // makeScaleShapeRR so the tuner preview and the woven render are
+      // identical. Replaces the old asymmetric round-top/pointed-bottom
+      // ("teardrop") silhouette removed 2026-06-01 per Erin.
       s.moveTo(0, shoulderY);
-      s.bezierCurveTo(halfW * 0.95, bodyOffsetY - height * 0.16, halfW * 1.05, bellyY, halfW * 0.34, lowerY);
-      s.bezierCurveTo(halfW * 0.18, bodyOffsetY - height * 0.9, halfW * 0.08, bodyOffsetY - height * 0.96, 0, tipY);
-      s.bezierCurveTo(-halfW * 0.08, bodyOffsetY - height * 0.96, -halfW * 0.18, bodyOffsetY - height * 0.9, -halfW * 0.34, lowerY);
-      s.bezierCurveTo(-halfW * 1.05, bellyY, -halfW * 0.95, bodyOffsetY - height * 0.16, 0, shoulderY);
+      s.bezierCurveTo(halfW * 1.10, bodyOffsetY - height * 0.20, halfW * 1.10, bodyOffsetY - height * 0.82, 0, tipY);
+      s.bezierCurveTo(-halfW * 1.10, bodyOffsetY - height * 0.82, -halfW * 1.10, bodyOffsetY - height * 0.20, 0, shoulderY);
       break;
     }
     case "round": {
@@ -374,11 +377,11 @@ function makeScaleShape(
       break;
     }
     default: {
+      // Any unknown / legacy shape value (including legacy "teardrop" data)
+      // renders as the Standard symmetric almond — never the old teardrop.
       s.moveTo(0, shoulderY);
-      s.bezierCurveTo(halfW * 1.08, bodyOffsetY - height * 0.14, halfW * 1.16, bellyY, halfW * 0.36, lowerY);
-      s.bezierCurveTo(halfW * 0.18, bodyOffsetY - height * 0.88, halfW * 0.08, bodyOffsetY - height * 0.95, 0, tipY);
-      s.bezierCurveTo(-halfW * 0.08, bodyOffsetY - height * 0.95, -halfW * 0.18, bodyOffsetY - height * 0.88, -halfW * 0.36, lowerY);
-      s.bezierCurveTo(-halfW * 1.16, bellyY, -halfW * 1.08, bodyOffsetY - height * 0.14, 0, shoulderY);
+      s.bezierCurveTo(halfW * 1.10, bodyOffsetY - height * 0.20, halfW * 1.10, bodyOffsetY - height * 0.82, 0, tipY);
+      s.bezierCurveTo(-halfW * 1.10, bodyOffsetY - height * 0.82, -halfW * 1.10, bodyOffsetY - height * 0.20, 0, shoulderY);
       break;
     }
   }
@@ -515,15 +518,17 @@ export default function ChainmailWeaveTuner() {
   // Scale params
   const [scaleEnabled, setScaleEnabled] = useState(isGuided ? false : true);
   const [scaleBehindRings, setScaleBehindRings] = useState(false);
-  const [scaleHoleId, setScaleHoleId] = useState(convertToMM("5/16"));
-  const [scaleWidth, setScaleWidth] = useState(9.1);
-  const [scaleDrop, setScaleDrop] = useState(9.2);
-  const [scaleHeight, setScaleHeight] = useState(22.2);
+  // Scale mounting hole = 1/4" (6.35mm). A larger 5/16" hole is too big to sit
+  // fully inside the body at these proportions and pokes past the scale's point.
+  const [scaleHoleId, setScaleHoleId] = useState(convertToMM("1/4"));
+  const [scaleWidth, setScaleWidth] = useState(12.5);
+  const [scaleDrop, setScaleDrop] = useState(11.0);
+  const [scaleHeight, setScaleHeight] = useState(23.5);
   // Tuner respects the user's pinned default scale shape (Save & make default
   // in the Custom Shape Editor). If a custom Standard shape is pinned, load
-  // that; otherwise fall back to the built-in "leaf" — the elongated,
-  // pointed-both-ends silhouette that matches the physical Standard scale
-  // (the UI labels this as "Standard").
+  // that; otherwise fall back to the built-in "leaf" — the symmetric almond /
+  // pointed-oval silhouette that matches the physical Standard scale photo
+  // (scale.jpg); the UI labels this as "Standard".
   const [scaleShape, setScaleShape] = useState<ScaleShape>(() => {
     const pinned = loadDefaultScaleShape();
     if (pinned && pinned.startsWith("custom:")) return pinned as ScaleShape;
