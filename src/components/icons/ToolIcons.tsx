@@ -100,6 +100,19 @@ export function IconSquare({ size = 16 }: { size?: number }) {
 }
 
 // 4-directional arrow — used for "drag scale plane" mode
+export function IconMirror({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={{ display: "block" }}>
+      {/* mirror axis (dashed) */}
+      <line x1="12" y1="3" x2="12" y2="21" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeDasharray="2.5 2.5" />
+      {/* left shape — solid */}
+      <path d="M10 7L4 12l6 5z" fill="currentColor" />
+      {/* right shape — hollow mirror image */}
+      <path d="M14 7l6 5-6 5z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function IconScaleMove({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={{ display: "block" }}>

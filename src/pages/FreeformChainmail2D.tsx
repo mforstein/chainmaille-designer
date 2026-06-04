@@ -30,7 +30,7 @@ import {
 
 import { DraggablePill, DraggableCompassNav } from "../App";
 import type { ExportRing, PaletteAssignment } from "../types/project";
-import { IconCircle, IconSquare, IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo, IconScaleMove } from "../components/icons/ToolIcons";
+import { IconCircle, IconSquare, IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo, IconMirror } from "../components/icons/ToolIcons";
 import { ToolBtn } from "../components/ui/ToolBtn";
 import ShapePanel, { ShapeTool as ShapeToolId } from "../components/ShapePanel";
 import { computeShapeCells } from "../utils/shapeFill";
@@ -1712,6 +1712,26 @@ const FreeformChainmail2D: React.FC = () => {
   const [panMode, setPanMode] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
 
+  // ── Mirror-draw tool ─────────────────────────────────────────────────────
+  // When on, the user first defines a reference on the canvas (tap = a point /
+  // 180° reflection; drag = an axis line of any orientation). After that, every
+  // ring/scale painted (or erased) is also applied to its reflection across the
+  // reference — until the tool is toggled off. Reference coords are stored in
+  // the same "adjusted logical" frame rcToLogical outputs.
+  type MirrorRef =
+    | { kind: "point"; x: number; y: number }
+    | { kind: "line"; x0: number; y0: number; x1: number; y1: number };
+  const [mirrorOn, setMirrorOn] = useState(false);
+  const [mirrorRefGeom, setMirrorRefGeom] = useState<MirrorRef | null>(null);
+  const mirrorOnRef = useRef(mirrorOn);
+  const mirrorRefGeomRef = useRef<MirrorRef | null>(null);
+  // Active reference-defining gesture (tap vs drag), screen + logical points.
+  const mirrorSetRef = useRef<{
+    x0: number; y0: number; x1: number; y1: number; sx0: number; sy0: number; moved: boolean;
+  } | null>(null);
+  useEffect(() => { mirrorOnRef.current = mirrorOn; }, [mirrorOn]);
+  useEffect(() => { mirrorRefGeomRef.current = mirrorRefGeom; }, [mirrorRefGeom]);
+
   const panStart = useRef<{
     screenX: number;
     screenY: number;
@@ -2700,6 +2720,40 @@ const FreeformChainmail2D: React.FC = () => {
     const dDown = Math.abs(r0 - 1 - rawRow);
     return dUp <= dDown ? r0 + 1 : r0 - 1;
   }
+
+  // Reflect a point across the active mirror reference (point or line), in the
+  // adjusted-logical frame rcToLogical uses.
+  const reflectPoint = useCallback(
+    (px: number, py: number, ref: MirrorRef): { x: number; y: number } => {
+      if (ref.kind === "point") return { x: 2 * ref.x - px, y: 2 * ref.y - py };
+      const dx = ref.x1 - ref.x0;
+      const dy = ref.y1 - ref.y0;
+      const len2 = dx * dx + dy * dy || 1;
+      const t = ((px - ref.x0) * dx + (py - ref.y0) * dy) / len2;
+      const projx = ref.x0 + t * dx;
+      const projy = ref.y0 + t * dy;
+      return { x: 2 * projx - px, y: 2 * projy - py };
+    },
+    [],
+  );
+
+  // Original cell plus its mirror cell (when the mirror tool is on and a
+  // reference is set). The mirror cell is the reflection snapped to the
+  // nearest lattice cell. De-duped when it lands on the same cell.
+  const mirrorCellsFor = useCallback(
+    (row: number, col: number): Array<{ row: number; col: number }> => {
+      const cells = [{ row, col }];
+      const ref = mirrorRefGeomRef.current;
+      if (mirrorOnRef.current && ref) {
+        const p = rcToLogical(row, col);
+        const r = reflectPoint(p.x, p.y, ref);
+        const m = logicalToRowColApprox(r.x, r.y);
+        if (m.row !== row || m.col !== col) cells.push({ row: m.row, col: m.col });
+      }
+      return cells;
+    },
+    [rcToLogical, logicalToRowColApprox, reflectPoint],
+  );
 
   // Paste the clipboard onto the design with its (0,0) anchor at the given
   // target row/col. Overwrites existing rings/scales at the destination cells
@@ -4372,6 +4426,60 @@ const derived = useMemo(() => {
       }
     }
 
+    // ── Mirror tool guide: the active reference (point/line) and the
+    // in-progress defining gesture. Coords are in the adjusted-logical frame;
+    // logicalToWorld → worldToScreen maps them to the canvas.
+    {
+      const ms = mirrorSetRef.current;
+      const ref = mirrorRefGeomRef.current;
+      const toScreen = (ax: number, ay: number) => {
+        const w = logicalToWorld(ax, ay);
+        return worldToScreen(w.wx, w.wy);
+      };
+      try {
+        ctx.save();
+        ctx.strokeStyle = "rgba(56,189,248,0.95)";
+        ctx.fillStyle = "rgba(56,189,248,0.18)";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([6, 5]);
+        const drawPoint = (ax: number, ay: number) => {
+          const { sx, sy } = toScreen(ax, ay);
+          ctx.beginPath();
+          ctx.arc(sx, sy, 7, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.moveTo(sx - 10, sy); ctx.lineTo(sx + 10, sy);
+          ctx.moveTo(sx, sy - 10); ctx.lineTo(sx, sy + 10);
+          ctx.stroke();
+          ctx.setLineDash([6, 5]);
+        };
+        const drawLine = (x0: number, y0: number, x1: number, y1: number) => {
+          const a = toScreen(x0, y0);
+          const b = toScreen(x1, y1);
+          let dx = b.sx - a.sx, dy = b.sy - a.sy;
+          const len = Math.hypot(dx, dy) || 1;
+          dx /= len; dy /= len;
+          const ext = 4000;
+          ctx.beginPath();
+          ctx.moveTo(a.sx - dx * ext, a.sy - dy * ext);
+          ctx.lineTo(a.sx + dx * ext, a.sy + dy * ext);
+          ctx.stroke();
+        };
+        if (ms) {
+          if (ms.moved) drawLine(ms.x0, ms.y0, ms.x1, ms.y1);
+          else drawPoint(ms.x0, ms.y0);
+        } else if (ref) {
+          if (ref.kind === "point") drawPoint(ref.x, ref.y);
+          else drawLine(ref.x0, ref.y0, ref.x1, ref.y1);
+        }
+        ctx.restore();
+      } catch {
+        /* guide is decoration only */
+      }
+    }
+
     if (selectionMode === "none") return;
 
     // Released drag in pure-select mode: draw the persisted selection rect
@@ -4606,6 +4714,18 @@ const derived = useMemo(() => {
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      // Mirror tool: while on and no reference set yet, a press begins defining
+      // it (release as a tap = point, drag = line). Takes priority.
+      if (mirrorOnRef.current && !mirrorRefGeomRef.current) {
+        const { sx, sy } = getCanvasPoint(e);
+        const { lx, ly } = screenToWorld(sx, sy);
+        const ax = lx - circleOffsetX;
+        const ay = ly - circleOffsetY;
+        mirrorSetRef.current = { x0: ax, y0: ay, x1: ax, y1: ay, sx0: sx, sy0: sy, moved: false };
+        drawSelectionOverlay();
+        return;
+      }
+
       // Rotate-before-paste: a press in paste mode sets the anchor + pivot and
       // arms the rotate gesture. Drag rotates the ghost (handleMouseMove);
       // release commits (handleMouseUp). Press-release with no drag = 0° paste,
@@ -4728,6 +4848,14 @@ const derived = useMemo(() => {
       {
         const hp = getCanvasPoint(e);
         mouseHoverPosRef.current = { sx: hp.sx, sy: hp.sy };
+        // Mirror tool: extend the reference line while defining it.
+        const ms = mirrorSetRef.current;
+        if (ms) {
+          const w = screenToWorld(hp.sx, hp.sy);
+          ms.x1 = w.lx - circleOffsetX;
+          ms.y1 = w.ly - circleOffsetY;
+          if (Math.hypot(hp.sx - ms.sx0, hp.sy - ms.sy0) > 6) ms.moved = true;
+        }
         // Rotate-before-paste: update rotation from the drag direction around
         // the pivot. The first meaningful drag fixes the reference direction
         // (so the cluster doesn't jump on press); after that, turning the
@@ -5185,6 +5313,20 @@ const derived = useMemo(() => {
   const applySelectionToRings = applySelectionToActiveLayer;
 
   const handleMouseUp = useCallback(() => {
+    // Mirror tool: release commits the reference — a tap makes a point, a drag
+    // makes a line. After this the tool is active and painting mirrors.
+    const ms = mirrorSetRef.current;
+    if (ms) {
+      mirrorSetRef.current = null;
+      setMirrorRefGeom(
+        ms.moved
+          ? { kind: "line", x0: ms.x0, y0: ms.y0, x1: ms.x1, y1: ms.y1 }
+          : { kind: "point", x: ms.x0, y: ms.y0 },
+      );
+      drawSelectionOverlay();
+      return;
+    }
+
     // Rotate-before-paste: release commits the paste at the pivot + current
     // angle, then clears the gesture. Paste mode stays on for repeated pastes.
     const pr = pasteRotRef.current;
@@ -5321,6 +5463,27 @@ const derived = useMemo(() => {
         const dist = Math.sqrt(dx * dx + dy * dy);
 
         pinchStateRef.current = { active: true, lastDist: dist };
+        return;
+      }
+
+      // Mirror tool (single finger): begin defining the reference.
+      if (
+        mirrorOnRef.current &&
+        !mirrorRefGeomRef.current &&
+        e.touches.length === 1
+      ) {
+        e.preventDefault();
+        const t = e.touches[0];
+        const rect = getViewRect();
+        const sx = t.clientX - rect.left;
+        const sy = t.clientY - rect.top;
+        const { lx, ly } = screenToWorld(sx, sy);
+        mirrorSetRef.current = {
+          x0: lx - circleOffsetX, y0: ly - circleOffsetY,
+          x1: lx - circleOffsetX, y1: ly - circleOffsetY,
+          sx0: sx, sy0: sy, moved: false,
+        };
+        drawSelectionOverlay();
         return;
       }
 
@@ -5486,6 +5649,22 @@ const derived = useMemo(() => {
         return;
       }
 
+      // Mirror tool (single finger): extend the reference line while defining.
+      if (mirrorSetRef.current && e.touches.length === 1) {
+        e.preventDefault();
+        const ms = mirrorSetRef.current;
+        const t = e.touches[0];
+        const rect = getViewRect();
+        const sx = t.clientX - rect.left;
+        const sy = t.clientY - rect.top;
+        const { lx, ly } = screenToWorld(sx, sy);
+        ms.x1 = lx - circleOffsetX;
+        ms.y1 = ly - circleOffsetY;
+        if (Math.hypot(sx - ms.sx0, sy - ms.sy0) > 6) ms.moved = true;
+        drawSelectionOverlay();
+        return;
+      }
+
       // Rotate-before-paste (single finger): update rotation from drag dir.
       if (pasteRotRef.current && e.touches.length === 1) {
         e.preventDefault();
@@ -5605,6 +5784,19 @@ const derived = useMemo(() => {
   const handleTouchEndNative = useCallback(() => {
     // Always end pinch state on touch end/cancel
     pinchStateRef.current = { active: false, lastDist: 0 };
+
+    // Mirror tool: lift commits the reference (tap = point, drag = line).
+    if (mirrorSetRef.current) {
+      const ms = mirrorSetRef.current;
+      mirrorSetRef.current = null;
+      setMirrorRefGeom(
+        ms.moved
+          ? { kind: "line", x0: ms.x0, y0: ms.y0, x1: ms.x1, y1: ms.y1 }
+          : { kind: "point", x: ms.x0, y: ms.y0 },
+      );
+      drawSelectionOverlay();
+      return;
+    }
 
     // Rotate-before-paste: lift commits the paste at the pivot + angle.
     if (pasteRotRef.current) {
@@ -5738,19 +5930,23 @@ const derived = useMemo(() => {
       );
 
       if (activeLayer === "scales") {
-        const key = `${approxRow},${approxCol}`;
         // Compute next state explicitly and push POST-state so undo rewinds
         // by exactly one user-perceptible step (consolidated by the 600 ms
-        // debounce for rapid sequential clicks).
+        // debounce for rapid sequential clicks). The Mirror tool adds the
+        // reflected cell so both sides paint/erase together.
         const nextScaleColors = new Map(scaleColorsRef.current);
-        if (eraseModeRef.current) nextScaleColors.delete(key);
-        else nextScaleColors.set(key, normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex));
-        // Painting OR erasing must drop any prior image-overlay patch at
-        // this key. Paint = the new solid color must overwrite the image
-        // patch. Erase = a freshly placed scale here doesn't auto-inherit
-        // the previous Image Fill.
         const nextPatches = new Map(scaleImagePatchesRef.current);
-        const patchesChanged = nextPatches.delete(key);
+        let patchesChanged = false;
+        const paintColor = normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex);
+        for (const cell of mirrorCellsFor(approxRow, approxCol)) {
+          const key = `${cell.row},${cell.col}`;
+          if (eraseModeRef.current) nextScaleColors.delete(key);
+          else nextScaleColors.set(key, paintColor);
+          // Painting OR erasing must drop any prior image-overlay patch at
+          // this key (new solid color overwrites it; a freshly placed scale
+          // doesn't auto-inherit the previous Image Fill).
+          if (nextPatches.delete(key)) patchesChanged = true;
+        }
         setScaleColors(nextScaleColors);
         if (patchesChanged) setScaleImagePatches(nextPatches);
         pushToHistoryDebounced(rings, nextScaleColors);
@@ -5792,27 +5988,32 @@ const derived = useMemo(() => {
 
       if (!found) return;
 
-      const { ring, newCluster } = resolvePlacement(
-        bestCol,
-        bestRow,
-        rings,
-        nextClusterId,
-        eraseMode ? "#000000" : normalizeColor6(activeColorRef.current),
-        settings,
-      );
+      // Place at the hit cell plus (Mirror tool) its reflected cell. Erase
+      // deletes directly; paint resolves cluster membership per cell, feeding
+      // mapCopy forward so the mirror sees the freshly placed original.
       const mapCopy: RingMap = new Map(rings);
-
-      const key = `${ring.row}-${ring.col}`;
-
-      if (eraseMode) {
-        // ✅ FIX: direct delete (no scanning)
-        mapCopy.delete(key);
-      } else {
-        mapCopy.set(key, ring);
+      let clusterId = nextClusterId;
+      const paintHex = normalizeColor6(activeColorRef.current);
+      for (const cell of mirrorCellsFor(bestRow, bestCol)) {
+        if (eraseMode) {
+          mapCopy.delete(`${cell.row}-${cell.col}`);
+        } else {
+          const { ring, newCluster } = resolvePlacement(
+            cell.col,
+            cell.row,
+            mapCopy,
+            clusterId,
+            paintHex,
+            settings,
+          );
+          ring.color = paintHex;
+          mapCopy.set(`${ring.row}-${ring.col}`, ring);
+          clusterId = newCluster;
+        }
       }
 
       setRings(mapCopy);
-      setnextClusterId(newCluster);
+      setnextClusterId(clusterId);
       // Push POST-paint state so a single Cmd+Z rewinds exactly this click.
       pushToHistoryDebounced(mapCopy, scaleColorsRef.current);
 
@@ -5853,6 +6054,7 @@ const derived = useMemo(() => {
       pasteMode,
       clipboard,
       pasteClipboardAt,
+      mirrorCellsFor,
     ],
   );
 
@@ -7190,56 +7392,42 @@ const scales3D = useMemo(() => {
                 ✋
               </ToolBtn>
 
-              {/* Drag scale plane — repositions the scale grid relative to rings.
-                  Only has visible effect when scales are NOT locked to ring
-                  centers (interlocked mode pins them). On activation we
-                  auto-disable the lock so the user actually sees movement;
-                  they can re-enable it from the scale settings panel. */}
+              {/* Mirror draw — set a reference on the canvas (tap = point /
+                  180° reflection; drag = an axis line), then every ring/scale
+                  painted or erased is also applied to its reflection until the
+                  tool is toggled off. (The old scale-plane drag tool that lived
+                  here is still available via the gear panel's X/Y scale grid
+                  offset sliders.) */}
               <ToolBtn
-                active={scalePlaneDragMode}
+                active={mirrorOn}
                 onClick={() => {
-                  const turningOn = !scalePlaneDragMode;
-                  if (turningOn) {
-                    const interlocked =
-                      activeScaleSettings.lockScaleHolesToRingCenters ||
-                      activeScaleSettings.weaveMode === "interlocked";
-                    if (interlocked) {
-                      const ok = window.confirm(
-                        "The Scale-Plane drag tool moves scales relative to rings.\n\n" +
-                        "Your scales are currently LOCKED to ring centers (interlocked mode), so dragging won't have any visible effect.\n\n" +
-                        "Turn off Lock-to-ring-centers and switch to Independent weave so the drag tool can move scales?",
-                      );
-                      if (!ok) return;
-                      setAutoFollowTuner(false);
-                      setScaleSettingsOverride((p) => ({
-                        ...p,
-                        lockScaleHolesToRingCenters: false,
-                        weaveMode: "independent",
-                        // Sync the scale grid spacing to the ring spacing so
-                        // scales don't suddenly jump to a much larger grid
-                        // (the default 19.6mm vs typical ~6.2mm ring spacing).
-                        // Without this sync the scales end up far off-screen
-                        // and the drag tool appears to do nothing.
-                        centerSpacingMm: centerSpacing,
-                        gridOffsetXmm: 0,
-                        gridOffsetYmm: 0,
-                      }));
-                    }
-                  }
-                  setScalePlaneDragMode((v) => !v);
+                  setMirrorOn((v) => {
+                    const next = !v;
+                    if (!next) setMirrorRefGeom(null); // off clears the reference
+                    return next;
+                  });
+                  mirrorSetRef.current = null;
+                  // Mutually exclusive with pan / scale-plane / selection.
                   setPanMode(false);
+                  setScalePlaneDragMode(false);
                   setSelectionMode("none");
                   clearSelectionState();
-                  scaleDragRef.current = null;
                   if (isSelecting) {
                     setIsSelecting(false);
                     selectionRef.current = null;
                     clearInteractionCanvas();
                   }
+                  drawSelectionOverlay();
                 }}
-                title="Drag scale plane — moves scales relative to rings (auto-disables lock-to-ring-centers when activated)"
+                title={
+                  !mirrorOn
+                    ? "Mirror draw — tap to set a point, or drag to set an axis; then painting mirrors across it"
+                    : mirrorRefGeom
+                      ? "Mirror ON — painting mirrors across your reference (toggle off to stop)"
+                      : "Mirror: tap a point or drag an axis on the canvas to set the reference"
+                }
               >
-                <IconScaleMove size={18} />
+                <IconMirror size={18} />
               </ToolBtn>
 
               {/* Marquee select — direct entry to PURE rectangle selection.
