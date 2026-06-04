@@ -1012,11 +1012,11 @@ const applyDesignerFillFromScreenPolygon = useCallback(
 
     const projectRing = (x_mm: number, y_mm: number): { sx: number; sy: number } => {
       if (cam) {
-        // exportRings uses a top-left grid origin; the renderer centers the
-        // grid on the world origin (camera looks at 0,0), so subtract the grid
-        // center before projecting — otherwise the fill is shifted by half the
-        // grid. World is (x, -y, 0) to match RingRenderer's mesh placement.
-        const v = new THREE.Vector3(x_mm - mmCx, -(y_mm - mmCy), 0).project(cam);
+        // Rings render at world (r.x, -r.y, 0) and the camera is panned to the
+        // grid center, so projecting the RAW coords through the (matrix-updated)
+        // camera gives the true screen position. Do NOT re-center here — that
+        // double-shifts by half the grid.
+        const v = new THREE.Vector3(x_mm, -y_mm, 0).project(cam);
         return {
           sx: rect.left + (v.x * 0.5 + 0.5) * rect.width,
           sy: rect.top + (-v.y * 0.5 + 0.5) * rect.height,
