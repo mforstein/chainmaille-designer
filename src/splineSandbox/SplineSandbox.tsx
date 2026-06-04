@@ -34,6 +34,7 @@
 // ============================================================
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import * as THREE from "three";
 
 type Axis = "vertical" | "horizontal";
@@ -847,7 +848,12 @@ export default function SplineSandbox(props: {
   const ROOT_Z = embedded ? 1000000 : 10;
   const SVG_Z = embedded ? 1000001 : 2;
 
-  return (
+  // Render the overlay through a portal to <body> so it can never be trapped
+  // by an ancestor's stacking/transform context. In the Designer the overlay
+  // sits under such an ancestor, which clipped its position:fixed children and
+  // made the spline path + knots invisible even at z-index 1000001.
+  if (typeof document === "undefined") return null;
+  return createPortal(
     <div
       style={{
         position: "fixed",
@@ -1050,6 +1056,7 @@ export default function SplineSandbox(props: {
           );
         })}
       </svg>
-    </div>
+    </div>,
+    document.body,
   );
 }
