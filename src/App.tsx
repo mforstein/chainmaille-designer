@@ -298,8 +298,61 @@ function DraggablePill({
       return false;
     }
   })();
-  const bumpScale = (d: number) =>
-    setScale((s) => Math.min(SCALE_MAX, Math.max(SCALE_MIN, Math.round((s + d) * 100) / 100)));
+  const clampScale = (s: number) =>
+    Math.min(SCALE_MAX, Math.max(SCALE_MIN, Math.round(s * 100) / 100));
+  const bumpScale = (d: number) => setScale((s) => clampScale(s + d));
+
+  // Mouse wheel (when the pointer is over the panel) and two-finger pinch both
+  // zoom the panel. Attached as NATIVE non-passive listeners so they can
+  // preventDefault — otherwise the wheel scrolls the page / panel and the
+  // pinch triggers the browser's own zoom. scaleRef gives the handlers the
+  // live scale without re-binding.
+  const scaleRef = useRef(scale);
+  scaleRef.current = scale;
+  const pinchRef = useRef<{ startDist: number; startScale: number } | null>(null);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.06 : 0.94;
+      setScale(clampScale(scaleRef.current * factor));
+    };
+    const dist = (t: TouchList) =>
+      Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        pinchRef.current = { startDist: dist(e.touches), startScale: scaleRef.current };
+        // Cancel any drag the first finger started so pinch owns the gesture.
+        draggingRef.current = false;
+        setDragging(false);
+      }
+    };
+    const onTouchMove = (e: TouchEvent) => {
+      const p = pinchRef.current;
+      if (p && e.touches.length === 2 && p.startDist > 0) {
+        e.preventDefault();
+        setScale(clampScale(p.startScale * (dist(e.touches) / p.startDist)));
+      }
+    };
+    const onTouchEnd = () => {
+      pinchRef.current = null;
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd);
+    el.addEventListener("touchcancel", onTouchEnd);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Persist position
   useEffect(() => {
