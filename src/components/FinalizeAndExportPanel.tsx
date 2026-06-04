@@ -9,6 +9,7 @@ import type { ExportRing, PaletteAssignment } from "../types/project";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { exportAsGLB, exportAsColorSTLs, estimateGLBSizeMB } from "../lib/export3dModel";
 import type { ExportGroups } from "../lib/export3dModel";
+import { track } from "../lib/analytics";
 
 /* ---------------------- palette (24 fixed) ---------------------- */
 const PALETTE24 = [
@@ -1179,6 +1180,7 @@ const FinalizeAndExportPanel: React.FC<Props> = ({
   } = derived;
 
   const buildPdf = async () => {
+    track("export", { format: "pdf_bom" });
     setBusy(true);
     try {
       const pdf = await PDFDocument.create();
@@ -1717,6 +1719,7 @@ const FinalizeAndExportPanel: React.FC<Props> = ({
   // PRINT PATTERN (1:1) — physical-size per-color PDF
   // ============================================================
   const buildPatternPdf = async () => {
+    track("export", { format: "pdf_pattern" });
     setBusy(true);
     try {
       const MM_TO_PT = 72 / 25.4;
@@ -2025,6 +2028,7 @@ const FinalizeAndExportPanel: React.FC<Props> = ({
   };
 
   const exportCsv = () => {
+    track("export", { format: "csv" });
     const header = [
       "entity",
       "id",
@@ -2236,6 +2240,7 @@ const FinalizeAndExportPanel: React.FC<Props> = ({
                     }
                     const sizeMB = estimateGLBSizeMB(groups);
                     if (sizeMB > 80 && !confirm(`Estimated file size ~${sizeMB} MB. Continue?`)) return;
+                    track("export", { format: "glb" });
                     setBusy3D(true);
                     try {
                       await exportAsGLB(groups, "chainmail-design");
@@ -2265,6 +2270,7 @@ const FinalizeAndExportPanel: React.FC<Props> = ({
                       alert("Nothing to export — render the design first.");
                       return;
                     }
+                    track("export", { format: "stl_per_color" });
                     exportAsColorSTLs(groups, "chainmail-design");
                   }}
                 >

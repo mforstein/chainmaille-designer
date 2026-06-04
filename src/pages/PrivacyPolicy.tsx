@@ -1,10 +1,64 @@
 import React from "react";
 import { Link } from "react-router-dom";
+import { analyticsOptedOut, setAnalyticsOptOut } from "../lib/analytics";
 
 const section: React.CSSProperties = { marginBottom: 20 };
 const h3: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: "#f9fafb", marginBottom: 6 };
 const p: React.CSSProperties = { color: "#9ca3af", lineHeight: 1.7, fontSize: 14 };
 const ul: React.CSSProperties = { color: "#9ca3af", lineHeight: 1.7, fontSize: 14, paddingLeft: 20, marginTop: 0 };
+
+// Live opt-out control for first-party analytics. Reads and writes the same
+// localStorage flag the analytics module checks, so toggling takes effect
+// immediately (no reload, no account required).
+function AnalyticsOptOut() {
+  const [optedOut, setOptedOut] = React.useState<boolean>(() => analyticsOptedOut());
+  const toggle = () => {
+    const next = !optedOut;
+    setAnalyticsOptOut(next);
+    setOptedOut(next);
+  };
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        padding: "14px 16px",
+        background: "#0f1623",
+        border: "1px solid #1f2937",
+        borderRadius: 10,
+        display: "flex",
+        alignItems: "center",
+        gap: 14,
+      }}
+    >
+      <div style={{ flex: 1 }}>
+        <div style={{ color: "#f9fafb", fontWeight: 700, fontSize: 14 }}>
+          {optedOut ? "Usage analytics are OFF" : "Usage analytics are ON"}
+        </div>
+        <div style={{ color: "#9ca3af", fontSize: 13, marginTop: 2 }}>
+          {optedOut
+            ? "We are not collecting anonymous usage events from this device."
+            : "We collect anonymous, first-party usage events on this device to improve the app."}
+        </div>
+      </div>
+      <button
+        onClick={toggle}
+        style={{
+          flexShrink: 0,
+          background: optedOut ? "#7c3aed" : "#1e293b",
+          color: optedOut ? "#fff" : "#cbd5e1",
+          border: "1px solid #334155",
+          borderRadius: 8,
+          padding: "9px 16px",
+          fontSize: 13,
+          fontWeight: 700,
+          cursor: "pointer",
+        }}
+      >
+        {optedOut ? "Turn analytics on" : "Opt out of analytics"}
+      </button>
+    </div>
+  );
+}
 
 export default function PrivacyPolicy() {
   return (
@@ -29,7 +83,7 @@ export default function PrivacyPolicy() {
           Privacy Policy
         </h1>
         <p style={{ color: "#6b7280", fontSize: 13, marginBottom: 36 }}>
-          Effective Date: May 29, 2026 · Chainmail Studio by Woven Rainbows by Erin
+          Effective Date: June 3, 2026 · Chainmail Studio by Woven Rainbows by Erin
         </p>
 
         <div style={section}>
@@ -113,12 +167,38 @@ export default function PrivacyPolicy() {
           </ul>
           <p style={p}>
             We do not embed third-party analytics, advertising trackers, or social-media pixels in
-            the App.
+            the App. The usage analytics described in the next section are first-party and stored in
+            our own Supabase database.
           </p>
         </div>
 
         <div style={section}>
-          <h3 style={h3}>4. Mobile App Permissions</h3>
+          <h3 style={h3}>4. Usage Analytics (First-Party)</h3>
+          <p style={p}>
+            To understand which features are used and where people get stuck, we record a small
+            number of anonymous usage events — for example, which page or tool you open, when a
+            paywall is shown, and when you sign in. These events are stored only in our own database.
+          </p>
+          <ul style={ul}>
+            <li>We do <strong>not</strong> use Google Analytics or any third-party tracker.</li>
+            <li>
+              We do <strong>not</strong> record your design contents, reference images, email, name,
+              or IP address as part of analytics.
+            </li>
+            <li>
+              Each event carries only a random device id (which you can reset by clearing site
+              data), your subscription tier, and — if you are signed in — your account id.
+            </li>
+            <li>
+              We honor your browser's <em>Do Not Track</em> setting automatically, and you can opt
+              out at any time below.
+            </li>
+          </ul>
+          <AnalyticsOptOut />
+        </div>
+
+        <div style={section}>
+          <h3 style={h3}>5. Mobile App Permissions</h3>
           <ul style={ul}>
             <li>
               <strong>Camera</strong> — used only when you choose to import a reference image.
@@ -140,7 +220,7 @@ export default function PrivacyPolicy() {
         </div>
 
         <div style={section}>
-          <h3 style={h3}>5. Cookies and Similar Technologies</h3>
+          <h3 style={h3}>6. Cookies and Similar Technologies</h3>
           <p style={p}>
             The website uses only essential cookies and local storage required to keep you signed
             in and to remember your in-app preferences. We do not use cookies for advertising or
@@ -149,7 +229,7 @@ export default function PrivacyPolicy() {
         </div>
 
         <div style={section}>
-          <h3 style={h3}>6. Children's Privacy</h3>
+          <h3 style={h3}>7. Children's Privacy</h3>
           <p style={p}>
             The App is not directed to children under 13, and we do not knowingly collect personal
             information from children under 13. If you believe a child has provided us with their
@@ -158,7 +238,7 @@ export default function PrivacyPolicy() {
         </div>
 
         <div style={section}>
-          <h3 style={h3}>7. Data Retention and Deletion</h3>
+          <h3 style={h3}>8. Data Retention and Deletion</h3>
           <p style={p}>
             We retain account information and saved designs for as long as your account is active.
             If you delete your account, we will delete your account information and saved designs
@@ -175,7 +255,7 @@ export default function PrivacyPolicy() {
         </div>
 
         <div style={section}>
-          <h3 style={h3}>8. Security</h3>
+          <h3 style={h3}>9. Security</h3>
           <p style={p}>
             Your data is encrypted in transit (HTTPS/TLS) and at rest on our service providers'
             infrastructure. While we follow industry-standard practices, no system is perfectly
@@ -184,7 +264,7 @@ export default function PrivacyPolicy() {
         </div>
 
         <div style={section}>
-          <h3 style={h3}>9. Your Rights</h3>
+          <h3 style={h3}>10. Your Rights</h3>
           <p style={p}>
             Depending on where you live, you may have the right to access, correct, export, or
             delete the personal information we hold about you, and to object to or restrict certain
@@ -194,7 +274,7 @@ export default function PrivacyPolicy() {
         </div>
 
         <div style={section}>
-          <h3 style={h3}>10. International Users</h3>
+          <h3 style={h3}>11. International Users</h3>
           <p style={p}>
             The App is operated from the United States. If you access the App from outside the
             United States, your information will be transferred to and processed in the United
@@ -203,7 +283,7 @@ export default function PrivacyPolicy() {
         </div>
 
         <div style={section}>
-          <h3 style={h3}>11. Changes to This Policy</h3>
+          <h3 style={h3}>12. Changes to This Policy</h3>
           <p style={p}>
             We may update this Privacy Policy from time to time. We will revise the Effective Date
             above and, for material changes, will provide additional notice (for example, in-app or
@@ -212,7 +292,7 @@ export default function PrivacyPolicy() {
         </div>
 
         <div style={section}>
-          <h3 style={h3}>12. Contact</h3>
+          <h3 style={h3}>13. Contact</h3>
           <p style={p}>
             Questions, requests, or concerns about this policy or your personal information:
           </p>

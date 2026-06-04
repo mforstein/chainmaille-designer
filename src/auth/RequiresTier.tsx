@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAuth, tierAtLeast } from "./AuthContext";
 import type { Tier } from "./AuthContext";
+import { track } from "../lib/analytics";
 
 const TIER_LABELS: Record<Tier, string> = {
   free: "Free",
@@ -36,6 +37,20 @@ export default function RequiresTier({
 }: RequiresTierProps) {
   const { tier, loading, user } = useAuth();
   const location = useLocation();
+  const denied = !loading && !tierAtLeast(tier, minTier);
+
+  // Funnel signal: how often a paywall is shown, for which feature, to whom.
+  useEffect(() => {
+    if (denied) {
+      track("paywall_view", {
+        feature: featureName ?? null,
+        min_tier: minTier,
+        current_tier: tier,
+        mode: inline ? "inline" : "page",
+        path: location.pathname,
+      });
+    }
+  }, [denied, featureName, minTier, tier, inline, location.pathname]);
 
   if (loading) {
     return (
@@ -83,6 +98,14 @@ export default function RequiresTier({
           </span>
           <a
             href="/pricing"
+            onClick={() =>
+              track("upgrade_click", {
+                feature: featureName ?? null,
+                min_tier: minTier,
+                current_tier: tier,
+                mode: "inline",
+              })
+            }
             style={{
               padding: "6px 14px",
               background: "#7c3aed",
@@ -139,6 +162,14 @@ export default function RequiresTier({
       </p>
       <a
         href="/pricing"
+        onClick={() =>
+          track("upgrade_click", {
+            feature: featureName ?? null,
+            min_tier: minTier,
+            current_tier: tier,
+            mode: "page",
+          })
+        }
         style={{
           marginTop: 8,
           padding: "12px 28px",

@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import type { User, Session } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
+import { track, flush } from "../lib/analytics";
 
 // ─── Tier hierarchy ───────────────────────────────────────────────────────────
 export type Tier = "free" | "maker" | "crafter" | "studio";
@@ -194,6 +195,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (email: string, password: string): Promise<{ error: string | null }> => {
       if (!supabase) return { error: "Auth not configured" };
       const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (!error) track("sign_in");
       return { error: error?.message ?? null };
     },
     []
@@ -213,6 +215,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // email confirmation is disabled in project settings. Otherwise they
       // need to click the email link before they can sign in.
       const needsEmailConfirm = !error && !data?.session;
+      if (!error) track("sign_up", { needsEmailConfirm });
       return { error: error?.message ?? null, needsEmailConfirm };
     },
     []
@@ -220,6 +223,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     if (!supabase) return;
+    track("sign_out");
+    await flush(); // send the queued event before the session goes away
     await supabase.auth.signOut();
     // Clear all backdoor flags (both old localStorage and new sessionStorage)
     // so signing out hard-resets to Free, no matter how the user got elevated.

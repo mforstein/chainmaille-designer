@@ -2,6 +2,7 @@
 import React from "react";
 import type { BOMMeta, RingLike } from "./BOMExport";
 import { exportBOMCsv, exportBOMPng, openBOMPrintWindow } from "./BOMExport";
+import { track } from "../lib/analytics";
 
 type Props = {
   rings: RingLike[]; // [{ colorHex }]
@@ -29,9 +30,9 @@ export default function BOMButtons({
 }: Props) {
   if (!rings?.length) return null;
 
-  const onCsv = () => exportBOMCsv(rings, meta, "freeform-bom.csv");
-  const onPng = () => exportBOMPng(rings, meta, "freeform-bom.png");
-  const onPdf = () => openBOMPrintWindow(rings, meta, title);
+  const onCsv = () => { track("export", { format: "bom_csv" }); exportBOMCsv(rings, meta, "freeform-bom.csv"); };
+  const onPng = () => { track("export", { format: "bom_png" }); exportBOMPng(rings, meta, "freeform-bom.png"); };
+  const onPdf = () => { track("export", { format: "bom_print" }); openBOMPrintWindow(rings, meta, title); };
 
   return (
     <div
