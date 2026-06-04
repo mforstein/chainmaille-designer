@@ -2706,7 +2706,7 @@ const FreeformChainmail2D: React.FC = () => {
   // (matches paint semantics — last write wins). Pushes one POST-paste
   // history entry so each paste can be undone in one Cmd+Z step.
   const pasteClipboardAt = useCallback(
-    (targetRow: number, targetCol: number, rawTargetRow?: number) => {
+    (targetRow: number, targetCol: number, rawTargetRow?: number, rotationRad = 0) => {
       if (!clipboard || clipboard.items.length === 0) return;
       // Brick-offset shape preservation: snap to matching parity so the
       // pasted cluster looks identical to the source rather than mirrored.
@@ -2717,6 +2717,28 @@ const FreeformChainmail2D: React.FC = () => {
         clipboard.sourceMinRowParity,
       );
 
+      // Resolve each clipboard item to a destination cell. At 0° we keep the
+      // exact integer-delta placement (lossless — no snapping, no distortion).
+      // For a rotated paste we rotate the item's geometric position around the
+      // anchor (= the user's pivot) and snap to the nearest lattice cell; the
+      // hex lattice can't hold arbitrary angles, so collisions/gaps are
+      // possible and accepted (per design). Scales keep their downward glyph.
+      const pivot = rotationRad ? rcToLogical(anchorRow, targetCol) : null;
+      const cosA = Math.cos(rotationRad);
+      const sinA = Math.sin(rotationRad);
+      const cellFor = (it: ClipboardItem): { r: number; c: number } => {
+        if (!rotationRad || !pivot) {
+          return { r: anchorRow + it.deltaRow, c: targetCol + it.deltaCol };
+        }
+        const p = rcToLogical(anchorRow + it.deltaRow, targetCol + it.deltaCol);
+        const dx = p.x - pivot.x;
+        const dy = p.y - pivot.y;
+        const rx = pivot.x + dx * cosA - dy * sinA;
+        const ry = pivot.y + dx * sinA + dy * cosA;
+        const { row, col } = logicalToRowColApprox(rx, ry);
+        return { r: row, c: col };
+      };
+
       // Compute the next state of all three stores synchronously so we can
       // both apply it and record it. This replaces the previous pattern of
       // pushing pre-paste state and letting setRings/setScaleColors run
@@ -2725,8 +2747,7 @@ const FreeformChainmail2D: React.FC = () => {
       const nextRings: RingMap = new Map(rings);
       for (const it of clipboard.items) {
         if (!it.ring) continue;
-        const r = anchorRow + it.deltaRow;
-        const c = targetCol + it.deltaCol;
+        const { r, c } = cellFor(it);
         nextRings.set(`${r}-${c}`, {
           row: r,
           col: c,
@@ -2738,16 +2759,14 @@ const FreeformChainmail2D: React.FC = () => {
       const nextScaleColors = new Map(scaleColorsRef.current);
       for (const it of clipboard.items) {
         if (it.scaleColor === undefined) continue;
-        const r = anchorRow + it.deltaRow;
-        const c = targetCol + it.deltaCol;
+        const { r, c } = cellFor(it);
         nextScaleColors.set(`${r},${c}`, it.scaleColor);
       }
 
       const nextScaleImagePatches = new Map(scaleImagePatchesRef.current);
       let patchesChanged = false;
       for (const it of clipboard.items) {
-        const r = anchorRow + it.deltaRow;
-        const c = targetCol + it.deltaCol;
+        const { r, c } = cellFor(it);
         const sk = `${r},${c}`;
         if (it.scaleImagePatch !== undefined) {
           nextScaleImagePatches.set(sk, it.scaleImagePatch);
@@ -2767,7 +2786,7 @@ const FreeformChainmail2D: React.FC = () => {
       // decrements by exactly one user-perceptible step.
       pushToHistory(nextRings, nextScaleColors);
     },
-    [clipboard, rings, scaleColorsRef, scaleImagePatchesRef, pushToHistory],
+    [clipboard, rings, scaleColorsRef, scaleImagePatchesRef, pushToHistory, rcToLogical, logicalToRowColApprox],
   );
 
   // Refs mirror state for the keydown handler so we don't re-bind on every
@@ -2778,6 +2797,20 @@ const FreeformChainmail2D: React.FC = () => {
   useEffect(() => { selectedKeysRef.current = selectedKeys; }, [selectedKeys]);
   useEffect(() => { clipboardRef.current = clipboard; }, [clipboard]);
   useEffect(() => { pasteModeRef.current = pasteMode; }, [pasteMode]);
+
+  // Rotate-before-paste gesture. On press in paste mode the press cell becomes
+  // both the paste anchor and the pivot; dragging rotates the ghost around it;
+  // release commits via pasteClipboardAt(..., angle). A plain press-release
+  // (no drag) commits at 0° — i.e. behaves like the old click-to-paste.
+  const pasteRotRef = useRef<{
+    pivotRow: number;        // parity-snapped anchor row
+    pivotCol: number;
+    rawPivotRow: number;     // fractional row for nearest-parity snap
+    pivotLx: number;         // pivot in logical space (for angle math)
+    pivotLy: number;
+    startAngle: number | null; // reference direction captured on first drag
+    angle: number;           // current rotation (radians)
+  } | null>(null);
 
   // Cmd/Ctrl+C copies the current selection; Cmd/Ctrl+V toggles paste mode;
   // Escape exits paste mode. Skipped when the focused element is a text input
@@ -4256,33 +4289,43 @@ const derived = useMemo(() => {
     // clipboard ring would land if the user right-clicked now. Gated by
     // pastePreviewActive so the user can dismiss it explicitly (Marquee
     // button toggle off, Esc, or after a paste).
+    const rot = pasteRotRef.current;
     if (
-      pastePreviewActiveRef.current &&
       clipboardRef.current &&
       clipboardRef.current.items.length > 0 &&
-      mouseHoverPosRef.current &&
-      !isSelecting
+      (rot ||
+        (pastePreviewActiveRef.current && mouseHoverPosRef.current && !isSelecting))
     ) {
       try {
-        const { sx: hsx, sy: hsy } = mouseHoverPosRef.current;
-        const { lx: hlx, ly: hly } = screenToWorld(hsx, hsy);
-        const adjHx = hlx - circleOffsetX;
-        const adjHy = hly - circleOffsetY;
-        const { col: anchorCol } = logicalToRowColApprox(adjHx, adjHy);
-        // Mirror the parity snap pasteClipboardAt applies, using the true
-        // fractional row so the preview lands on the same nearest-matching
-        // row the actual paste will choose.
-        const rawAnchorRow = adjHy / spacingY;
-        const anchorRow = snapTargetRowToParity(
-          rawAnchorRow,
-          clipboardRef.current.sourceMinRowParity,
-        );
+        // While the rotate gesture is active the anchor is the FIXED pivot;
+        // otherwise the ghost follows the cursor (the pre-rotate behavior).
+        let anchorRow: number;
+        let anchorCol: number;
+        if (rot) {
+          anchorRow = rot.pivotRow;
+          anchorCol = rot.pivotCol;
+        } else {
+          const { sx: hsx, sy: hsy } = mouseHoverPosRef.current!;
+          const { lx: hlx, ly: hly } = screenToWorld(hsx, hsy);
+          const adjHx = hlx - circleOffsetX;
+          const adjHy = hly - circleOffsetY;
+          anchorCol = logicalToRowColApprox(adjHx, adjHy).col;
+          // Mirror the parity snap pasteClipboardAt applies, using the true
+          // fractional row so the preview lands on the same nearest-matching
+          // row the actual paste will choose.
+          anchorRow = snapTargetRowToParity(
+            adjHy / spacingY,
+            clipboardRef.current.sourceMinRowParity,
+          );
+        }
+        const angle = rot ? rot.angle : 0;
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        const pivotL = rcToLogical(anchorRow, anchorCol);
         // Approximate ring outer radius in screen pixels from the lattice
-        // scale at the cursor: distance between two adjacent column centers.
-        // Same logical→world→screen chain as the actual ring positions below.
-        const probeA = rcToLogical(anchorRow, anchorCol);
+        // scale: distance between two adjacent column centers.
         const probeB = rcToLogical(anchorRow, anchorCol + 1);
-        const wA = logicalToWorld(probeA.x, probeA.y);
+        const wA = logicalToWorld(pivotL.x, pivotL.y);
         const wB = logicalToWorld(probeB.x, probeB.y);
         const sA = worldToScreen(wA.wx, wA.wy);
         const sB = worldToScreen(wB.wx, wB.wy);
@@ -4294,19 +4337,33 @@ const derived = useMemo(() => {
         ctx.fillStyle = "rgba(96,165,250,0.10)";
         for (const it of clipboardRef.current.items) {
           if (!it.ring) continue; // empty cell — nothing to paste here
-          const r = anchorRow + it.deltaRow;
-          const c = anchorCol + it.deltaCol;
-          const { x: rx, y: ry } = rcToLogical(r, c);
-          // Match the renderer chain exactly: rcToLogical (= logical) →
-          // logicalToWorld (subtracts logicalOrigin + flips Y) → screen.
-          // No circleOffsetX/Y here — the renderer doesn't add them, so
-          // the preview must not either or it sits offset from the
-          // actual ring by ~one diameter.
+          // Rotate the item's geometric position around the pivot (matches
+          // pasteClipboardAt) so the ghost previews the exact committed result.
+          const p = rcToLogical(anchorRow + it.deltaRow, anchorCol + it.deltaCol);
+          let rx = p.x;
+          let ry = p.y;
+          if (angle) {
+            const dx = p.x - pivotL.x;
+            const dy = p.y - pivotL.y;
+            rx = pivotL.x + dx * cosA - dy * sinA;
+            ry = pivotL.y + dx * sinA + dy * cosA;
+          }
           const { wx: pwx, wy: pwy } = logicalToWorld(rx, ry);
           const { sx: psx, sy: psy } = worldToScreen(pwx, pwy);
           ctx.beginPath();
           ctx.arc(psx, psy, ringRadiusPx, 0, Math.PI * 2);
           ctx.fill();
+          ctx.stroke();
+        }
+        // Pivot crosshair while rotating, so the user sees the rotation center.
+        if (rot) {
+          const { sx: pcx, sy: pcy } = worldToScreen(wA.wx, wA.wy);
+          ctx.strokeStyle = "rgba(250,204,21,0.95)";
+          ctx.beginPath();
+          ctx.moveTo(pcx - 9, pcy);
+          ctx.lineTo(pcx + 9, pcy);
+          ctx.moveTo(pcx, pcy - 9);
+          ctx.lineTo(pcx, pcy + 9);
           ctx.stroke();
         }
         ctx.restore();
@@ -4549,6 +4606,39 @@ const derived = useMemo(() => {
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
+      // Rotate-before-paste: a press in paste mode sets the anchor + pivot and
+      // arms the rotate gesture. Drag rotates the ghost (handleMouseMove);
+      // release commits (handleMouseUp). Press-release with no drag = 0° paste,
+      // matching the old click-to-paste. Takes priority over all other modes.
+      if (
+        pasteModeRef.current &&
+        clipboardRef.current &&
+        clipboardRef.current.items.length > 0
+      ) {
+        const { sx, sy } = getCanvasPoint(e);
+        const { lx, ly } = screenToWorld(sx, sy);
+        const adjLx = lx - circleOffsetX;
+        const adjLy = ly - circleOffsetY;
+        const { col } = logicalToRowColApprox(adjLx, adjLy);
+        const rawRow = adjLy / spacingY;
+        const pivotRow = snapTargetRowToParity(
+          rawRow,
+          clipboardRef.current.sourceMinRowParity,
+        );
+        const piv = rcToLogical(pivotRow, col);
+        pasteRotRef.current = {
+          pivotRow,
+          pivotCol: col,
+          rawPivotRow: rawRow,
+          pivotLx: piv.x,
+          pivotLy: piv.y,
+          startAngle: null,
+          angle: 0,
+        };
+        drawSelectionOverlay();
+        return;
+      }
+
       // Selection has priority over scale-plane drag: if both flags happen to
       // be active (legacy stuck-state scenarios), the user can recover by just
       // picking a Shape — they don't have to remember to toggle the ✛ button
@@ -4620,6 +4710,11 @@ const derived = useMemo(() => {
       panWorldY,
       drawSelectionOverlay,
       computeDimsFromSelection,
+      logicalToRowColApprox,
+      rcToLogical,
+      circleOffsetX,
+      circleOffsetY,
+      spacingY,
     ],
   );
 
@@ -4633,6 +4728,21 @@ const derived = useMemo(() => {
       {
         const hp = getCanvasPoint(e);
         mouseHoverPosRef.current = { sx: hp.sx, sy: hp.sy };
+        // Rotate-before-paste: update rotation from the drag direction around
+        // the pivot. The first meaningful drag fixes the reference direction
+        // (so the cluster doesn't jump on press); after that, turning the
+        // pointer around the pivot turns the cluster by the same amount.
+        const pr = pasteRotRef.current;
+        if (pr) {
+          const w = screenToWorld(hp.sx, hp.sy);
+          const dx = w.lx - circleOffsetX - pr.pivotLx;
+          const dy = w.ly - circleOffsetY - pr.pivotLy;
+          if (Math.hypot(dx, dy) > spacingY * 0.25) {
+            const cur = Math.atan2(dy, dx);
+            if (pr.startAngle === null) pr.startAngle = cur;
+            pr.angle = cur - pr.startAngle;
+          }
+        }
         // Redraw the overlay so the grid + (if clipboard exists) the paste
         // preview follow the cursor. This also keeps the grid responsive
         // during pans that the user performs by moving the mouse.
@@ -4912,6 +5022,9 @@ const derived = useMemo(() => {
       activeScaleSettings,
       setScaleColors,
       setScaleImagePatches,
+      circleOffsetX,
+      circleOffsetY,
+      spacingY,
     ],
   );
 
@@ -5072,6 +5185,16 @@ const derived = useMemo(() => {
   const applySelectionToRings = applySelectionToActiveLayer;
 
   const handleMouseUp = useCallback(() => {
+    // Rotate-before-paste: release commits the paste at the pivot + current
+    // angle, then clears the gesture. Paste mode stays on for repeated pastes.
+    const pr = pasteRotRef.current;
+    if (pr) {
+      pasteRotRef.current = null;
+      pasteClipboardAt(pr.pivotRow, pr.pivotCol, pr.rawPivotRow, pr.angle);
+      drawSelectionOverlay();
+      return;
+    }
+
     // Finish scale-plane drag — without clearing scaleDragRef, the next
     // mouseMove would keep translating the scale layer as the pointer
     // wanders the canvas after release.
@@ -5117,6 +5240,8 @@ const derived = useMemo(() => {
     clearInteractionCanvas,
     computeDimsFromSelection,
     computeSelectionKeys,
+    pasteClipboardAt,
+    drawSelectionOverlay,
   ]);
 
   const zoomAroundPoint = useCallback(
@@ -5196,6 +5321,43 @@ const derived = useMemo(() => {
         const dist = Math.sqrt(dx * dx + dy * dy);
 
         pinchStateRef.current = { active: true, lastDist: dist };
+        return;
+      }
+
+      // Rotate-before-paste (single finger): set anchor + pivot and arm the
+      // rotate gesture. preventDefault stops the emulated tap so it won't also
+      // paint/paste; touchmove rotates, touchend commits.
+      if (
+        pasteModeRef.current &&
+        clipboardRef.current &&
+        clipboardRef.current.items.length > 0 &&
+        e.touches.length === 1
+      ) {
+        e.preventDefault();
+        const t = e.touches[0];
+        const rect = getViewRect();
+        const sx = t.clientX - rect.left;
+        const sy = t.clientY - rect.top;
+        const { lx, ly } = screenToWorld(sx, sy);
+        const adjLx = lx - circleOffsetX;
+        const adjLy = ly - circleOffsetY;
+        const { col } = logicalToRowColApprox(adjLx, adjLy);
+        const rawRow = adjLy / spacingY;
+        const pivotRow = snapTargetRowToParity(
+          rawRow,
+          clipboardRef.current.sourceMinRowParity,
+        );
+        const piv = rcToLogical(pivotRow, col);
+        pasteRotRef.current = {
+          pivotRow,
+          pivotCol: col,
+          rawPivotRow: rawRow,
+          pivotLx: piv.x,
+          pivotLy: piv.y,
+          startAngle: null,
+          angle: 0,
+        };
+        drawSelectionOverlay();
         return;
       }
 
@@ -5281,6 +5443,11 @@ const derived = useMemo(() => {
       panWorldX,
       panWorldY,
       computeDimsFromSelection,
+      logicalToRowColApprox,
+      rcToLogical,
+      circleOffsetX,
+      circleOffsetY,
+      spacingY,
     ],
   );
 
@@ -5316,6 +5483,26 @@ const derived = useMemo(() => {
           pinchStateRef.current.lastDist = dist;
           zoomAroundPoint(midX, midY, factor);
         }
+        return;
+      }
+
+      // Rotate-before-paste (single finger): update rotation from drag dir.
+      if (pasteRotRef.current && e.touches.length === 1) {
+        e.preventDefault();
+        const pr = pasteRotRef.current;
+        const t = e.touches[0];
+        const rect = getViewRect();
+        const sx = t.clientX - rect.left;
+        const sy = t.clientY - rect.top;
+        const { lx, ly } = screenToWorld(sx, sy);
+        const dx = lx - circleOffsetX - pr.pivotLx;
+        const dy = ly - circleOffsetY - pr.pivotLy;
+        if (Math.hypot(dx, dy) > spacingY * 0.25) {
+          const cur = Math.atan2(dy, dx);
+          if (pr.startAngle === null) pr.startAngle = cur;
+          pr.angle = cur - pr.startAngle;
+        }
+        drawSelectionOverlay();
         return;
       }
 
@@ -5409,12 +5596,24 @@ const derived = useMemo(() => {
       getViewRect,
       drawSelectionOverlay,
       computeDimsFromSelection,
+      circleOffsetX,
+      circleOffsetY,
+      spacingY,
     ],
   );
 
   const handleTouchEndNative = useCallback(() => {
     // Always end pinch state on touch end/cancel
     pinchStateRef.current = { active: false, lastDist: 0 };
+
+    // Rotate-before-paste: lift commits the paste at the pivot + angle.
+    if (pasteRotRef.current) {
+      const pr = pasteRotRef.current;
+      pasteRotRef.current = null;
+      pasteClipboardAt(pr.pivotRow, pr.pivotCol, pr.rawPivotRow, pr.angle);
+      drawSelectionOverlay();
+      return;
+    }
 
     // Finish scale-plane drag (same fix as mouseUp — without this, the
     // next touchmove keeps translating the scale layer).
@@ -5460,6 +5659,8 @@ const derived = useMemo(() => {
     applySelectionToRings,
     clearInteractionCanvas,
     computeSelectionKeys,
+    pasteClipboardAt,
+    drawSelectionOverlay,
   ]);
 
   // ✅ Install native listeners (passive:false) to stop console spam.
@@ -5516,14 +5717,10 @@ const derived = useMemo(() => {
       const { sx, sy } = getCanvasPoint(e);
       const { lx, ly } = screenToWorld(sx, sy);
 
-      // Paste mode: place the clipboard at the clicked cell. Stays in paste
-      // mode so the user can place multiple copies; exit via Esc, the toolbar
-      // toggle, or Cmd/Ctrl+V again.
+      // Paste mode is handled by the press→drag→release gesture in
+      // handleMouseDown/Move/Up (so the user can rotate before placing). The
+      // click that follows mouseup must not paint or double-paste, so no-op.
       if (pasteMode && clipboard) {
-        const adjLxP = lx - circleOffsetX;
-        const adjLyP = ly - circleOffsetY;
-        const { row: pRow, col: pCol } = logicalToRowColApprox(adjLxP, adjLyP);
-        pasteClipboardAt(pRow, pCol);
         return;
       }
 
