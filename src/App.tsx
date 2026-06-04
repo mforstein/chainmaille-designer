@@ -75,6 +75,7 @@ import SplineSandbox from "./splineSandbox/SplineSandbox";
 // ==============================
 // Renderer
 // ==============================
+import * as THREE from "three";
 import RingRenderer, { RingRendererHandle } from "./components/RingRenderer";
 // ==============================
 // Geometry Generators
@@ -984,29 +985,40 @@ const applyDesignerFillFromScreenPolygon = useCallback(
     const rect = canvas.getBoundingClientRect();
     if (!rect || rect.width <= 2 || rect.height <= 2) return;
 
-    // --- Assumption (matches your Designer 2D locked view):
-    // The ring grid is centered on screen and laid out uniformly.
-    // We project mm grid -> screen using a fitted scale.
-    const cs = safeParams.centerSpacing ?? 7.5; // mm spacing between centers
+    // Project each ring to screen EXACTLY through the renderer camera. Rings
+    // render at world (r.x, -r.y, 0) (RingRenderer mesh.position.set(r.x,-r.y)),
+    // so camera.project gives the true screen position. The previous fitted
+    // mm->screen approximation (a guessed scale + pad fudge) consistently
+    // shrank the projected grid inward, so the fill came out smaller than the
+    // drawn boundary. We only fall back to that approximation if no camera.
+    const cam = (rendererRef.current as any)?.getCamera?.() ?? null;
 
+    // Fallback fitted scale (used only when the camera is unavailable).
+    const cs = safeParams.centerSpacing ?? 7.5; // mm spacing between centers
     const cols = Math.max(1, safeParams.cols ?? params.cols ?? 1);
     const rows = Math.max(1, safeParams.rows ?? params.rows ?? 1);
-
     const gridW_mm = (cols - 1) * cs;
     const gridH_mm = (rows - 1) * cs;
-
-// Use a small, symmetric margin (half a cell) instead of a big pad + 0.92 fudge.
-// This reduces the consistent "inward shift".
-const pad_mm = cs * 0.9;
-const scale = Math.min(
-  rect.width / (gridW_mm + pad_mm),
-  rect.height / (gridH_mm + pad_mm),
-);
+    const pad_mm = cs * 0.9;
+    const scale = Math.min(
+      rect.width / (gridW_mm + pad_mm),
+      rect.height / (gridH_mm + pad_mm),
+    );
     const screenCx = rect.left + rect.width / 2;
     const screenCy = rect.top + rect.height / 2;
-
     const mmCx = gridW_mm / 2;
     const mmCy = gridH_mm / 2;
+
+    const projectRing = (x_mm: number, y_mm: number): { sx: number; sy: number } => {
+      if (cam) {
+        const v = new THREE.Vector3(x_mm, -y_mm, 0).project(cam);
+        return {
+          sx: rect.left + (v.x * 0.5 + 0.5) * rect.width,
+          sy: rect.top + (-v.y * 0.5 + 0.5) * rect.height,
+        };
+      }
+      return { sx: screenCx + (x_mm - mmCx) * scale, sy: screenCy + (y_mm - mmCy) * scale };
+    };
 
     setPaint((prev) => {
       const next = new Map(prev);
@@ -1018,9 +1030,7 @@ const scale = Math.min(
 
         if (!Number.isFinite(x_mm) || !Number.isFinite(y_mm)) continue;
 
-        // mm -> screen projection (y flips)
-        const sx = screenCx + (x_mm - mmCx) * scale;
-        const sy = screenCy + (y_mm - mmCy) * scale;
+        const { sx, sy } = projectRing(x_mm, y_mm);
 
         if (pointInPoly(sx, sy, polygonScreen)) {
           next.set((r as any).key, colorHex); // key is "row,col"
