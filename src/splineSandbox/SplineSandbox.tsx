@@ -125,6 +125,47 @@ export default function SplineSandbox(props: {
     return L;
   }
 
+  // Insert evenly-spaced points along edges that are long relative to the rest,
+  // so a centripetal Catmull-Rom through the result stays close to the polygon
+  // (no inward bow on long, sparsely-knotted spans). Collinear inserts on a
+  // straight edge keep that edge straight; corners stay smooth.
+  function densifyControl(control: ControlPoint[], closed: boolean): ControlPoint[] {
+    const n = control?.length ?? 0;
+    if (n < 3) return control ?? [];
+
+    const edgeCount = closed ? n : n - 1;
+    const lens: number[] = [];
+    let minLen = Infinity;
+    let perim = 0;
+    for (let i = 0; i < edgeCount; i++) {
+      const a = control[i];
+      const b = control[(i + 1) % n];
+      const d = Math.hypot(b.x - a.x, b.y - a.y);
+      lens.push(d);
+      perim += d;
+      if (d > 0.5) minLen = Math.min(minLen, d);
+    }
+    if (!Number.isFinite(minLen) || perim <= 0) return control;
+
+    // Target spacing: the shorter of the user's tightest edge and a cap derived
+    // from the perimeter, so we never explode the point count on huge shapes.
+    const target = Math.max(minLen, perim / 96);
+
+    const out: ControlPoint[] = [];
+    for (let i = 0; i < edgeCount; i++) {
+      const a = control[i];
+      const b = control[(i + 1) % n];
+      out.push(a);
+      const subdiv = Math.floor(lens[i] / target);
+      for (let k = 1; k < subdiv; k++) {
+        const t = k / subdiv;
+        out.push({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+      }
+    }
+    if (!closed) out.push(control[n - 1]);
+    return out;
+  }
+
   // Resample control points into a smooth spline polyline/polygon in *client coords*.
   // Uses spaced points for uniformity (reduces visible straight segments).
   function resampleSplinePoints(
@@ -136,6 +177,14 @@ export default function SplineSandbox(props: {
   ): ControlPoint[] {
     if (!control || control.length < 2) return control ?? [];
 
+    // Densify the control polygon by inserting evenly-spaced points along any
+    // edge that is long relative to the others. A closed centripetal Catmull-Rom
+    // through *unevenly* spaced knots bows inward on the long, sparsely-knotted
+    // spans (e.g. a long bottom edge), so the fill came up short of the boundary
+    // there. Forcing roughly-uniform knot spacing makes the curve hug the user's
+    // outline everywhere: smooth at the corners, straight along the long edges.
+    const dense = densifyControl(control, closed && control.length >= 3);
+
     // CatmullRom needs >= 2 points; closed shapes should have >= 3 to be meaningful,
     // but we still render a preview for 2 points.
     // "centripetal" (not uniform "catmullrom") so the curve hugs the control
@@ -144,13 +193,13 @@ export default function SplineSandbox(props: {
     // enclosed far more area than the rings actually inside it — the fill then
     // looked ~80% of the boundary. Centripetal keeps boundary ≈ fill.
     const curve = new THREE.CatmullRomCurve3(
-      control.map((p) => new THREE.Vector3(p.x, p.y, 0)),
+      dense.map((p) => new THREE.Vector3(p.x, p.y, 0)),
       closed && control.length >= 3,
       "centripetal",
       0.5, // tension (ignored by centripetal, kept for signature clarity)
     );
 
-    const approx = polyLenPts(closed ? [...control, control[0]] : control);
+    const approx = polyLenPts(closed ? [...dense, dense[0]] : dense);
     const n = Math.max(minN, Math.min(maxN, Math.ceil(approx / Math.max(1, pxStep))));
 
     const pts = curve.getSpacedPoints(n).map((v) => ({ x: v.x, y: v.y }));
