@@ -2755,6 +2755,28 @@ const FreeformChainmail2D: React.FC = () => {
     [rcToLogical, logicalToRowColApprox, reflectPoint],
   );
 
+  // Expand a list of cells with their mirror reflections (deduped). Returns the
+  // input unchanged when the Mirror tool is off, so the geometric fill helpers
+  // (shape/marquee/spline) can call it unconditionally to mirror together.
+  const withMirror = useCallback(
+    (cells: Array<{ row: number; col: number }>): Array<{ row: number; col: number }> => {
+      if (!mirrorOnRef.current || !mirrorRefGeomRef.current) return cells;
+      const seen = new Set<string>();
+      const out: Array<{ row: number; col: number }> = [];
+      for (const c of cells) {
+        for (const m of mirrorCellsFor(c.row, c.col)) {
+          const k = `${m.row},${m.col}`;
+          if (!seen.has(k)) {
+            seen.add(k);
+            out.push(m);
+          }
+        }
+      }
+      return out;
+    },
+    [mirrorCellsFor],
+  );
+
   // Paste the clipboard onto the design with its (0,0) anchor at the given
   // target row/col. Overwrites existing rings/scales at the destination cells
   // (matches paint semantics — last write wins). Pushes one POST-paste
@@ -5028,10 +5050,16 @@ const derived = useMemo(() => {
       if (!polygonScreen || polygonScreen.length < 3) return;
       const paint = normalizeColor6(colorHex);
 
-      // Convert polygon from screen -> logical (same space used by rcToLogical)
+      // The spline polygon arrives in CLIENT/viewport coords (e.clientX/Y), but
+      // screenToWorld expects CANVAS-RELATIVE coords and returns logical in the
+      // non-circleOffset frame. Convert to canvas-relative, then into the same
+      // adjusted-logical frame rcToLogical uses for the cells below — otherwise
+      // the polygon and the cells are compared in mismatched frames and the
+      // filled region comes out offset/shrunk vs the drawn boundary.
+      const rect = getViewRect();
       const poly = polygonScreen.map((p) => {
-        const w = screenToWorld(p.x, p.y);
-        return { x: w.lx, y: w.ly };
+        const w = screenToWorld(p.x - rect.left, p.y - rect.top);
+        return { x: w.lx - circleOffsetX, y: w.ly - circleOffsetY };
       });
 
       // BBox in logical space
@@ -5062,7 +5090,7 @@ const derived = useMemo(() => {
       const minCol = Math.min(a.col, b.col) - 2;
       const maxCol = Math.max(a.col, b.col) + 2;
 
-      const cells: Array<{ row: number; col: number }> = [];
+      let cells: Array<{ row: number; col: number }> = [];
 
       for (let r = minRow; r <= maxRow; r++) {
         for (let c = minCol; c <= maxCol; c++) {
@@ -5074,6 +5102,8 @@ const derived = useMemo(() => {
       }
 
       if (!cells.length) return;
+
+      cells = withMirror(cells);
 
       // Deterministic order
       cells.sort((u, v) => u.row - v.row || u.col - v.col);
@@ -5153,6 +5183,8 @@ const derived = useMemo(() => {
       circleOffsetX,
       circleOffsetY,
       spacingY,
+      getViewRect,
+      withMirror,
     ],
   );
 
@@ -5232,16 +5264,21 @@ const derived = useMemo(() => {
         return;
       }
 
+      // Mirror tool: paint each cell's reflection too. The selection snapshot,
+      // highlight and counts above intentionally stay on the un-mirrored cells
+      // (you selected/copy the drawn region, not its reflection).
+      const paintCells = withMirror(cells);
+
       // Apply to scales (no cluster logic). Compute next state explicitly
       // so we can push the POST-action snapshot — undo will rewind by
       // exactly one Cmd+Z.
       if (activeLayerRef.current === "scales") {
         const nextScaleColors = new Map(scaleColorsRef.current);
         if (eraseModeRef.current) {
-          for (const cell of cells) nextScaleColors.delete(`${cell.row},${cell.col}`);
+          for (const cell of paintCells) nextScaleColors.delete(`${cell.row},${cell.col}`);
         } else {
           const col = normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex);
-          for (const cell of cells) nextScaleColors.set(`${cell.row},${cell.col}`, col);
+          for (const cell of paintCells) nextScaleColors.set(`${cell.row},${cell.col}`, col);
         }
         // Painting OR erasing must also drop any image-overlay patches at
         // those keys: a new paint color must take visual precedence over a
@@ -5250,7 +5287,7 @@ const derived = useMemo(() => {
         // inherit the previous transfer.
         const nextPatches = new Map(scaleImagePatchesRef.current);
         let patchesChanged = false;
-        for (const cell of cells) {
+        for (const cell of paintCells) {
           if (nextPatches.delete(`${cell.row},${cell.col}`)) patchesChanged = true;
         }
         setScaleColors(nextScaleColors);
@@ -5267,12 +5304,12 @@ const derived = useMemo(() => {
 
       if (eraseMode) {
         // ✅ FIX: direct delete is O(1) per cell (massively faster than scanning the map)
-        for (const cell of cells) {
+        for (const cell of paintCells) {
           mapCopy.delete(`${cell.row}-${cell.col}`);
         }
       } else {
         // Add rings
-        for (const cell of cells) {
+        for (const cell of paintCells) {
           const { ring, newCluster } = resolvePlacement(
             cell.col,
             cell.row,
@@ -5305,6 +5342,7 @@ const derived = useMemo(() => {
       logicalToRowColApprox,
       rcToLogical,
       pushToHistory,
+      withMirror,
     ],
   );
 
