@@ -992,6 +992,7 @@ const applyDesignerFillFromScreenPolygon = useCallback(
     // shrank the projected grid inward, so the fill came out smaller than the
     // drawn boundary. We only fall back to that approximation if no camera.
     const cam = (rendererRef.current as any)?.getCamera?.() ?? null;
+    if (cam) cam.updateMatrixWorld(); // ensure projection reflects current pan/zoom
 
     // Fallback fitted scale (used only when the camera is unavailable).
     const cs = safeParams.centerSpacing ?? 7.5; // mm spacing between centers
@@ -1011,7 +1012,11 @@ const applyDesignerFillFromScreenPolygon = useCallback(
 
     const projectRing = (x_mm: number, y_mm: number): { sx: number; sy: number } => {
       if (cam) {
-        const v = new THREE.Vector3(x_mm, -y_mm, 0).project(cam);
+        // exportRings uses a top-left grid origin; the renderer centers the
+        // grid on the world origin (camera looks at 0,0), so subtract the grid
+        // center before projecting — otherwise the fill is shifted by half the
+        // grid. World is (x, -y, 0) to match RingRenderer's mesh placement.
+        const v = new THREE.Vector3(x_mm - mmCx, -(y_mm - mmCy), 0).project(cam);
         return {
           sx: rect.left + (v.x * 0.5 + 0.5) * rect.width,
           sy: rect.top + (-v.y * 0.5 + 0.5) * rect.height,
