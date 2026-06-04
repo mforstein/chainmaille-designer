@@ -780,12 +780,13 @@ export default function SplineSandbox(props: {
     if (!activeSpline) return;
     if (activeSpline.points.length < 3) return;
 
+    // resampleSplinePoints builds a CLOSED Catmull-Rom that handles the
+    // wraparound itself, so the control list must be the raw points. The old
+    // auto-close branch appended points[0], creating a duplicated start/end
+    // point that degenerated a segment and shrank the sampled curve — so the
+    // fill came out ~80% of the boundary you see (which samples the raw points).
     const base =
-      activeSpline.closed
-        ? activeSpline.points
-        : autoCloseReady
-          ? [...activeSpline.points, activeSpline.points[0]]
-          : null;
+      activeSpline.closed || autoCloseReady ? activeSpline.points : null;
 
     if (!base || base.length < 3) return;
 
