@@ -219,6 +219,23 @@ function clampToViewport(
 // iPad-safe: Pointer Events + Text-node target handling
 // ==============================
 
+function zoomBtnStyle(disabled: boolean): React.CSSProperties {
+  return {
+    width: 20,
+    height: 20,
+    lineHeight: "18px",
+    textAlign: "center",
+    borderRadius: 6,
+    border: "1px solid rgba(255,255,255,.18)",
+    background: disabled ? "rgba(30,41,59,.5)" : "rgba(30,41,59,.95)",
+    color: disabled ? "#475569" : "#e2e8f0",
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: disabled ? "default" : "pointer",
+    padding: 0,
+  };
+}
+
 function DraggablePill({
   id,
   defaultPosition = { x: 20, y: 20 },
@@ -256,12 +273,47 @@ function DraggablePill({
   const draggingRef = useRef(false);
   const offsetRef = useRef({ x: 0, y: 0 });
 
+  // Per-panel zoom. Lets the user shrink an individual panel so it fits on a
+  // short screen (e.g. iPhone). Scale is applied as a CSS transform from the
+  // top-left anchor (so the panel stays put) and persisted per panel id. The
+  // global "Reset UI" button clears these back to 1. NOTE: the Reset UI button
+  // itself is a fixed, standalone button (not a pill), so it never scales.
+  const SCALE_MIN = 0.5;
+  const SCALE_MAX = 1;
+  const SCALE_STEP = 0.1;
+  const [scale, setScale] = useState<number>(() => {
+    try {
+      const n = parseFloat(localStorage.getItem(`pill-scale-${id}`) ?? "1");
+      return Number.isFinite(n) ? Math.min(SCALE_MAX, Math.max(SCALE_MIN, n)) : 1;
+    } catch {
+      return 1;
+    }
+  });
+  const [hovered, setHovered] = useState(false);
+  // Touch devices have no hover, so the zoom control stays visible there.
+  const coarsePointer = (() => {
+    try {
+      return window.matchMedia("(pointer: coarse)").matches;
+    } catch {
+      return false;
+    }
+  })();
+  const bumpScale = (d: number) =>
+    setScale((s) => Math.min(SCALE_MAX, Math.max(SCALE_MIN, Math.round((s + d) * 100) / 100)));
+
   // Persist position
   useEffect(() => {
     try {
       localStorage.setItem(`pill-pos-${id}`, JSON.stringify(pos));
     } catch {}
   }, [id, pos]);
+
+  // Persist scale
+  useEffect(() => {
+    try {
+      localStorage.setItem(`pill-scale-${id}`, String(scale));
+    } catch {}
+  }, [id, scale]);
 
   // ✅ After first paint (and on resize/orientation change), measure and clamp.
   useEffect(() => {
@@ -366,7 +418,11 @@ function DraggablePill({
         userSelect: "none",
         cursor: dragging ? "grabbing" : "grab",
         touchAction: "none",
+        transform: `scale(${scale})`,
+        transformOrigin: "top left",
       }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       onPointerDown={(e) => {
         if (isInteractive(e.target)) return;
         if (!e.isPrimary) return;
@@ -387,6 +443,50 @@ function DraggablePill({
       }}
       onPointerCancel={() => stop()}
     >
+      {(hovered || coarsePointer) && (
+        <div
+          data-nondrag
+          style={{
+            position: "absolute",
+            right: 6,
+            top: 0,
+            // Counter-scale so the control stays a constant, tappable size and
+            // floats just above the panel's top-right corner regardless of zoom.
+            transform: `translateY(-115%) scale(${1 / scale})`,
+            transformOrigin: "bottom right",
+            display: "flex",
+            alignItems: "center",
+            gap: 2,
+            background: "rgba(2,6,23,.9)",
+            border: "1px solid rgba(255,255,255,.14)",
+            borderRadius: 8,
+            padding: "2px 4px",
+            zIndex: 3,
+          }}
+        >
+          <button
+            data-nondrag
+            aria-label="Shrink panel"
+            onClick={() => bumpScale(-SCALE_STEP)}
+            disabled={scale <= SCALE_MIN}
+            style={zoomBtnStyle(scale <= SCALE_MIN)}
+          >
+            −
+          </button>
+          <span style={{ fontSize: 10, color: "#94a3b8", minWidth: 30, textAlign: "center" }}>
+            {Math.round(scale * 100)}%
+          </span>
+          <button
+            data-nondrag
+            aria-label="Enlarge panel"
+            onClick={() => bumpScale(SCALE_STEP)}
+            disabled={scale >= SCALE_MAX}
+            style={zoomBtnStyle(scale >= SCALE_MAX)}
+          >
+            +
+          </button>
+        </div>
+      )}
       {children}
     </div>
   );
@@ -394,7 +494,9 @@ function DraggablePill({
 function resetAllPills() {
   try {
     Object.keys(localStorage).forEach((k) => {
-      if (k.startsWith("pill-pos-")) localStorage.removeItem(k);
+      // Reset both position and per-panel zoom so the button can rescue a
+      // panel that was dragged off-screen or shrunk too far.
+      if (k.startsWith("pill-pos-") || k.startsWith("pill-scale-")) localStorage.removeItem(k);
     });
   } catch {}
   // force reload so each pill re-initializes to defaults
@@ -1950,8 +2052,11 @@ onChange={(e) => {
         title="Reset floating panels"
         style={{
           position: "fixed",
-          right: 12,
-          bottom: 12,
+          // Safe-area aware so it never tucks under the home indicator / notch
+          // in any orientation. This button never scales — it's the always-on
+          // recovery control for the per-panel zoom.
+          right: "calc(12px + env(safe-area-inset-right))",
+          bottom: "calc(12px + env(safe-area-inset-bottom))",
           zIndex: 100000,
           padding: "8px 10px",
           borderRadius: 10,
