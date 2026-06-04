@@ -1010,35 +1010,36 @@ const applyDesignerFillFromScreenPolygon = useCallback(
     const mmCx = gridW_mm / 2;
     const mmCy = gridH_mm / 2;
 
-    const projectRing = (x_mm: number, y_mm: number): { sx: number; sy: number } => {
+    // Project a ring's ACTUAL world position to screen. We must use the raw
+    // `rings` coords (r.x, -r.y) — that's literally where the renderer draws
+    // each mesh (RingRenderer mesh.position.set(r.x,-r.y); generateRings:
+    // x = col*pitchX + xOffset, y = row*pitchY). exportRings.x_mm (= col*cs)
+    // is a DIFFERENT coordinate system (different pitch + offset), which is why
+    // projecting it was consistently shifted/scaled. Falls back to a rough fit
+    // only if the camera isn't available.
+    const projectWorld = (wx: number, wy: number): { sx: number; sy: number } => {
       if (cam) {
-        // Rings render at world (r.x, -r.y, 0) and the camera is panned to the
-        // grid center, so projecting the RAW coords through the (matrix-updated)
-        // camera gives the true screen position. Do NOT re-center here — that
-        // double-shifts by half the grid.
-        const v = new THREE.Vector3(x_mm, -y_mm, 0).project(cam);
+        const v = new THREE.Vector3(wx, -wy, 0).project(cam);
         return {
           sx: rect.left + (v.x * 0.5 + 0.5) * rect.width,
           sy: rect.top + (-v.y * 0.5 + 0.5) * rect.height,
         };
       }
-      return { sx: screenCx + (x_mm - mmCx) * scale, sy: screenCy + (y_mm - mmCy) * scale };
+      return { sx: screenCx + (wx - mmCx) * scale, sy: screenCy + (wy - mmCy) * scale };
     };
 
     setPaint((prev) => {
       const next = new Map(prev);
 
-      for (const r of exportRings) {
-        // exportRings uses mm coords
-        const x_mm = (r as any).x_mm;
-        const y_mm = (r as any).y_mm;
+      for (const r of rings as any[]) {
+        const wx = r?.x;
+        const wy = r?.y;
+        if (!Number.isFinite(wx) || !Number.isFinite(wy)) continue;
 
-        if (!Number.isFinite(x_mm) || !Number.isFinite(y_mm)) continue;
-
-        const { sx, sy } = projectRing(x_mm, y_mm);
+        const { sx, sy } = projectWorld(wx, wy);
 
         if (pointInPoly(sx, sy, polygonScreen)) {
-          next.set((r as any).key, colorHex); // key is "row,col"
+          next.set(`${r.row},${r.col}`, colorHex); // paint key is "row,col"
         }
       }
 
@@ -1046,6 +1047,7 @@ const applyDesignerFillFromScreenPolygon = useCallback(
     });
   },
   [
+    rings,
     exportRings,
     safeParams.centerSpacing,
     safeParams.rows,
