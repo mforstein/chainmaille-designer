@@ -138,11 +138,16 @@ export default function SplineSandbox(props: {
 
     // CatmullRom needs >= 2 points; closed shapes should have >= 3 to be meaningful,
     // but we still render a preview for 2 points.
+    // "centripetal" (not uniform "catmullrom") so the curve hugs the control
+    // points instead of ballooning outward past them. With the uniform type a
+    // closed loop overshoots well beyond the knots, so the drawn boundary
+    // enclosed far more area than the rings actually inside it — the fill then
+    // looked ~80% of the boundary. Centripetal keeps boundary ≈ fill.
     const curve = new THREE.CatmullRomCurve3(
       control.map((p) => new THREE.Vector3(p.x, p.y, 0)),
       closed && control.length >= 3,
-      "catmullrom",
-      0.5, // tension
+      "centripetal",
+      0.5, // tension (ignored by centripetal, kept for signature clarity)
     );
 
     const approx = polyLenPts(closed ? [...control, control[0]] : control);
