@@ -4336,15 +4336,40 @@ const derived = useMemo(() => {
         const maxRowG = Math.ceil(maxLy / spacingY) + 1;
         const minColG = Math.floor(minLx / centerSpacing) - 1;
         const maxColG = Math.ceil(maxLx / centerSpacing) + 1;
-        // Cap iteration so an extreme zoom-out can't lock the UI.
-        const rowSpanG = Math.min(maxRowG - minRowG, 200);
-        const colSpanG = Math.min(maxColG - minColG, 200);
+
+        // Stride the grid so it covers the WHOLE viewport at any zoom instead of
+        // stopping after a fixed cell count (the old 200×200 cap left the screen
+        // empty past 200 cells when zoomed out). When dots would be packed closer
+        // than ~5px on screen we skip cells so the count stays bounded; at normal
+        // zoom the stride is 1 (every dot, unchanged look).
+        const gridDotScreen = (row: number, col: number) => {
+          const { x, y } = rcToLogical(row, col);
+          const { wx, wy } = logicalToWorld(x, y);
+          return worldToScreen(wx, wy);
+        };
+        const probeA = gridDotScreen(minRowG, minColG);
+        const probeCol = gridDotScreen(minRowG, minColG + 1);
+        const probeRow = gridDotScreen(minRowG + 1, minColG);
+        const colPx = Math.max(0.001, Math.hypot(probeCol.sx - probeA.sx, probeCol.sy - probeA.sy));
+        const rowPx = Math.max(0.001, Math.hypot(probeRow.sx - probeA.sx, probeRow.sy - probeA.sy));
+        const MIN_DOT_PX = 5; // closest two drawn dots get before we thin them
+        let strideCol = Math.max(1, Math.ceil(MIN_DOT_PX / colPx));
+        let strideRow = Math.max(1, Math.ceil(MIN_DOT_PX / rowPx));
+        // Hard ceiling on total dots so an extreme zoom-out can't lock the UI;
+        // bump both strides together (keeps full-screen coverage, just sparser).
+        const MAX_DOTS = 14000;
+        const estCols = (maxColG - minColG) / strideCol;
+        const estRows = (maxRowG - minRowG) / strideRow;
+        const est = estCols * estRows;
+        if (est > MAX_DOTS) {
+          const k = Math.sqrt(est / MAX_DOTS);
+          strideCol = Math.ceil(strideCol * k);
+          strideRow = Math.ceil(strideRow * k);
+        }
         ctx.save();
         ctx.fillStyle = "rgba(148,163,184,0.32)";
-        for (let dr = 0; dr <= rowSpanG; dr++) {
-          const row = minRowG + dr;
-          for (let dc = 0; dc <= colSpanG; dc++) {
-            const col = minColG + dc;
+        for (let row = minRowG; row <= maxRowG; row += strideRow) {
+          for (let col = minColG; col <= maxColG; col += strideCol) {
             const { x: gx, y: gy } = rcToLogical(row, col);
             const { wx: gwx, wy: gwy } = logicalToWorld(gx, gy);
             const { sx: gsx, sy: gsy } = worldToScreen(gwx, gwy);
