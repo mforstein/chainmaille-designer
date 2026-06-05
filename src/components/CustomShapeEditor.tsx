@@ -1114,6 +1114,24 @@ function ImageTab(props: {
 
 // ---------------------------------------------------------------------------
 
+// One pass of Chaikin corner-cutting on a CLOSED polygon: replaces each vertex
+// with two points 1/4 and 3/4 along its edges, rounding off the jitter from a
+// shaky hand-drawn stroke. Pressing Smooth repeatedly converges toward a clean
+// curve; we re-simplify afterward so the point count doesn't explode.
+function chaikinClosed(
+  pts: Array<[number, number]>,
+): Array<[number, number]> {
+  if (pts.length < 3) return pts;
+  const out: Array<[number, number]> = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    out.push([a[0] * 0.75 + b[0] * 0.25, a[1] * 0.75 + b[1] * 0.25]);
+    out.push([a[0] * 0.25 + b[0] * 0.75, a[1] * 0.25 + b[1] * 0.75]);
+  }
+  return out;
+}
+
 function FreehandTab(props: {
   points: Array<[number, number]> | null;
   onPoints: (p: Array<[number, number]> | null) => void;
@@ -1224,6 +1242,33 @@ function FreehandTab(props: {
         }}
       />
       <div style={{ display: "flex", gap: 8 }}>
+        <button
+          type="button"
+          disabled={!points || points.length < 3}
+          onClick={() => {
+            if (!points || points.length < 3) return;
+            // Smooth, then re-simplify + renormalize so repeated presses keep
+            // converging without ballooning the point count.
+            const smoothed = chaikinClosed(points);
+            const simplified = simplifyPolygon(smoothed, 0.004);
+            const normalized = normalizePolygon(simplified).map(
+              ([x, y]) => [x, y] as [number, number],
+            );
+            onPoints(normalized);
+          }}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: "1px solid rgba(255,255,255,0.14)",
+            background: !points || points.length < 3 ? "transparent" : "rgba(37,99,235,0.25)",
+            color: !points || points.length < 3 ? "#64748b" : "#dbeafe",
+            cursor: !points || points.length < 3 ? "default" : "pointer",
+            fontSize: 12,
+          }}
+          title="Round off the jitter from a hand-drawn outline. Press again for more."
+        >
+          ✨ Smooth
+        </button>
         <button
           type="button"
           onClick={() => {
