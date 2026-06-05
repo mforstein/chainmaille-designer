@@ -32,7 +32,9 @@ import {
 // with, so one design can mix shapes. Absent meta = global activeScaleSettings.
 import {
   type ScaleMetaMap,
+  type ScaleGeom,
   resolveScaleShape,
+  resolveScaleGeom,
 } from "../v2/elementBrush";
 
 import { DraggablePill, DraggableCompassNav } from "../App";
@@ -3629,6 +3631,15 @@ const derived = useMemo(() => {
     const col = Number(m[2]);
     if (!Number.isFinite(row) || !Number.isFinite(col)) return [];
 
+    // V2: per-cell geometry (size) override → else the global slider values.
+    const cellMeta = scaleMeta.get(key);
+    const geom = resolveScaleGeom(cellMeta, {
+      widthMm: activeScaleSettings.widthMm,
+      heightMm: activeScaleSettings.heightMm,
+      holeIdMm: activeScaleSettings.holeIdMm,
+      dropMm: activeScaleSettings.dropMm,
+    });
+
     const useInterlocked =
       activeScaleSettings.lockScaleHolesToRingCenters ||
       activeScaleSettings.weaveMode === "interlocked";
@@ -3658,14 +3669,14 @@ const derived = useMemo(() => {
     }
 
     const holeShoulderInset = Math.max(
-      activeScaleSettings.holeIdMm * 0.54,
-      activeScaleSettings.heightMm * 0.15
+      geom.holeIdMm * 0.54,
+      geom.heightMm * 0.15
     );
 
     const bodyY =
       holeY -
       holeShoulderInset +
-      activeScaleSettings.dropMm +
+      geom.dropMm +
       (useInterlocked ? 0 : activeScaleSettings.holeOffsetYMm);
 
     const isIn = row % 2 === 0;
@@ -3684,12 +3695,12 @@ const derived = useMemo(() => {
         colorHex: normalizeColor6(
           colorHex || activeScaleSettings.colorHex
         ),
-        holeIdMm: activeScaleSettings.holeIdMm,
-        widthMm: activeScaleSettings.widthMm,
-        heightMm: activeScaleSettings.heightMm,
-        // V2: per-cell shape override → else the global shape.
-        shape: resolveScaleShape(scaleMeta.get(key), activeScaleSettings.shape),
-        dropMm: activeScaleSettings.dropMm,
+        // V2: per-cell size (geom) + shape overrides → else global.
+        holeIdMm: geom.holeIdMm,
+        widthMm: geom.widthMm,
+        heightMm: geom.heightMm,
+        shape: resolveScaleShape(cellMeta, activeScaleSettings.shape),
+        dropMm: geom.dropMm,
         holeOffsetYMm: activeScaleSettings.holeOffsetYMm,
         tiltRad: tiltDeg * DEG,
         planeZMm: activeScaleSettings.scalePlaneZ,
@@ -6031,10 +6042,17 @@ const derived = useMemo(() => {
         // reflected cell so both sides paint/erase together.
         const nextScaleColors = new Map(scaleColorsRef.current);
         const nextPatches = new Map(scaleImagePatchesRef.current);
-        // V2: stamp the brush's current shape onto each painted cell so the
-        // scale keeps it even if the global shape changes later. Erase clears it.
+        // V2: stamp the brush's current shape AND size (live slider geometry)
+        // onto each painted cell, so the scale keeps both even if the global
+        // settings change later. Erase clears the cell's meta.
         const nextMeta: ScaleMetaMap = new Map(scaleMetaRef.current);
         const brushShape = activeScaleSettings.shape;
+        const brushGeom: ScaleGeom = {
+          widthMm: activeScaleSettings.widthMm,
+          heightMm: activeScaleSettings.heightMm,
+          holeIdMm: activeScaleSettings.holeIdMm,
+          dropMm: activeScaleSettings.dropMm,
+        };
         let metaChanged = false;
         let patchesChanged = false;
         const paintColor = normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex);
@@ -6045,7 +6063,11 @@ const derived = useMemo(() => {
             if (nextMeta.delete(key)) metaChanged = true;
           } else {
             nextScaleColors.set(key, paintColor);
-            nextMeta.set(key, { ...(nextMeta.get(key) ?? {}), shapeId: brushShape });
+            nextMeta.set(key, {
+              ...(nextMeta.get(key) ?? {}),
+              shapeId: brushShape,
+              geom: brushGeom,
+            });
             metaChanged = true;
           }
           // Painting OR erasing must drop any prior image-overlay patch at

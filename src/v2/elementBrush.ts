@@ -96,9 +96,20 @@ export const DEFAULT_BRUSH: ElementBrush = {
 export interface RingCellMeta {
   sizeId?: string;
 }
+// The four geometry fields a scale needs, independent of any named preset.
+// Captured from the live sliders at paint time so a design can mix arbitrary
+// sizes, not just registry presets.
+export interface ScaleGeom {
+  widthMm: number;
+  heightMm: number;
+  holeIdMm: number;
+  dropMm: number;
+}
 export interface ScaleCellMeta {
   sizeId?: string;
   shapeId?: ScaleShapeId;
+  // Explicit per-cell geometry override; takes precedence over sizeId/global.
+  geom?: ScaleGeom;
 }
 
 export type RingMetaMap = Map<string, RingCellMeta>;
@@ -116,6 +127,19 @@ export function resolveScaleShape(
   fallback: ScaleShapeId,
 ): ScaleShapeId {
   return meta?.shapeId ?? fallback;
+}
+// Resolve a scale's geometry: explicit per-cell geom → named size → global.
+export function resolveScaleGeom(meta: ScaleCellMeta | undefined, fallback: ScaleGeom): ScaleGeom {
+  if (meta?.geom) return meta.geom;
+  const s = scaleSizeById(meta?.sizeId);
+  if (s) return { widthMm: s.widthMm, heightMm: s.heightMm, holeIdMm: s.holeIdMm, dropMm: s.dropMm };
+  return fallback;
+}
+// Stable BOM key for a geometry, so identical sizes group into one parts-list
+// row even when captured from sliders (rounded to 0.1 mm).
+export function scaleSizeSignature(g: ScaleGeom): string {
+  const r = (n: number) => (Math.round(n * 10) / 10).toFixed(1);
+  return `${r(g.widthMm)}×${r(g.heightMm)} hole ${r(g.holeIdMm)}`;
 }
 
 // Build the meta a paint stroke should store for a cell. Returns `undefined`
