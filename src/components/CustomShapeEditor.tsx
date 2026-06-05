@@ -66,6 +66,7 @@ export default function CustomShapeEditor({ initial, onSave, onCancel }: Props) 
   const [tab, setTab] = useState<Tab>(initial?.source ?? "image");
   const [emoji, setEmoji] = useState(initial?.emoji ?? "✨");
   const [label, setLabel] = useState(initial?.label ?? "");
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Image-source state
@@ -351,6 +352,10 @@ export default function CustomShapeEditor({ initial, onSave, onCancel }: Props) 
     const trimmed = label.trim();
     if (!trimmed) {
       setError("Give it a name.");
+      // The name field is below the (tall) draw canvas; pull it into view so the
+      // requirement is obvious instead of the save button looking unresponsive.
+      nameInputRef.current?.focus();
+      nameInputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
       return;
     }
     const e = emoji.trim() || "✨";
@@ -669,6 +674,7 @@ export default function CustomShapeEditor({ initial, onSave, onCancel }: Props) 
             }}
           />
           <input
+            ref={nameInputRef}
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             maxLength={28}
@@ -686,33 +692,34 @@ export default function CustomShapeEditor({ initial, onSave, onCancel }: Props) 
           />
         </div>
 
-        {error && (
-          <div
-            style={{
-              color: "#fca5a5",
-              fontSize: 12,
-              background: "rgba(127,29,29,0.3)",
-              border: "1px solid rgba(239,68,68,0.3)",
-              borderRadius: 8,
-              padding: 8,
-            }}
-          >
-            {error}
-          </div>
-        )}
         </div>{/* end scrollable middle */}
 
-        {/* Sticky footer */}
+        {/* Sticky footer — error shown here so a failed save is never silent. */}
         <div
           style={{
             display: "flex",
+            flexDirection: "column",
             gap: 8,
-            justifyContent: "flex-end",
             padding: "12px 16px",
             borderTop: "1px solid rgba(255,255,255,0.08)",
             background: "#0f172a",
           }}
         >
+          {error && (
+            <div
+              style={{
+                color: "#fca5a5",
+                fontSize: 12,
+                background: "rgba(127,29,29,0.3)",
+                border: "1px solid rgba(239,68,68,0.3)",
+                borderRadius: 8,
+                padding: 8,
+              }}
+            >
+              {error}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button
             type="button"
             onClick={onCancel}
@@ -760,6 +767,7 @@ export default function CustomShapeEditor({ initial, onSave, onCancel }: Props) 
           >
             {initial ? "Save & make default" : "Add & make default"}
           </button>
+          </div>
         </div>
       </div>
     </div>,
