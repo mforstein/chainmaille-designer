@@ -8,6 +8,10 @@ export interface PlacedRing {
   col: number;
   color: string;
   cluster: number;
+  // V2 (optional, backward-compatible): which RING_SIZES entry this ring was
+  // painted with. Absent = use the design's global ring size, so existing saves
+  // and pre-V2 rings keep rendering exactly as before. See src/v2/elementBrush.ts.
+  sizeId?: string;
 }
 
 export type RingMap = Map<string, PlacedRing>;
