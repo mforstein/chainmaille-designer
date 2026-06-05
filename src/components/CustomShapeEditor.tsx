@@ -31,6 +31,37 @@ interface Props {
   onCancel: () => void;
 }
 
+// A freehand ring hole: center + radius in the normalized [-0.5,0.5] space the
+// outline uses. Saved/rendered as a circular hole polygon.
+type FreehandHole = { cx: number; cy: number; r: number };
+
+// Build a circular hole polygon (the saved/rendered form of a FreehandHole).
+function circlePolygon(cx: number, cy: number, r: number, segs = 28): Array<[number, number]> {
+  const out: Array<[number, number]> = [];
+  for (let i = 0; i < segs; i++) {
+    const t = (i / segs) * Math.PI * 2;
+    out.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]);
+  }
+  return out;
+}
+
+// Recover a FreehandHole (center + mean radius) from a saved hole polygon, so
+// editing an existing freehand shape restores a draggable/resizable circle.
+function circleToHole(poly: Array<[number, number]>): FreehandHole {
+  let cx = 0;
+  let cy = 0;
+  for (const [x, y] of poly) {
+    cx += x;
+    cy += y;
+  }
+  cx /= poly.length;
+  cy /= poly.length;
+  let r = 0;
+  for (const [x, y] of poly) r += Math.hypot(x - cx, y - cy);
+  r /= poly.length;
+  return { cx, cy, r };
+}
+
 export default function CustomShapeEditor({ initial, onSave, onCancel }: Props) {
   const [tab, setTab] = useState<Tab>(initial?.source ?? "image");
   const [emoji, setEmoji] = useState(initial?.emoji ?? "✨");
@@ -181,6 +212,13 @@ export default function CustomShapeEditor({ initial, onSave, onCancel }: Props) 
   const [freehandPoints, setFreehandPoints] = useState<Array<[number, number]> | null>(
     initial?.source === "freehand" ? (initial.polygon ?? null) : null,
   );
+  // Freehand ring hole: a draggable, resizable circle in the same normalized
+  // [-0.5,0.5] space as the outline. `null` until an outline exists. Seeded
+  // from a saved hole when editing an existing freehand shape.
+  const [freehandHole, setFreehandHole] = useState<FreehandHole | null>(() => {
+    const h = initial?.source === "freehand" ? initial.holes?.[0] : null;
+    return h && h.length >= 3 ? circleToHole(h) : null;
+  });
 
   // Rotation (degrees, 0.5° resolution). Applied to image / freehand polygons.
   const [rotationDeg, setRotationDeg] = useState(0);
@@ -199,11 +237,16 @@ export default function CustomShapeEditor({ initial, onSave, onCancel }: Props) 
   }, [tab, imagePolygon, freehandPoints, rotationDeg]);
 
   const previewHoles = useMemo<Array<Array<[number, number]>>>(() => {
+    if (tab === "freehand") {
+      if (!freehandHole) return [];
+      const poly = circlePolygon(freehandHole.cx, freehandHole.cy, freehandHole.r);
+      return [rotationDeg ? rotatePolygon(poly, rotationDeg) : poly];
+    }
     if (tab !== "image" || !imageHoles.length) return [];
     return rotationDeg
       ? imageHoles.map((h) => rotatePolygon(h, rotationDeg))
       : imageHoles;
-  }, [tab, imageHoles, rotationDeg]);
+  }, [tab, imageHoles, freehandHole, rotationDeg]);
 
   // Re-trace when threshold, polarity, or the user's paint-edits change.
   useEffect(() => {
@@ -342,12 +385,18 @@ export default function CustomShapeEditor({ initial, onSave, onCancel }: Props) 
     }
     // Bake the rotation into the saved polygon so renderers don't need to know.
     const poly = rotationDeg ? rotatePolygon(raw, rotationDeg) : raw;
+    const freehandHolePoly =
+      tab === "freehand" && freehandHole
+        ? circlePolygon(freehandHole.cx, freehandHole.cy, freehandHole.r)
+        : null;
     const bakedHoles =
       tab === "image" && imageHoles.length
         ? rotationDeg
           ? imageHoles.map((h) => rotatePolygon(h, rotationDeg))
           : imageHoles
-        : undefined;
+        : freehandHolePoly
+          ? [rotationDeg ? rotatePolygon(freehandHolePoly, rotationDeg) : freehandHolePoly]
+          : undefined;
     onSave(
       {
         ...(baseEntry as any),
@@ -500,6 +549,8 @@ export default function CustomShapeEditor({ initial, onSave, onCancel }: Props) 
             <FreehandTab
               points={freehandPoints}
               onPoints={setFreehandPoints}
+              hole={freehandHole}
+              onHole={setFreehandHole}
             />
           )}
           {tab === "base" && (
@@ -1135,13 +1186,26 @@ function chaikinClosed(
 function FreehandTab(props: {
   points: Array<[number, number]> | null;
   onPoints: (p: Array<[number, number]> | null) => void;
+  hole: FreehandHole | null;
+  onHole: (h: FreehandHole | null) => void;
 }) {
-  const { points, onPoints } = props;
+  const { points, onPoints, hole, onHole } = props;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
+  const draggingHoleRef = useRef(false);
   const rawRef = useRef<Array<[number, number]>>([]);
 
   const SIZE = 280;
+  // Hole editing is active once a closed outline exists.
+  const holeMode = !!points && points.length >= 3;
+
+  // Seed a sensible ring hole near the top once an outline exists; drop it if
+  // the outline goes away (a new drawing started / cleared).
+  useEffect(() => {
+    if (holeMode && !hole) onHole({ cx: 0, cy: -0.22, r: 0.1 });
+    if (!holeMode && hole) onHole(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [holeMode]);
 
   const redraw = () => {
     const cvs = canvasRef.current;
@@ -1166,6 +1230,16 @@ function FreehandTab(props: {
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
+      // Ring hole (magenta) — draggable, sized by the slider below.
+      if (hole) {
+        ctx.strokeStyle = "rgba(244,114,182,0.95)";
+        ctx.fillStyle = "rgba(244,114,182,0.18)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(hole.cx * SIZE + SIZE / 2, hole.cy * SIZE + SIZE / 2, hole.r * SIZE, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
     } else {
       ctx.fillStyle = "#64748b";
       ctx.font = "12px system-ui, sans-serif";
@@ -1176,7 +1250,8 @@ function FreehandTab(props: {
 
   useEffect(() => {
     redraw();
-  }, [points]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [points, hole]);
 
   const localPt = (e: React.PointerEvent) => {
     const cvs = canvasRef.current;
@@ -1184,6 +1259,11 @@ function FreehandTab(props: {
     const rect = cvs.getBoundingClientRect();
     return [e.clientX - rect.left, e.clientY - rect.top] as [number, number];
   };
+  // Pixel → normalized [-0.5,0.5], clamped to the canvas.
+  const toNorm = (pt: [number, number]): { cx: number; cy: number } => ({
+    cx: Math.max(-0.5, Math.min(0.5, (pt[0] - SIZE / 2) / SIZE)),
+    cy: Math.max(-0.5, Math.min(0.5, (pt[1] - SIZE / 2) / SIZE)),
+  });
 
   return (
     <div style={{ display: "grid", gap: 8, justifyItems: "center" }}>
@@ -1194,12 +1274,27 @@ function FreehandTab(props: {
         onPointerDown={(e) => {
           const pt = localPt(e);
           if (!pt) return;
+          if (holeMode) {
+            // Drag the ring hole to the pointer.
+            draggingHoleRef.current = true;
+            const { cx, cy } = toNorm(pt);
+            onHole({ cx, cy, r: hole?.r ?? 0.1 });
+            (e.target as Element).setPointerCapture?.(e.pointerId);
+            return;
+          }
           drawingRef.current = true;
           rawRef.current = [pt];
           onPoints(null);
           (e.target as Element).setPointerCapture?.(e.pointerId);
         }}
         onPointerMove={(e) => {
+          if (draggingHoleRef.current) {
+            const pt = localPt(e);
+            if (!pt) return;
+            const { cx, cy } = toNorm(pt);
+            onHole({ cx, cy, r: hole?.r ?? 0.1 });
+            return;
+          }
           if (!drawingRef.current) return;
           const pt = localPt(e);
           if (!pt) return;
@@ -1220,6 +1315,10 @@ function FreehandTab(props: {
           ctx.stroke();
         }}
         onPointerUp={() => {
+          if (draggingHoleRef.current) {
+            draggingHoleRef.current = false;
+            return;
+          }
           if (!drawingRef.current) return;
           drawingRef.current = false;
           const raw = rawRef.current;
@@ -1238,9 +1337,36 @@ function FreehandTab(props: {
           border: "1px solid rgba(255,255,255,0.12)",
           borderRadius: 12,
           touchAction: "none",
-          cursor: "crosshair",
+          cursor: holeMode ? "move" : "crosshair",
         }}
       />
+      {holeMode && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, width: SIZE }}>
+          <span style={{ color: "#9ca3af", fontSize: 12, whiteSpace: "nowrap" }}>
+            🕳 Hole size
+          </span>
+          <input
+            type="range"
+            min={0.03}
+            max={0.28}
+            step={0.005}
+            value={hole?.r ?? 0.1}
+            onChange={(e) =>
+              onHole({
+                cx: hole?.cx ?? 0,
+                cy: hole?.cy ?? -0.22,
+                r: parseFloat(e.target.value),
+              })
+            }
+            style={{ flex: 1 }}
+          />
+        </div>
+      )}
+      {holeMode && (
+        <div style={{ color: "#64748b", fontSize: 11, textAlign: "center" }}>
+          Drag the magenta circle to place the ring hole.
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8 }}>
         <button
           type="button"
@@ -1274,6 +1400,7 @@ function FreehandTab(props: {
           onClick={() => {
             rawRef.current = [];
             onPoints(null);
+            onHole(null);
           }}
           style={{
             padding: "6px 10px",
