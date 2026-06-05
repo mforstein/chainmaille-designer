@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   type BuiltinScaleShape,
   type CustomScaleShape,
@@ -358,7 +359,12 @@ export default function CustomShapeEditor({ initial, onSave, onCancel }: Props) 
     );
   };
 
-  return (
+  // Portal to <body> so the modal lays out against the viewport, NOT against
+  // the floating control panel it's nested under. The panel-zoom feature gives
+  // DraggablePill a CSS transform, which would otherwise make this fixed/inset:0
+  // modal position relative to that panel (collapsing it into the panel's box).
+  // Rendering through a portal gives the custom-shape editor its own dialog.
+  return createPortal(
     <div
       onPointerDown={(e) => e.stopPropagation()}
       onMouseDown={(e) => e.stopPropagation()}
@@ -705,7 +711,8 @@ export default function CustomShapeEditor({ initial, onSave, onCancel }: Props) 
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

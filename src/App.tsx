@@ -472,7 +472,11 @@ function DraggablePill({
         userSelect: "none",
         cursor: dragging ? "grabbing" : "grab",
         touchAction: "none",
-        transform: `scale(${scale})`,
+        // Only set a transform when actually zoomed. A non-`none` transform
+        // (even scale(1)) makes this panel a containing block for any nested
+        // position:fixed element, which would mis-position modals like the
+        // custom-shape editor. `undefined` leaves transform as `none`.
+        transform: scale === 1 ? undefined : `scale(${scale})`,
         transformOrigin: "top left",
       }}
       onMouseEnter={() => setHovered(true)}
