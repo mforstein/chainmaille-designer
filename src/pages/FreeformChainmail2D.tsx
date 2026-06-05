@@ -27,6 +27,13 @@ import {
   PlacedRing,
   resolvePlacement,
 } from "../utils/e4in1Placement";
+// V2 (branch v2-development): per-element shape/size brush. First wired slice is
+// per-cell SCALE SHAPE — each painted scale remembers the shape it was painted
+// with, so one design can mix shapes. Absent meta = global activeScaleSettings.
+import {
+  type ScaleMetaMap,
+  resolveScaleShape,
+} from "../v2/elementBrush";
 
 import { DraggablePill, DraggableCompassNav } from "../App";
 import type { ExportRing, PaletteAssignment } from "../types/project";
@@ -945,10 +952,27 @@ const FreeformChainmail2D: React.FC = () => {
     scaleColorsRef.current = scaleColors;
   }, [scaleColors]);
 
+  // V2: per-cell scale metadata (shape now; size later), keyed like scaleColors
+  // ("row,col"). Kept in a ref that we update SYNCHRONOUSLY at every write so the
+  // centralized history snapshot can read it without threading a new arg through
+  // every paint/paste/fill call site. Absent key = use global scale shape.
+  const [scaleMeta, setScaleMeta] = useState<ScaleMetaMap>(() => new Map());
+  const scaleMetaRef = useRef(scaleMeta);
+  // Sync setter: update ref first (so a following pushToHistory sees it), then state.
+  const writeScaleMeta = useCallback((next: ScaleMetaMap) => {
+    scaleMetaRef.current = next;
+    setScaleMeta(next);
+  }, []);
+
   // ====================================================
   // UNDO / REDO  (ring + scale history, max 50 entries)
   // ====================================================
-  type HistoryEntry = { rings: RingMap; scaleColors: Map<string, string> };
+  type HistoryEntry = {
+    rings: RingMap;
+    scaleColors: Map<string, string>;
+    // V2: snapshot per-cell scale meta so undo/redo preserve mixed shapes.
+    scaleMeta: ScaleMetaMap;
+  };
   const historyRef = useRef<HistoryEntry[]>([]);
   const historyIndexRef = useRef(-1);
   const [canUndo, setCanUndo] = useState(false);
@@ -957,7 +981,12 @@ const FreeformChainmail2D: React.FC = () => {
 
   const pushToHistory = useCallback((ringsSnap: RingMap, scalesSnap: Map<string, string>) => {
     const stack = historyRef.current.slice(0, historyIndexRef.current + 1);
-    stack.push({ rings: new Map(ringsSnap), scaleColors: new Map(scalesSnap) });
+    stack.push({
+      rings: new Map(ringsSnap),
+      scaleColors: new Map(scalesSnap),
+      // Read the synchronously-maintained meta ref (see writeScaleMeta).
+      scaleMeta: new Map(scaleMetaRef.current),
+    });
     if (stack.length > 50) stack.shift();
     historyRef.current = stack;
     historyIndexRef.current = stack.length - 1;
@@ -985,7 +1014,7 @@ const FreeformChainmail2D: React.FC = () => {
     if (didInitialHistoryPushRef.current) return;
     didInitialHistoryPushRef.current = true;
     historyRef.current = [
-      { rings: new Map(rings), scaleColors: new Map(scaleColors) },
+      { rings: new Map(rings), scaleColors: new Map(scaleColors), scaleMeta: new Map() },
     ];
     historyIndexRef.current = 0;
     setCanUndo(false);
@@ -999,9 +1028,10 @@ const FreeformChainmail2D: React.FC = () => {
     const snap = historyRef.current[historyIndexRef.current];
     setRings(new Map(snap.rings));
     setScaleColors(new Map(snap.scaleColors));
+    writeScaleMeta(new Map(snap.scaleMeta ?? []));
     setCanUndo(historyIndexRef.current > 0);
     setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
-  }, []);
+  }, [writeScaleMeta]);
 
   const handleRedoAction = useCallback(() => {
     if (historyIndexRef.current >= historyRef.current.length - 1) return;
@@ -1009,9 +1039,10 @@ const FreeformChainmail2D: React.FC = () => {
     const snap = historyRef.current[historyIndexRef.current];
     setRings(new Map(snap.rings));
     setScaleColors(new Map(snap.scaleColors));
+    writeScaleMeta(new Map(snap.scaleMeta ?? []));
     setCanUndo(historyIndexRef.current > 0);
     setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
-  }, []);
+  }, [writeScaleMeta]);
 
   // Keyboard shortcut: Ctrl/Cmd+Z = undo, Ctrl/Cmd+Shift+Z or Ctrl+Y = redo
   useEffect(() => {
@@ -3656,7 +3687,8 @@ const derived = useMemo(() => {
         holeIdMm: activeScaleSettings.holeIdMm,
         widthMm: activeScaleSettings.widthMm,
         heightMm: activeScaleSettings.heightMm,
-        shape: activeScaleSettings.shape,
+        // V2: per-cell shape override → else the global shape.
+        shape: resolveScaleShape(scaleMeta.get(key), activeScaleSettings.shape),
         dropMm: activeScaleSettings.dropMm,
         holeOffsetYMm: activeScaleSettings.holeOffsetYMm,
         tiltRad: tiltDeg * DEG,
@@ -3667,7 +3699,7 @@ const derived = useMemo(() => {
       },
     ];
   });
-}, [scaleColors, activeScaleSettings, rcToLogical, scaleImagePatches]);
+}, [scaleColors, scaleMeta, activeScaleSettings, rcToLogical, scaleImagePatches]);
 
   // ====================================================
   // IMAGE OVERLAY GEOMETRY (shared by preview + transfer)
@@ -5999,18 +6031,30 @@ const derived = useMemo(() => {
         // reflected cell so both sides paint/erase together.
         const nextScaleColors = new Map(scaleColorsRef.current);
         const nextPatches = new Map(scaleImagePatchesRef.current);
+        // V2: stamp the brush's current shape onto each painted cell so the
+        // scale keeps it even if the global shape changes later. Erase clears it.
+        const nextMeta: ScaleMetaMap = new Map(scaleMetaRef.current);
+        const brushShape = activeScaleSettings.shape;
+        let metaChanged = false;
         let patchesChanged = false;
         const paintColor = normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex);
         for (const cell of mirrorCellsFor(approxRow, approxCol)) {
           const key = `${cell.row},${cell.col}`;
-          if (eraseModeRef.current) nextScaleColors.delete(key);
-          else nextScaleColors.set(key, paintColor);
+          if (eraseModeRef.current) {
+            nextScaleColors.delete(key);
+            if (nextMeta.delete(key)) metaChanged = true;
+          } else {
+            nextScaleColors.set(key, paintColor);
+            nextMeta.set(key, { ...(nextMeta.get(key) ?? {}), shapeId: brushShape });
+            metaChanged = true;
+          }
           // Painting OR erasing must drop any prior image-overlay patch at
           // this key (new solid color overwrites it; a freshly placed scale
           // doesn't auto-inherit the previous Image Fill).
           if (nextPatches.delete(key)) patchesChanged = true;
         }
         setScaleColors(nextScaleColors);
+        if (metaChanged) writeScaleMeta(nextMeta);
         if (patchesChanged) setScaleImagePatches(nextPatches);
         pushToHistoryDebounced(rings, nextScaleColors);
         return;
@@ -6178,6 +6222,8 @@ const derived = useMemo(() => {
     // ✅ Clear scales (state + ref cache)
     setScaleColors(new Map());
     scaleColorsRef.current?.clear();
+    // V2: clear per-cell scale meta too.
+    writeScaleMeta(new Map());
 
     // ✅ Clear any image-overlay patches that were transferred onto scales.
     // Without this, a fresh design that re-uses the same row/col coordinates
@@ -6210,6 +6256,7 @@ const derived = useMemo(() => {
     setSelectedKeys,
     setOverlayMaskKeys,
     clearInteractionCanvas,
+    writeScaleMeta,
   ]);
   // ===============================
   // UI RESET (tools/pan/zoom/panels/overlays/drag positions)
@@ -6559,6 +6606,11 @@ const derived = useMemo(() => {
         }
         setScaleColors(newScaleColors);
       }
+      // V2: the save format doesn't persist per-cell scale meta yet, so reset it
+      // on load — loaded scales fall back to the design's global shape (legacy
+      // behavior) and never inherit a previous in-session design's overrides.
+      // (Persisting/restoring meta is a tracked follow-up slice.)
+      writeScaleMeta(new Map());
 
       // Restore scale settings via tuner snapshot
       if (data.scaleSettings && typeof data.scaleSettings === "object") {
