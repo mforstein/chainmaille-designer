@@ -6961,43 +6961,64 @@ const scales3D = useMemo(() => {
               No calibrated rings yet. Tune &amp; save rings in the Tuner — they&apos;ll show up here.
             </div>
           ) : (
-            <div style={{ display: "grid", gap: 6, maxHeight: 248, overflowY: "auto" }}>
-              {ringSets.map((rs) => {
-                const active = rs.id === activeRingSetId;
-                return (
-                  <button
-                    key={rs.id}
-                    type="button"
-                    onClick={() => {
-                      // A manual pick should stick, so stop auto-following the Tuner.
-                      setAutoFollowTuner(false);
-                      try {
-                        localStorage.setItem(AUTO_FOLLOW_KEY, "false");
-                      } catch {}
-                      applyRingSet(rs);
-                    }}
-                    title={`Use ${rs.id}`}
-                    style={{
-                      textAlign: "left",
-                      padding: "7px 9px",
-                      borderRadius: 9,
-                      border: active ? "1px solid #3b82f6" : "1px solid #1e293b",
-                      background: active ? "rgba(37,99,235,0.22)" : "rgba(255,255,255,0.03)",
-                      color: "#e5e7eb",
-                      cursor: "pointer",
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 2,
-                    }}
-                  >
-                    <span style={{ fontSize: 12, fontWeight: 600 }}>{rs.id}</span>
-                    <span style={{ fontSize: 10.5, color: "#94a3b8" }}>
-                      ID {rs.innerDiameter.toFixed(2)} · WD {rs.wireDiameter.toFixed(2)} mm
-                      {rs.aspectRatio ? ` · AR ${rs.aspectRatio}` : ""}
-                    </span>
-                  </button>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, maxHeight: 280, overflowY: "auto" }}>
+              {(() => {
+                // Draw each ring to its TRUE relative proportions: a circle whose
+                // stroke = wire diameter and centerline radius = (ID+WD)/2, scaled
+                // so the largest ring's outer edge fills the cell. Hover shows the
+                // numbers (ID / wire / AR) instead of cluttering the swatch.
+                const CELL = 44;
+                const PAD = 4;
+                const avail = CELL / 2 - 2; // px available for the outer radius
+                const maxOD = ringSets.reduce(
+                  (m, r) => Math.max(m, r.innerDiameter + 2 * r.wireDiameter),
+                  0.001,
                 );
-              })}
+                const mmToPx = avail / (maxOD / 2);
+                return ringSets.map((rs) => {
+                  const active = rs.id === activeRingSetId;
+                  const ringR = ((rs.innerDiameter + rs.wireDiameter) / 2) * mmToPx;
+                  const wirePx = Math.max(1.2, rs.wireDiameter * mmToPx);
+                  return (
+                    <button
+                      key={rs.id}
+                      type="button"
+                      onClick={() => {
+                        // A manual pick should stick, so stop auto-following the Tuner.
+                        setAutoFollowTuner(false);
+                        try {
+                          localStorage.setItem(AUTO_FOLLOW_KEY, "false");
+                        } catch {}
+                        applyRingSet(rs);
+                      }}
+                      title={`${rs.id} — ID ${rs.innerDiameter.toFixed(2)} · WD ${rs.wireDiameter.toFixed(2)} mm${rs.aspectRatio ? ` · AR ${rs.aspectRatio}` : ""}`}
+                      style={{
+                        width: CELL + PAD * 2,
+                        height: CELL + PAD * 2,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: 0,
+                        borderRadius: 10,
+                        border: active ? "1px solid #3b82f6" : "1px solid #1e293b",
+                        background: active ? "rgba(37,99,235,0.22)" : "rgba(255,255,255,0.03)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <svg width={CELL} height={CELL} viewBox={`0 0 ${CELL} ${CELL}`} style={{ display: "block" }}>
+                        <circle
+                          cx={CELL / 2}
+                          cy={CELL / 2}
+                          r={Math.max(2, ringR)}
+                          fill="none"
+                          stroke={active ? "#e8edf5" : "#c7ced8"}
+                          strokeWidth={wirePx}
+                        />
+                      </svg>
+                    </button>
+                  );
+                });
+              })()}
             </div>
           )}
 
