@@ -6424,6 +6424,19 @@ const derived = useMemo(() => {
     if (storedActive) setActiveRingSetId(storedActive);
   }, [reloadRingSets]);
 
+  // Keep the Calibrated Rings palette current: refresh when the tab regains
+  // focus (e.g. after saving a ring in the Tuner) or when another tab writes
+  // the matrix.
+  useEffect(() => {
+    const refresh = () => reloadRingSets();
+    window.addEventListener("focus", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, [reloadRingSets]);
+
   useEffect(() => {
     if (!ringSets.length) return;
 
@@ -6922,6 +6935,107 @@ const scales3D = useMemo(() => {
         position: "relative",
       }}
     >
+      {/* Calibrated Rings palette — lists ring sets saved in the Tuner; click to
+          use one. Movable + shrinkable like the other pills (DraggablePill). */}
+      <DraggablePill id="calibrated-rings-pill" defaultPosition={{ x: 250, y: 20 }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: 8,
+            padding: 12,
+            background: "rgba(11,18,32,0.92)",
+            border: "1px solid #1e293b",
+            borderRadius: 14,
+            minWidth: 200,
+            maxWidth: 240,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+            <span style={{ fontWeight: 700, fontSize: 13 }}>🔗 Calibrated Rings</span>
+            <span style={{ fontSize: 11, color: "#94a3b8" }}>{ringSets.length}</span>
+          </div>
+
+          {ringSets.length === 0 ? (
+            <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.45 }}>
+              No calibrated rings yet. Tune &amp; save rings in the Tuner — they&apos;ll show up here.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 6, maxHeight: 248, overflowY: "auto" }}>
+              {ringSets.map((rs) => {
+                const active = rs.id === activeRingSetId;
+                return (
+                  <button
+                    key={rs.id}
+                    type="button"
+                    onClick={() => {
+                      // A manual pick should stick, so stop auto-following the Tuner.
+                      setAutoFollowTuner(false);
+                      try {
+                        localStorage.setItem(AUTO_FOLLOW_KEY, "false");
+                      } catch {}
+                      applyRingSet(rs);
+                    }}
+                    title={`Use ${rs.id}`}
+                    style={{
+                      textAlign: "left",
+                      padding: "7px 9px",
+                      borderRadius: 9,
+                      border: active ? "1px solid #3b82f6" : "1px solid #1e293b",
+                      background: active ? "rgba(37,99,235,0.22)" : "rgba(255,255,255,0.03)",
+                      color: "#e5e7eb",
+                      cursor: "pointer",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 2,
+                    }}
+                  >
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>{rs.id}</span>
+                    <span style={{ fontSize: 10.5, color: "#94a3b8" }}>
+                      ID {rs.innerDiameter.toFixed(2)} · WD {rs.wireDiameter.toFixed(2)} mm
+                      {rs.aspectRatio ? ` · AR ${rs.aspectRatio}` : ""}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, color: "#94a3b8", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={autoFollowTuner}
+                onChange={(e) => {
+                  const v = e.target.checked;
+                  setAutoFollowTuner(v);
+                  try {
+                    localStorage.setItem(AUTO_FOLLOW_KEY, String(v));
+                  } catch {}
+                }}
+              />
+              Auto-follow Tuner
+            </label>
+            <button
+              type="button"
+              onClick={() => reloadRingSets()}
+              title="Refresh from Tuner"
+              style={{
+                background: "transparent",
+                border: "1px solid #1e293b",
+                borderRadius: 8,
+                color: "#94a3b8",
+                cursor: "pointer",
+                fontSize: 11,
+                padding: "3px 7px",
+              }}
+            >
+              ↻
+            </button>
+          </div>
+        </div>
+      </DraggablePill>
+
       <DraggablePill id="freeform-toolbar" defaultPosition={{ x: 20, y: 20 }}>
         <div
           style={{
