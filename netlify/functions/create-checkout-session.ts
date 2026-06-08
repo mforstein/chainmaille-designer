@@ -14,6 +14,15 @@ const PRICE_TO_TIER: Record<string, string> = {
   [process.env.VITE_STRIPE_PRICE_STUDIO ?? ""]:  "studio",
 };
 
+// Stripe Connect 90/10 revenue split (optional / inert until configured).
+// When STRIPE_CONNECTED_ACCOUNT_ID is set, this platform account keeps
+// STRIPE_PLATFORM_FEE_PERCENT (default 10) as the application fee and routes the
+// remainder (90%) to the connected account. Absent => normal single-account
+// checkout, unchanged. Set both ONLY in live env once the connected account is
+// onboarded; never commit the id.
+const CONNECTED_ACCOUNT_ID = process.env.STRIPE_CONNECTED_ACCOUNT_ID ?? "";
+const PLATFORM_FEE_PERCENT = Number(process.env.STRIPE_PLATFORM_FEE_PERCENT ?? "10");
+
 export const handler = async (event: any) => {
   if (event.httpMethod !== "POST") {
     return { statusCode: 405, body: "Method Not Allowed" };
@@ -68,6 +77,14 @@ export const handler = async (event: any) => {
       allow_promotion_codes: true,
       subscription_data: {
         metadata: { supabaseUserId: userId },
+        // 90/10 split: platform keeps PLATFORM_FEE_PERCENT, the rest transfers
+        // to the connected account. Only applied when configured.
+        ...(CONNECTED_ACCOUNT_ID && Number.isFinite(PLATFORM_FEE_PERCENT)
+          ? {
+              application_fee_percent: PLATFORM_FEE_PERCENT,
+              transfer_data: { destination: CONNECTED_ACCOUNT_ID },
+            }
+          : {}),
       },
     });
 

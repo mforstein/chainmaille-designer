@@ -434,19 +434,39 @@ export default function PricingPage() {
     return () => { clearInterval(tick); clearTimeout(done); };
   }, [success, navigate]);
 
-  const handleSubscribe = (plan: Plan) => {
-    if (!user || !plan.paymentLinkUrl) {
-      setError(!user ? "Please sign in first." : "Payment link not configured for this tier.");
+  const handleSubscribe = async (plan: Plan) => {
+    if (!user || !plan.priceEnvKey) {
+      setError(!user ? "Please sign in first." : "Pricing not configured for this tier.");
       return;
     }
     setBusy(true);
     setError(null);
-    // Stripe Payment Links accept client_reference_id and prefilled_email as query params.
-    // The webhook uses client_reference_id to match the resulting subscription back to the Supabase user.
-    const url = new URL(plan.paymentLinkUrl);
-    url.searchParams.set("client_reference_id", user.id);
-    if (user.email) url.searchParams.set("prefilled_email", user.email);
-    window.location.href = url.toString();
+    // Route B: go through create-checkout-session so the 90/10 Connect split
+    // (transfer_data + application_fee_percent) is applied server-side. The
+    // function attaches the Supabase user id to the customer + subscription
+    // metadata, which the webhook uses to set the tier.
+    try {
+      const res = await fetch("/.netlify/functions/create-checkout-session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          priceId: plan.priceEnvKey,
+          userId: user.id,
+          userEmail: user.email,
+        }),
+      });
+      let data: any = {};
+      try { data = await res.json(); } catch { /* empty body */ }
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        setError(data.error ?? "Could not start checkout.");
+        setBusy(false);
+      }
+    } catch (e: any) {
+      setError(e?.message ?? "Network error");
+      setBusy(false);
+    }
   };
 
   const handlePortal = async () => {
