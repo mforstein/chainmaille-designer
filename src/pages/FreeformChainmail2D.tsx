@@ -1523,6 +1523,18 @@ const FreeformChainmail2D: React.FC = () => {
   const [ringSets, setRingSets] = useState<RingSet[]>([]);
   const [activeRingSetId, setActiveRingSetId] = useState<string | null>(null);
   const [autoFollowTuner, setAutoFollowTuner] = useState<boolean>(true);
+  // Fast lookup for per-cell ring geometry (V2 mixing): cell.sizeId -> RingSet.
+  const ringSizeMap = useMemo(
+    () => new Map(ringSets.map((rs) => [rs.id, rs])),
+    [ringSets],
+  );
+  // Active ring acts as the BRUSH for new rings (like the scale-shape picker):
+  // painting stamps this id per cell. A ref so the paint handler reads it
+  // without re-subscribing.
+  const activeRingSetIdRef = useRef(activeRingSetId);
+  useEffect(() => {
+    activeRingSetIdRef.current = activeRingSetId;
+  }, [activeRingSetId]);
   const [tunerSnapshot, setTunerSnapshot] = useState<TunerSnapshot | null>(() =>
     loadFreeformTunerSnapshot(),
   );
@@ -3158,6 +3170,10 @@ const derived = useMemo(() => {
   rings.forEach((r) => {
     // XOR-based hash: order-independent, detects position changes (add/erase/undo)
     checksum ^= ((r.row * 31337 + r.col) | 0);
+    // V2: fold per-cell ring size in so repainting a cell with a different
+    // calibrated ring triggers a geometry rebuild (not just a color reuse).
+    const sid = (r as any).sizeId as string | undefined;
+    if (sid) for (let i = 0; i < sid.length; i++) checksum = (checksum * 33 + sid.charCodeAt(i)) | 0;
   });
 
   const prev = prevDerivedStructRef.current;
@@ -3185,6 +3201,16 @@ const derived = useMemo(() => {
       const renderColor = applyCalibrationHex(storedColor);
       const key = `${r.row},${r.col}`;
 
+      // V2: per-cell ring size. A cell painted with a calibrated ring carries
+      // its sizeId; render it at that ring's ID/wire. The non-instanced
+      // RingRenderer builds a torus per ring from these (cached by size), so
+      // mixed sizes draw at their own radius on the shared lattice. Falls back
+      // to the global ring when no per-cell size is set.
+      const cal = (r as any).sizeId ? ringSizeMap.get((r as any).sizeId) : undefined;
+      const rID = cal?.innerDiameter ?? innerIDmm;
+      const rWD = cal?.wireDiameter ?? wireMm;
+      const rOuter = (rID + 2 * rWD) / 2;
+
       rings3D.push({
         id: key,
         row: r.row,
@@ -3192,9 +3218,9 @@ const derived = useMemo(() => {
         x: shiftedX,
         y: shiftedY,
         z: 0,
-        innerDiameter: innerIDmm,
-        wireDiameter: wireMm,
-        radius: outerRadiusMm,
+        innerDiameter: rID,
+        wireDiameter: rWD,
+        radius: rOuter,
         centerSpacing,
         tilt: tiltDeg,
         tiltRad,
@@ -3208,8 +3234,8 @@ const derived = useMemo(() => {
           key,
           x_mm: baseX,
           y_mm: baseY,
-          innerDiameter_mm: innerIDmm,
-          wireDiameter_mm: wireMm,
+          innerDiameter_mm: rID,
+          wireDiameter_mm: rWD,
           colorHex: storedColor,
         });
       }
@@ -3241,6 +3267,7 @@ const derived = useMemo(() => {
   return { rings3D, paintMap, ringStats, exportRings };
   }, [
     rings,
+    ringSizeMap,
     rcToLogical,
     logicalOrigin.ox,
     logicalOrigin.oy,
@@ -6136,6 +6163,9 @@ const derived = useMemo(() => {
             settings,
           );
           ring.color = paintHex;
+          // V2: stamp the active calibrated ring (brush) onto this cell so it
+          // renders at that ring's size; mixing multiple sizes in one design.
+          if (activeRingSetIdRef.current) ring.sizeId = activeRingSetIdRef.current;
           mapCopy.set(`${ring.row}-${ring.col}`, ring);
           clusterId = newCluster;
         }
@@ -6984,12 +7014,17 @@ const scales3D = useMemo(() => {
                       key={rs.id}
                       type="button"
                       onClick={() => {
-                        // A manual pick should stick, so stop auto-following the Tuner.
+                        // Selecting a ring sets the BRUSH for new rings (like the
+                        // scale-shape picker) — it does NOT resize existing rings or
+                        // change the lattice. Painting stamps this ring's size per
+                        // cell, so a design can mix multiple ring sizes. A manual
+                        // pick also stops auto-following the Tuner.
                         setAutoFollowTuner(false);
                         try {
                           localStorage.setItem(AUTO_FOLLOW_KEY, "false");
+                          localStorage.setItem(ACTIVE_SET_KEY, rs.id);
                         } catch {}
-                        applyRingSet(rs);
+                        setActiveRingSetId(rs.id);
                       }}
                       title={`${rs.id} — ID ${rs.innerDiameter.toFixed(2)} · WD ${rs.wireDiameter.toFixed(2)} mm${rs.aspectRatio ? ` · AR ${rs.aspectRatio}` : ""}`}
                       style={{
