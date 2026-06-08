@@ -7142,49 +7142,77 @@ const scales3D = useMemo(() => {
                 custom && custom.source !== "base" ? custom.polygon : null;
               const CELL = 44;
               return (
-                <button
-                  key={entry.id}
-                  type="button"
-                  onClick={() => {
-                    setScaleSettingsOverride((prev) => ({
-                      ...prev,
-                      shape: shapeForRenderer(entry),
-                    }));
-                    setSelectedShapeMenuId(entry.id);
-                  }}
-                  title={entry.label}
-                  style={{
-                    width: CELL + 8,
-                    height: CELL + 8,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    padding: 0,
-                    borderRadius: 10,
-                    border: selected ? "1px solid #3b82f6" : "1px solid #1e293b",
-                    background: selected ? "rgba(37,99,235,0.22)" : "rgba(255,255,255,0.03)",
-                    color: selected ? "#e8edf5" : "#c7ced8",
-                    cursor: "pointer",
-                  }}
-                >
-                  {poly && poly.length >= 3 ? (
-                    <svg width={CELL} height={CELL} viewBox={`0 0 ${CELL} ${CELL}`} style={{ display: "block" }}>
-                      <path
-                        d={
-                          poly
-                            .map(([x, y], i) => `${i ? "L" : "M"} ${((x + 0.5) * CELL).toFixed(1)} ${((y + 0.5) * CELL).toFixed(1)}`)
-                            .join(" ") + " Z"
-                        }
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth={1.4}
-                        strokeLinejoin="round"
-                      />
-                    </svg>
-                  ) : (
-                    <IconScale size={26} />
+                <div key={entry.id} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScaleSettingsOverride((prev) => ({
+                        ...prev,
+                        shape: shapeForRenderer(entry),
+                      }));
+                      setSelectedShapeMenuId(entry.id);
+                    }}
+                    title={entry.label}
+                    style={{
+                      width: CELL + 8,
+                      height: CELL + 8,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                      borderRadius: 10,
+                      border: selected ? "1px solid #3b82f6" : "1px solid #1e293b",
+                      background: selected ? "rgba(37,99,235,0.22)" : "rgba(255,255,255,0.03)",
+                      color: selected ? "#e8edf5" : "#c7ced8",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {poly && poly.length >= 3 ? (
+                      <svg width={CELL} height={CELL} viewBox={`0 0 ${CELL} ${CELL}`} style={{ display: "block" }}>
+                        <path
+                          d={
+                            poly
+                              .map(([x, y], i) => `${i ? "L" : "M"} ${((x + 0.5) * CELL).toFixed(1)} ${((y + 0.5) * CELL).toFixed(1)}`)
+                              .join(" ") + " Z"
+                          }
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth={1.4}
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    ) : (
+                      <IconScale size={26} />
+                    )}
+                  </button>
+
+                  {/* Rename/delete for the SELECTED custom shape — icons only.
+                      Edit opens the shape editor (where you can rename it). */}
+                  {custom && selected && (
+                    <div style={{ display: "flex", gap: 2 }}>
+                      <button
+                        type="button"
+                        onClick={() => setShapeEditor({ mode: "edit", initial: custom })}
+                        title="Edit / rename shape"
+                        style={{ background: "transparent", border: "none", color: "#cbd5e1", cursor: "pointer", fontSize: 12, padding: "1px 4px" }}
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomShapeEntries((prev) => prev.filter((e) => e.id !== entry.id));
+                          setSelectedShapeMenuId("builtin:leaf");
+                          setScaleSettingsOverride((prev) => ({ ...prev, shape: "leaf" }));
+                        }}
+                        title="Delete shape"
+                        style={{ background: "transparent", border: "none", color: "#cbd5e1", cursor: "pointer", fontSize: 12, padding: "1px 4px" }}
+                      >
+                        🗑️
+                      </button>
+                    </div>
                   )}
-                </button>
+                </div>
               );
             })}
           </div>
@@ -7334,6 +7362,10 @@ const scales3D = useMemo(() => {
                     activeLayerRef.current = next;
                     return next;
                   });
+                  // Switching type hides the strip — you must press the ring/
+                  // scale icon to show the menu for the new layer (so the scale
+                  // strip doesn't auto-appear just from pressing S).
+                  setElementStripOpen(false);
                   setPanMode(false);
                   clearSelectionState();
                 }}
