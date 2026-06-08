@@ -7268,18 +7268,18 @@ const scales3D = useMemo(() => {
           </ToolBtn>
 
           <ToolBtn
-            onClick={() => setFinalizeOpen(true)}
-            title="Finalize & Export (SKU mapping, numbered maps, true-size print)"
-          >
-            📦
-          </ToolBtn>
-
-          <ToolBtn
             active={!toolbarCollapsed}
             onClick={() => setToolbarCollapsed((v) => !v)}
             title={toolbarCollapsed ? "Expand tools" : "Collapse tools"}
           >
             {toolbarCollapsed ? "▸" : "▾"}
+          </ToolBtn>
+
+          <ToolBtn
+            onClick={() => setFinalizeOpen(true)}
+            title="Finalize & Export (SKU mapping, numbered maps, true-size print)"
+          >
+            📦
           </ToolBtn>
 
           <ToolBtn

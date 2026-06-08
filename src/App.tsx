@@ -119,7 +119,7 @@ import ReleaseNotes from "./pages/ReleaseNotes";
 import AnalyticsTracker from "./components/AnalyticsTracker";
 import AnalyticsNotice from "./components/AnalyticsNotice";
 import BOMButtons from "./components/BOMButtons";
-import { IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo, IconRotate90, IconGridResize } from "./components/icons/ToolIcons";
+import { IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo, IconGridResize } from "./components/icons/ToolIcons";
 import { ToolBtn } from "./components/ui/ToolBtn";
 import RequiresTier from "./auth/RequiresTier";
 import { useAuth, tierAtLeast } from "./auth/AuthContext";
@@ -1356,11 +1356,20 @@ const doClearPaint = () => {
           }}
         >
           <ToolBtn
+            title="Navigation Menu"
+            active={showCompass}
+            onClick={() => setShowCompass((v) => !v)}
+          >
+            <IconHamburger size={18} />
+          </ToolBtn>
+
+          {/* Camera Tools — the triangle IS the camera toggle (▸ closed / ▾ open). */}
+          <ToolBtn
             title="Camera Tools"
             active={activeMenu === "camera"}
             onClick={(e) => { e.stopPropagation(); toggleExclusive("camera"); }}
           >
-            <IconRotate90 size={18} />
+            {activeMenu === "camera" ? "▾" : "▸"}
           </ToolBtn>
 
           <ToolBtn
@@ -1368,14 +1377,6 @@ const doClearPaint = () => {
             onClick={() => setFinalizeOpen(true)}
           >
             📦
-          </ToolBtn>
-
-          <ToolBtn
-            title="Navigation Menu"
-            active={showCompass}
-            onClick={() => setShowCompass((v) => !v)}
-          >
-            <IconHamburger size={18} />
           </ToolBtn>
 
           <ToolBtn

@@ -850,6 +850,10 @@ const ErinPattern2D: React.FC = () => {
               overflowY: "auto",
             }}
           >
+            <ToolBtn title="Navigation Menu" active={showCompass}
+              onClick={() => setShowCompass((v) => !v)}>
+              <IconHamburger size={18} />
+            </ToolBtn>
             <ToolBtn title="Back to Home" style={{ background: "#2563eb" }}
               onClick={(e) => { e.stopPropagation(); window.location.href = "/wovenrainbowsbyerin"; }}>
               🏠
@@ -880,10 +884,6 @@ const ErinPattern2D: React.FC = () => {
                 <IconRedo size={18} />
               </ToolBtn>
             </div>
-            <ToolBtn title="Navigation Menu" active={showCompass}
-              onClick={() => setShowCompass((v) => !v)}>
-              <IconHamburger size={18} />
-            </ToolBtn>
           </div>
         </DraggablePill>
 
