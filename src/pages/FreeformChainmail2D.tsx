@@ -7005,7 +7005,7 @@ const scales3D = useMemo(() => {
               Save rings in the Tuner
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, maxHeight: 420, overflowY: "auto" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, maxHeight: 292 /* ~5 swatches (52px + 8 gap); more scroll */, overflowY: "auto" }}>
               {(() => {
                 // Draw each ring to its TRUE relative proportions: a circle whose
                 // stroke = wire diameter and centerline radius = (ID+WD)/2, scaled
@@ -7133,7 +7133,8 @@ const scales3D = useMemo(() => {
             <span style={{ fontSize: 10, color: "#94a3b8" }}>{mergedShapeMenu.length}</span>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, maxHeight: 380, overflowY: "auto" }}>
+          {/* Cap at 5 scale swatches (52px each + 8px gap = 292px); more scroll. */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, maxHeight: 292, overflowY: "auto" }}>
             {mergedShapeMenu.map((entry) => {
               const selected = selectedShapeMenuId === entry.id;
               const custom =
