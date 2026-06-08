@@ -113,6 +113,32 @@ export function IconMirror({ size = 16 }: { size?: number }) {
   );
 }
 
+// A jump ring (annulus) — used as the Rings-layer indicator.
+export function IconRing({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={{ display: "block" }}>
+      <circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" strokeWidth="2.4" />
+    </svg>
+  );
+}
+
+// A standard scale silhouette (pointed-oval / almond) with a ring hole near the
+// top — used as the Scales-layer indicator instead of the old 💧 teardrop.
+export function IconScale({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={{ display: "block" }}>
+      <path
+        d="M12 3 C16.5 8, 16.5 15.5, 12 21 C7.5 15.5, 7.5 8, 12 3 Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="7" r="1.5" fill="none" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
+  );
+}
+
 export function IconScaleMove({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={{ display: "block" }}>

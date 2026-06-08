@@ -39,7 +39,7 @@ import {
 
 import { DraggablePill, DraggableCompassNav } from "../App";
 import type { ExportRing, PaletteAssignment } from "../types/project";
-import { IconCircle, IconSquare, IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo, IconMirror } from "../components/icons/ToolIcons";
+import { IconCircle, IconSquare, IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo, IconMirror, IconRing, IconScale } from "../components/icons/ToolIcons";
 import { ToolBtn } from "../components/ui/ToolBtn";
 import ShapePanel, { ShapeTool as ShapeToolId } from "../components/ShapePanel";
 import { computeShapeCells } from "../utils/shapeFill";
@@ -6971,8 +6971,9 @@ const scales3D = useMemo(() => {
         position: "relative",
       }}
     >
-      {/* Calibrated Rings palette — lists ring sets saved in the Tuner; click to
-          use one. Movable + shrinkable like the other pills (DraggablePill). */}
+      {/* Calibrated Rings strip — shown only on the Rings layer. Lists Tuner-
+          saved ring sets; click to use one as the brush. Movable + shrinkable. */}
+      {activeLayer === "rings" && (
       <DraggablePill id="calibrated-rings-pill" defaultPosition={{ x: 250, y: 20 }}>
         <div
           style={{
@@ -7101,6 +7102,109 @@ const scales3D = useMemo(() => {
           </div>
         </div>
       </DraggablePill>
+      )}
+
+      {/* Scales strip — shown only on the Scales layer. Lists the scale shapes;
+          click one to set it as the active scale shape (mirrors the rings strip). */}
+      {activeLayer === "scales" && (
+      <DraggablePill id="scales-strip-pill" defaultPosition={{ x: 250, y: 20 }}>
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 8,
+            padding: 10,
+            background: "rgba(11,18,32,0.92)",
+            border: "1px solid #1e293b",
+            borderRadius: 14,
+            minWidth: 56,
+            maxWidth: 64,
+          }}
+        >
+          <div
+            title="Scale shapes"
+            style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0, lineHeight: 1.1, color: "#c7ced8" }}
+          >
+            <IconScale size={15} />
+            <span style={{ fontSize: 10, color: "#94a3b8" }}>{mergedShapeMenu.length}</span>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, maxHeight: 380, overflowY: "auto" }}>
+            {mergedShapeMenu.map((entry) => {
+              const selected = selectedShapeMenuId === entry.id;
+              const custom =
+                !entry.builtin ? customShapeEntries.find((e) => e.id === entry.id) : null;
+              const poly =
+                custom && custom.source !== "base" ? custom.polygon : null;
+              const CELL = 44;
+              return (
+                <button
+                  key={entry.id}
+                  type="button"
+                  onClick={() => {
+                    setScaleSettingsOverride((prev) => ({
+                      ...prev,
+                      shape: shapeForRenderer(entry),
+                    }));
+                    setSelectedShapeMenuId(entry.id);
+                  }}
+                  title={entry.label}
+                  style={{
+                    width: CELL + 8,
+                    height: CELL + 8,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 0,
+                    borderRadius: 10,
+                    border: selected ? "1px solid #3b82f6" : "1px solid #1e293b",
+                    background: selected ? "rgba(37,99,235,0.22)" : "rgba(255,255,255,0.03)",
+                    color: selected ? "#e8edf5" : "#c7ced8",
+                    cursor: "pointer",
+                  }}
+                >
+                  {poly && poly.length >= 3 ? (
+                    <svg width={CELL} height={CELL} viewBox={`0 0 ${CELL} ${CELL}`} style={{ display: "block" }}>
+                      <path
+                        d={
+                          poly
+                            .map(([x, y], i) => `${i ? "L" : "M"} ${((x + 0.5) * CELL).toFixed(1)} ${((y + 0.5) * CELL).toFixed(1)}`)
+                            .join(" ") + " Z"
+                        }
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth={1.4}
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  ) : (
+                    <IconScale size={26} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShapeEditor({ mode: "add" })}
+            title="Add custom shape"
+            style={{
+              background: "transparent",
+              border: "1px solid #1e293b",
+              borderRadius: 8,
+              color: "#94a3b8",
+              cursor: "pointer",
+              fontSize: 14,
+              padding: "2px 9px",
+            }}
+          >
+            ＋
+          </button>
+        </div>
+      </DraggablePill>
+      )}
 
       <DraggablePill id="freeform-toolbar" defaultPosition={{ x: 20, y: 20 }}>
         <div
@@ -7241,17 +7345,29 @@ const scales3D = useMemo(() => {
                   scaleSettingsOverride. */}
               <div style={{ position: "relative", display: "inline-flex" }} data-nondrag>
                 <ToolBtn
-                  active={scaleShapePickerOpen}
-                  onClick={() => setScaleShapePickerOpen((v) => !v)}
-                  title={`Scale shape: ${activeShapeMenuEntry?.label ?? activeScaleSettings.shape ?? "leaf"} — click to change all scales`}
+                  active={activeLayer === "scales" && scaleShapePickerOpen}
+                  onClick={() => {
+                    // Only the scale picker is meaningful; on the rings layer this
+                    // is just a ring indicator.
+                    if (activeLayer === "scales") setScaleShapePickerOpen((v) => !v);
+                  }}
+                  title={
+                    activeLayer === "rings"
+                      ? "Rings layer — pick a calibrated ring in the strip"
+                      : `Scale shape: ${activeShapeMenuEntry?.label ?? activeScaleSettings.shape ?? "Standard"} — click to change all scales`
+                  }
                 >
-                  {activeShapeMenuEntry?.emoji ??
-                    SCALE_SHAPE_EMOJI[
-                      (activeScaleSettings.shape ?? "leaf") as ScaleShapeName
-                    ] ??
-                    "💧"}
+                  {activeLayer === "rings" ? (
+                    <IconRing size={18} />
+                  ) : (activeScaleSettings.shape ?? "leaf").startsWith("custom:") ? (
+                    <span style={{ fontSize: 18, lineHeight: 1 }}>
+                      {activeShapeMenuEntry?.emoji ?? "✨"}
+                    </span>
+                  ) : (
+                    <IconScale size={18} />
+                  )}
                 </ToolBtn>
-                {scaleShapePickerOpen && (
+                {activeLayer === "scales" && scaleShapePickerOpen && (
                   <div
                     role="menu"
                     aria-label="Scale shape"
