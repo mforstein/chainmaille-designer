@@ -1144,6 +1144,10 @@ const FreeformChainmail2D: React.FC = () => {
   // options. Selecting one updates activeScaleSettings.shape via the override,
   // which is the single source of truth driving every rendered scale's shape.
   const [scaleShapePickerOpen, setScaleShapePickerOpen] = useState(false);
+  // Whether the vertical element strip (rings on the R layer, scales on the S
+  // layer) is visible. R/S only picks the type; pressing the ring/scale icon
+  // toggles this. So the strip shows only when the icon is pressed.
+  const [elementStripOpen, setElementStripOpen] = useState(false);
   const [builtinShapeOverrides, setBuiltinShapeOverrides] =
     useState<BuiltinOverrides>(() => loadBuiltinOverrides());
   const [customShapeEntries, setCustomShapeEntries] = useState<CustomScaleShape[]>(
@@ -6970,9 +6974,9 @@ const scales3D = useMemo(() => {
         position: "relative",
       }}
     >
-      {/* Calibrated Rings strip — shown only on the Rings layer. Lists Tuner-
-          saved ring sets; click to use one as the brush. Movable + shrinkable. */}
-      {activeLayer === "rings" && (
+      {/* Calibrated Rings strip — Rings layer + the ring icon toggled open.
+          Lists Tuner-saved ring sets; click to use one as the brush. */}
+      {activeLayer === "rings" && elementStripOpen && (
       <DraggablePill id="calibrated-rings-pill" defaultPosition={{ x: 250, y: 20 }}>
         <div
           style={{
@@ -7103,9 +7107,9 @@ const scales3D = useMemo(() => {
       </DraggablePill>
       )}
 
-      {/* Scales strip — shown only on the Scales layer. Lists the scale shapes;
-          click one to set it as the active scale shape (mirrors the rings strip). */}
-      {activeLayer === "scales" && (
+      {/* Scales strip — Scales layer + the scale icon toggled open. Lists the
+          scale shapes; click one to set the active shape (mirrors rings strip). */}
+      {activeLayer === "scales" && elementStripOpen && (
       <DraggablePill id="scales-strip-pill" defaultPosition={{ x: 250, y: 20 }}>
         <div
           style={{
@@ -7344,16 +7348,16 @@ const scales3D = useMemo(() => {
                   scaleSettingsOverride. */}
               <div style={{ position: "relative", display: "inline-flex" }} data-nondrag>
                 <ToolBtn
-                  active={activeLayer === "scales" && scaleShapePickerOpen}
+                  active={elementStripOpen}
                   onClick={() => {
-                    // Only the scale picker is meaningful; on the rings layer this
-                    // is just a ring indicator.
-                    if (activeLayer === "scales") setScaleShapePickerOpen((v) => !v);
+                    // Press the ring/scale icon to show/hide the vertical strip
+                    // for the current layer (rings on R, scales on S).
+                    setElementStripOpen((v) => !v);
                   }}
                   title={
                     activeLayer === "rings"
-                      ? "Rings layer — pick a calibrated ring in the strip"
-                      : `Scale shape: ${activeShapeMenuEntry?.label ?? activeScaleSettings.shape ?? "Standard"} — click to change all scales`
+                      ? "Show/hide the calibrated rings strip"
+                      : "Show/hide the scale shapes strip"
                   }
                 >
                   {activeLayer === "rings" ? (
