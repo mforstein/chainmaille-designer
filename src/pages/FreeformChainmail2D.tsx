@@ -6978,26 +6978,30 @@ const scales3D = useMemo(() => {
           style={{
             display: "flex",
             flexDirection: "column",
+            alignItems: "center",
             gap: 8,
-            padding: 12,
+            padding: 10,
             background: "rgba(11,18,32,0.92)",
             border: "1px solid #1e293b",
             borderRadius: 14,
-            minWidth: 200,
-            maxWidth: 240,
+            minWidth: 56,
+            maxWidth: 64,
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <span style={{ fontWeight: 700, fontSize: 13 }}>🔗 Calibrated Rings</span>
-            <span style={{ fontSize: 11, color: "#94a3b8" }}>{ringSets.length}</span>
+          <div
+            title="Calibrated Rings"
+            style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 0, lineHeight: 1.1 }}
+          >
+            <span style={{ fontSize: 14 }}>🔗</span>
+            <span style={{ fontSize: 10, color: "#94a3b8" }}>{ringSets.length}</span>
           </div>
 
           {ringSets.length === 0 ? (
-            <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.45 }}>
-              No calibrated rings yet. Tune &amp; save rings in the Tuner — they&apos;ll show up here.
+            <div style={{ fontSize: 9.5, color: "#64748b", lineHeight: 1.3, textAlign: "center" }}>
+              Save rings in the Tuner
             </div>
           ) : (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, maxHeight: 280, overflowY: "auto" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, maxHeight: 420, overflowY: "auto" }}>
               {(() => {
                 // Draw each ring to its TRUE relative proportions: a circle whose
                 // stroke = wire diameter and centerline radius = (ID+WD)/2, scaled
@@ -7063,8 +7067,8 @@ const scales3D = useMemo(() => {
             </div>
           )}
 
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, color: "#94a3b8", cursor: "pointer" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
+            <label title="Auto-follow Tuner" style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, color: "#94a3b8", cursor: "pointer" }}>
               <input
                 type="checkbox"
                 checked={autoFollowTuner}
@@ -7076,7 +7080,7 @@ const scales3D = useMemo(() => {
                   } catch {}
                 }}
               />
-              Auto-follow Tuner
+              Auto
             </label>
             <button
               type="button"
@@ -7089,7 +7093,7 @@ const scales3D = useMemo(() => {
                 color: "#94a3b8",
                 cursor: "pointer",
                 fontSize: 11,
-                padding: "3px 7px",
+                padding: "3px 9px",
               }}
             >
               ↻
