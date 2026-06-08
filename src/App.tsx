@@ -119,7 +119,7 @@ import ReleaseNotes from "./pages/ReleaseNotes";
 import AnalyticsTracker from "./components/AnalyticsTracker";
 import AnalyticsNotice from "./components/AnalyticsNotice";
 import BOMButtons from "./components/BOMButtons";
-import { IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo } from "./components/icons/ToolIcons";
+import { IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo, IconRotate90, IconGridResize } from "./components/icons/ToolIcons";
 import { ToolBtn } from "./components/ui/ToolBtn";
 import RequiresTier from "./auth/RequiresTier";
 import { useAuth, tierAtLeast } from "./auth/AuthContext";
@@ -1360,7 +1360,7 @@ const doClearPaint = () => {
             active={activeMenu === "camera"}
             onClick={(e) => { e.stopPropagation(); toggleExclusive("camera"); }}
           >
-            📷
+            <IconRotate90 size={18} />
           </ToolBtn>
 
           <ToolBtn
@@ -1383,7 +1383,7 @@ const doClearPaint = () => {
             active={activeMenu === "controls"}
             onClick={(e) => { e.stopPropagation(); toggleExclusive("controls"); }}
           >
-            ▶
+            <IconGridResize size={18} />
           </ToolBtn>
 
           <ToolBtn

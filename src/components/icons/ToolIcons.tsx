@@ -139,6 +139,32 @@ export function IconScale({ size = 16 }: { size?: number }) {
   );
 }
 
+// A triangle with a 90° rotation arc — used for the Designer "Camera Tools".
+export function IconRotate90({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={{ display: "block" }}>
+      {/* the triangle */}
+      <path d="M10 8.5 L16 12 L10 15.5 Z" fill="currentColor" />
+      {/* 90° rotation arc (top-left quadrant) with an arrowhead */}
+      <path d="M4 12 A 8 8 0 0 1 12 4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M12 4 L9.4 3.4 M12 4 L11.3 6.6" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// A rectangle with a diagonal resize arrow — used for the Designer grid-size
+// (columns/rows = width/height) menu.
+export function IconGridResize({ size = 16 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={{ display: "block" }}>
+      <rect x="4" y="4" width="16" height="16" rx="2.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M9 9 L15 15" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M9 9 L9 12 M9 9 L12 9" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+      <path d="M15 15 L15 12 M15 15 L12 15" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function IconScaleMove({ size = 16 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false" style={{ display: "block" }}>
