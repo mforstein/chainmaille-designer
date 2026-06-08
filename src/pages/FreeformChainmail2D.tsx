@@ -1680,6 +1680,8 @@ const FreeformChainmail2D: React.FC = () => {
             col: r.col,
             cluster: r.cluster,
             color: (r as any).color ?? "#ffffff",
+            // V2: persist per-cell ring size so mixed-size designs reload intact.
+            ...((r as any).sizeId ? { sizeId: (r as any).sizeId } : {}),
           })),
           scaleColors: Array.from(scaleColors.entries()).map(([key, color]) => ({ key, color })),
           geometry: {
@@ -6532,6 +6534,8 @@ const derived = useMemo(() => {
         col: r.col,
         cluster: r.cluster,
         color: (r as any).color ?? "#ffffff",
+        // V2: persist per-cell ring size so mixed-size designs reload intact.
+        ...((r as any).sizeId ? { sizeId: (r as any).sizeId } : {}),
       })),
       scaleColors: Array.from(scaleColors.entries()).map(([key, color]) => ({ key, color })),
       geometry: {
@@ -6637,6 +6641,8 @@ const derived = useMemo(() => {
           col: r.col,
           cluster: r.cluster ?? 1,
           color: r.color ?? "#ffffff",
+          // V2: restore per-cell ring size so mixed-size designs reload intact.
+          ...(typeof r.sizeId === "string" ? { sizeId: r.sizeId } : {}),
         } as PlacedRing);
       }
 
