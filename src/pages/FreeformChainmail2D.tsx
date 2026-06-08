@@ -6472,17 +6472,16 @@ const derived = useMemo(() => {
   useEffect(() => {
     if (!ringSets.length) return;
 
+    // Auto-follow keeps the GLOBAL base lattice in sync with the latest Tuner
+    // save. Manual selection is a per-cell BRUSH only — it must NOT call
+    // applyRingSet (that changes centerSpacing/ID/wire globally and would
+    // reposition/resize every existing ring, i.e. the "jump" bug). The brush's
+    // size is captured per cell at paint time instead.
     if (autoFollowTuner) {
       const latest = ringSets[ringSets.length - 1];
       applyRingSet(latest);
-      return;
     }
-
-    if (activeRingSetId) {
-      const found = ringSets.find((r) => r.id === activeRingSetId);
-      if (found) applyRingSet(found);
-    }
-  }, [ringSets, autoFollowTuner, activeRingSetId, applyRingSet]);
+  }, [ringSets, autoFollowTuner, applyRingSet]);
 
   useEffect(() => {
     safeLSSet(AUTO_FOLLOW_KEY, autoFollowTuner ? "true" : "false");
