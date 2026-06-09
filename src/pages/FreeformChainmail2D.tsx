@@ -7023,6 +7023,16 @@ const scales3D = useMemo(() => {
                   const active = rs.id === activeRingSetId;
                   const ringR = ((rs.innerDiameter + rs.wireDiameter) / 2) * mmToPx;
                   const wirePx = Math.max(1.2, rs.wireDiameter * mmToPx);
+                  // Color by Atlas/Tuner solution status: green = valid,
+                  // yellow = rings_only, red = no_solution (gray if unknown).
+                  const statusColor =
+                    rs.status === "valid"
+                      ? "#19c37d"
+                      : rs.status === "rings_only"
+                        ? "#f59e0b"
+                        : rs.status === "no_solution"
+                          ? "#ef4444"
+                          : "#c7ced8";
                   return (
                     <button
                       key={rs.id}
@@ -7060,7 +7070,7 @@ const scales3D = useMemo(() => {
                           cy={CELL / 2}
                           r={Math.max(2, ringR)}
                           fill="none"
-                          stroke={active ? "#e8edf5" : "#c7ced8"}
+                          stroke={statusColor}
                           strokeWidth={wirePx}
                         />
                       </svg>
