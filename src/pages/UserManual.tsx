@@ -270,7 +270,7 @@ export default function UserManual() {
           <Bullets items={[
             <><strong>Free</strong> ($0): Home, Basic, Ring Chart, Atlas browse, Tuner preview.</>,
             <><strong>Maker</strong> ($2.99/mo): 3D Designer (no image overlay), Tuner save, Atlas apply, CSV export.</>,
-            <><strong>Crafter</strong> ($5.99/mo): 3D Designer full (spline, flood fill, image overlay), Erin Pattern 2D full, PDF BOM, Physical Pattern PDF.</>,
+            <><strong>Crafter</strong> ($5.99/mo): 3D Designer full (spline, flood fill, image overlay), Basic full, PDF BOM, Physical Pattern PDF.</>,
             <><strong>Studio</strong> ($9.99/mo): Freeform (full), Freeform image overlay & transfer, shape/spline fill, check available colors at any supplier website, GLB/STL export, Commercial-use license.</>,
           ]} />
           <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.6, marginTop: 4 }}>
@@ -279,7 +279,7 @@ export default function UserManual() {
 
           <Sub title="Default scale shape" />
           <Bullets items={[
-            <>The "Standard" scale is internally named <code>"leaf"</code>. Its silhouette is an <strong>almond / lancet</strong> — gradual rounded shoulder, max belly around 45-55% of height, smooth taper to a pointed tip — matching the physical scale Erin uses.</>,
+            <>The "Standard" scale is internally named <code>"leaf"</code>. Its silhouette is an <strong>almond / lancet</strong> — gradual rounded shoulder, max belly around 45-55% of height, smooth taper to a pointed tip — matching a typical physical scale.</>,
             <>The legacy <code>"teardrop"</code> (asymmetric round-top, point-bottom) shape is still selectable but is <em>not</em> the default. Older designs saved with teardrop continue to render correctly.</>,
             <>"Round" and "Kite" remain available for stylized work.</>,
           ]} />
@@ -337,7 +337,7 @@ export default function UserManual() {
         {/* ── HOME ─────────────────────────────────────────────────────────── */}
         <Sec id="home" icon="🏠" title="Home Page · /wovenrainbowsbyerin">
           <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
-            The public landing page. No account required. Loads live data from Erin's Etsy shop, the designer-features list, and the blog entries.
+            The public landing page. No account required. Loads live data from the Woven Rainbows by Erin Etsy shop, the designer-features list, and the blog entries.
           </p>
           <Shot src="/manual/home.png" alt="Home page" label="/wovenrainbowsbyerin"
                 fallback={<HomeFallback />} />
@@ -346,7 +346,7 @@ export default function UserManual() {
           <Feat title="Latest Release Notes">Shows the most recent update post. Admin users (logged in as <code>micahforstein@gmail.com</code>) see a <strong>+ Post Update</strong> button.</Feat>
           <Feat title="Designer Gallery">Live grid of features from <code>/designer_features.json</code> — small screenshots of capabilities with caption text.</Feat>
           <Feat title="Etsy shop strip">Live listings from the Woven Rainbows by Erin Etsy shop. Tap a card to open the listing in a new tab.</Feat>
-          <Feat title="Blog system">Erin (admin) can post short updates. Posts persist via <code>/blog_entries.json</code> on the dev server, or via Supabase in production.</Feat>
+          <Feat title="Blog system">An admin can post short updates. Posts persist via <code>/blog_entries.json</code> on the dev server, or via Supabase in production.</Feat>
         </Sec>
 
         {/* ── WORKSPACE ───────────────────────────────────────────────────── */}
@@ -373,7 +373,7 @@ export default function UserManual() {
           <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
             The primary production design environment. Place rings and scales on a free-form hex grid, apply colors, overlay reference images, fill shapes, copy + paste regions, and export finished patterns.
           </p>
-          <Shot src="/manual/freeform.png" alt="Freeform Studio overview" label="/freeform"
+          <Shot src="/manual/freeform.jpg" alt="Freeform Studio overview" label="/freeform"
                 fallback={<StudioFallback />} />
 
           <Sub title="Floating toolbar (draggable)" />
@@ -402,8 +402,10 @@ export default function UserManual() {
           <Feat title="🧹 Clear All">Removes all rings and scales. Confirmation required.</Feat>
 
           <Sub title="Image overlay" />
-          <Shot src="/manual/freeform-overlay.png" alt="Image overlay panel" label="Image Overlay panel"
-                fallback={SimpleHex("Image Overlay panel — fallback")} />
+          <Shot src="/manual/freeform-overlay-rings.jpg" alt="Freeform — image overlay transferred onto rings" label="Image overlay — rings"
+                fallback={SimpleHex("Image overlay (rings) — fallback")} />
+          <Shot src="/manual/freeform-overlay-scales.jpg" alt="Freeform — image overlay transferred onto scales" label="Image overlay — scales"
+                fallback={SimpleHex("Image overlay (scales) — fallback")} />
           <Feat title="Load / Replace image">Tap the drop zone, or drag a file in. Loading a new image replaces the previous one; the in-place "Replace image" button at the top of the panel does the same.</Feat>
           <Feat title="Scale / Opacity / Rotation / Pan X / Pan Y">Adjust how the image is registered against the design. The on-canvas preview reflects every slider in real time.</Feat>
           <Feat title="Tile (repeat)">Tile the image across the design. Pattern Scale (%) — <strong>new slider</strong> — controls tile size as a % of the design's bounding box. 100% = one tile fills the design (no visible tiling); ~15% gives a small dense pattern (matches the Designer's behavior).</Feat>
@@ -465,7 +467,7 @@ export default function UserManual() {
           <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
             Fully 3D-rendered ring grid with metallic sheen and correct torus geometry. Rotate to preview how a finished piece will look under lighting. Maker tier or higher.
           </p>
-          <Shot src="/manual/designer.png" alt="3D Designer overview" label="/designer"
+          <Shot src="/manual/designer-overlay.jpg" alt="3D Designer — image overlay transferred onto rings" label="Image overlay — rings"
                 fallback={SimpleHex("3D Designer (fallback)")} />
 
           <Sub title="Drawing tools" />
@@ -501,8 +503,10 @@ export default function UserManual() {
           <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
             Interactive reference chart of ID × WD combinations. Each cell is a to-scale ring annulus color-coded by AR. Always free.
           </p>
-          <Shot src="/manual/chart.png" alt="Ring size chart" label="/chart"
+          <Shot src="/manual/chart.jpg" alt="Ring size chart matrix" label="/chart"
                 fallback={SimpleHex("Ring Size Chart (fallback)")} />
+          <Shot src="/manual/chart-detail.jpg" alt="Selected ring detail with available supplier colors" label="Tap a ring — detail + available colors"
+                fallback={SimpleHex("Ring detail (fallback)")} />
 
           <Sub title="AR legend" />
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 7, margin: "8px 0 14px" }}>
@@ -521,7 +525,9 @@ export default function UserManual() {
           </div>
 
           <Feat title="Tap a ring">Smoothly zooms to fill the view and opens the detail panel.</Feat>
-          <Feat title="Detail panel">Dimensions and AR badge for the selected ring size.</Feat>
+          <Feat title="Detail panel — Available Colors">
+            Shows the selected ring's dimensions (ID · WD · OD), its AR with a fit badge, and material. The <strong>Available Colors</strong> swatches are the colors that supplier searches turned up for that ring size <em>at the time of publication</em> — supplier stock changes over time, so treat this as a point-in-time snapshot, not a live inventory.
+          </Feat>
         </Sec>
 
         {/* ── WEAVE TUNER ─────────────────────────────────────────────────── */}
@@ -529,7 +535,7 @@ export default function UserManual() {
           <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
             Live 3D geometry workbench. Set ring + scale parameters, see the result instantly, save the snapshot.
           </p>
-          <Shot src="/manual/tuner.png" alt="Weave Tuner" label="/tuner"
+          <Shot src="/manual/tuner.jpg" alt="Weave Tuner" label="/tuner"
                 fallback={<Mock label="Tuner (fallback)"><div style={{ padding: 20, color: "#94a3b8" }}>Live 3D geometry workbench with mode strip.</div></Mock>} />
 
           <Note>
@@ -583,7 +589,7 @@ export default function UserManual() {
           <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
             Matrix of inner diameter (rows) × wire diameter (columns). Each saved tuning entry colors its cell by the Tuner's 3-state status.
           </p>
-          <Shot src="/manual/atlas.png" alt="Weave Atlas matrix" label="/atlas"
+          <Shot src="/manual/atlas.jpg" alt="Weave Atlas matrix" label="/atlas"
                 fallback={<Mock label="Atlas (fallback)"><div style={{ padding: 20, color: "#94a3b8" }}>ID × wire matrix with status-colored cells.</div></Mock>} />
 
           <Sub title="Cell colors" />
@@ -622,12 +628,12 @@ export default function UserManual() {
           </Note>
         </Sec>
 
-        {/* ── BASIC (Erin Pattern 2D) ──────────────────────────────────────── */}
-        <Sec id="pattern" icon="🪡" title="Basic · /erin2d">
+        {/* ── BASIC ────────────────────────────────────────────────────────── */}
+        <Sec id="pattern" icon="🪡" title="Basic">
           <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
             Lightweight grid-based 2D color planner — fastest path from idea to color-way sketch. Free for all tiers.
           </p>
-          <Shot src="/manual/erin2d.png" alt="Basic (Erin Pattern 2D)" label="/erin2d"
+          <Shot src="/manual/erin2d.png" alt="Basic" label="Basic"
                 fallback={<Mock label="Basic (fallback)"><div style={{ padding: 20, color: "#94a3b8" }}>Hex-offset grid with palette and pan/zoom.</div></Mock>} />
 
           <Feat title="Grid painting">Tap to apply the active color; drag for a continuous stroke.</Feat>
