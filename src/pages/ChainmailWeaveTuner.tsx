@@ -1553,7 +1553,6 @@ if (scaleEnabled) {
                   { label: "Width", val: scaleWidth, set: setScaleWidth, min: 4, max: 30, step: 0.1 },
                   { label: "Height", val: scaleHeight, set: setScaleHeight, min: 6, max: 45, step: 0.1 },
                   { label: "Drop", val: scaleDrop, set: setScaleDrop, min: -10, max: 20, step: 0.05 },
-                  { label: "Hole pos", val: scaleHoleOffsetY, set: setScaleHoleOffsetY, min: -12, max: 12, step: 0.05 },
                 ].map(({ label, val, set, min, max, step }) => (
                   <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>

@@ -58,7 +58,6 @@ import { useViewport } from "./hooks/useViewport";
 // SupplierColorRefreshButton removed 2026-06-01 — no longer surfaced anywhere
 // in the 3D Designer UI (was a "Refresh supplier color cache" affordance).
 import { Routes, Route, Navigate, useNavigate, Link } from "react-router-dom";
-import { calculateBOM } from "./BOM/bomCalculator";
 import "./index.css";
 import "./ui/ui-grid.css";
 import HomeWovenRainbows from "./pages/HomeWovenRainbows";
@@ -91,7 +90,7 @@ import {
 import { MATERIALS, UNIVERSAL_COLORS } from "./utils/colors";
 // SupplierMenu removed from 3D Designer 2026-06-01 — supplier-specific color
 // browsing is gone here. Generic catalog references only remain in Freeform.
-import AtlasPalette from "./components/AtlasPalette";
+import DesignerRingStrip from "./components/DesignerRingStrip";
 import {
   ImageOverlayPanel,
   OverlayState,
@@ -1110,12 +1109,6 @@ const paintRingsInsidePolygon = useCallback(
   [exportRings, setPaint, paint, pushPaintHistory],
 );
   // ==============================
-  // BOM Calculation (Read-Only)
-  // ==============================
-  const bom = useMemo(() => {
-    return calculateBOM(getBOMRings());
-  }, [getBOMRings]);
-
   // kept for future use (export widgets, etc.)
   void useMemo(() => getBOMRings().map((r) => ({ colorHex: r.colorHex })), [
     getBOMRings,
@@ -1245,10 +1238,6 @@ const doClearPaint = () => {
     } catch {}
   });
 };
-  // ==============================
-  // BOM Panel State
-  // ==============================
-  const [showBOM, setShowBOM] = useState(false);
 
   // ============================================================
   // 💾 SAVE / LOAD — DESIGNER PAGE (NO NEW FILES)
@@ -1306,7 +1295,8 @@ const doClearPaint = () => {
     // ✅ Preserve current paint + overlay
     localStorage.setItem("chainmailSelected", JSON.stringify(e));
     window.dispatchEvent(new Event("weave-updated"));
-    setShowMagnet(false);
+    // Keep the ring strip open so it behaves like a selection manager — the
+    // picked ring stays highlighted as active (matches the Freeform strip).
 
     console.log("🧲 Material/Weave updated — paint and overlay preserved.");
   };
@@ -1398,9 +1388,22 @@ const doClearPaint = () => {
 
         {/* --- Controls (▶) Menu — rows/cols dialog --- */}
         {activeMenu === "controls" && (
+          /* Grid Size lives in its OWN draggable panel (DraggablePill is
+             position:fixed, so it floats free instead of widening the toolbar).
+             The wrapper stops pointer events from bubbling into the toolbar pill
+             (camera-pill): nested DraggablePills otherwise fight over pointer
+             capture, leaving this panel stuck following the cursor. */
           <div
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerMove={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+          >
+          <DraggablePill
+            id="designer-grid-size"
+            defaultPosition={{ x: 180, y: 70 }}
             style={{
-              marginTop: 12,
               maxHeight: "calc(100vh - 180px - env(safe-area-inset-bottom))",
               overflowY: "auto",
               paddingBottom: "calc(8px + env(safe-area-inset-bottom))",
@@ -1415,9 +1418,6 @@ const doClearPaint = () => {
               color: "#ddd",
               fontSize: 13,
             }}
-            onPointerDown={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
           >
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Grid Size</div>
 
@@ -1495,6 +1495,7 @@ onChange={(e) => {
                 />
               </label>
             </div>
+          </DraggablePill>
           </div>
         )}
 
@@ -1659,17 +1660,6 @@ onChange={(e) => {
         defaultFileName="chainmail-designer"
       />
 
-      {/* BOM */}
-      <ToolBtn
-        title="Bill of Materials"
-        active={showBOM}
-        onClick={(e) => {
-          e.stopPropagation();
-          setShowBOM((v) => !v);
-        }}
-      >
-        🧾
-      </ToolBtn>
     </div>
   </DraggablePill>
 )}
@@ -1891,17 +1881,15 @@ onChange={(e) => {
         </DraggablePill>
       )}
 
-      {/* === Floating Magnet Dialog (Supplier + Atlas) === */}
+      {/* === Floating RINGS strip — draggable, like the Freeform calibrated-rings strip.
+             Drag the header / padding to move it; clicking a ring selects it. === */}
       {showMagnet && (
-        <div
-          onClick={(e) => e.stopPropagation()}
+        <DraggablePill
+          id="designer-rings-pill"
+          defaultPosition={{ x: 90, y: 60 }}
           style={{
-            position: "fixed",
-            left: 90,
-            top: 60,
-            bottom: 8,
-            width: 480,
-            zIndex: 70,
+            width: 132,
+            maxHeight: "calc(100vh - 68px)",
             background: "rgba(10,15,20,.98)",
             border: "1px solid rgba(0,0,0,.6)",
             borderRadius: 14,
@@ -1910,33 +1898,41 @@ onChange={(e) => {
             display: "flex",
             flexDirection: "column",
             gap: 10,
-            overflow: "hidden",
           }}
         >
-          {/* header row with close button */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-            <span style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700, letterSpacing: 1 }}>SUPPLIER & ATLAS</span>
-            <button
-              onClick={() => setShowMagnet(false)}
-              style={{ background: "none", border: "none", color: "#64748b", fontSize: 18, cursor: "pointer", lineHeight: 1, padding: "0 4px" }}
-            >×</button>
-          </div>
-
-          {/* Atlas Palette section */}
           <div
-            style={{
-              background: "rgba(17,24,39,.96)",
-              borderRadius: 10,
-              padding: 10,
-              border: "1px solid #1f2937",
-              flex: 1,
-              minHeight: 0,
-              overflowY: "auto",
-            }}
+            onClick={(e) => e.stopPropagation()}
+            style={{ display: "flex", flexDirection: "column", gap: 10, flex: 1, minHeight: 0 }}
           >
-            <AtlasPalette onApply={(e) => applyAtlas(e)} />
+            {/* header row with close button */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <span style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700, letterSpacing: 1 }}>RINGS</span>
+              <button
+                data-nondrag
+                onClick={() => setShowMagnet(false)}
+                style={{ background: "none", border: "none", color: "#64748b", fontSize: 18, cursor: "pointer", lineHeight: 1, padding: "0 4px" }}
+              >×</button>
+            </div>
+
+            {/* ring strip section */}
+            <div
+              style={{
+                background: "rgba(17,24,39,.96)",
+                borderRadius: 10,
+                padding: 10,
+                border: "1px solid #1f2937",
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+              }}
+            >
+              <DesignerRingStrip
+                onApply={(e) => applyAtlas(e)}
+                activeMatch={{ innerDiameter: params.innerDiameter, wireDiameter: params.wireDiameter }}
+              />
+            </div>
           </div>
-        </div>
+        </DraggablePill>
       )}
 
       {/* === Image Overlay Panel === */}
@@ -1972,134 +1968,6 @@ onChange={(e) => {
             }}
           />
         </div>
-      )}
-
-      {/* ==============================
-          🧾 Floating BOM Panel
-         ============================== */}
-      {showBOM && (
-        <DraggablePill id="bom-panel" defaultPosition={{ x: Math.max(20, window.innerWidth - 380), y: 120 }}>
-          <div
-            style={{
-              width: `min(340px, calc(100vw - 32px))`,
-              minWidth: 240,
-              maxWidth: 360,
-              background: "rgba(17,24,39,0.97)",
-              border: "1px solid rgba(0,0,0,.6)",
-              borderRadius: 14,
-              padding: 12,
-              color: "#e5e7eb",
-              fontSize: 13,
-              boxShadow: "0 12px 40px rgba(0,0,0,.45)",
-            }}
-          >
-            {/* Header */}
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: 8,
-              }}
-            >
-              <strong style={{ fontSize: 14 }}>🧾 Bill of Materials</strong>
-              <button
-                onClick={() => setShowBOM(false)}
-                style={{
-                  background: "none",
-                  border: "none",
-                  color: "#9ca3af",
-                  cursor: "pointer",
-                  fontSize: 16,
-                }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Summary */}
-            <div style={{ marginBottom: 10 }}>
-              <div>
-                Rings: <strong>{bom?.summary?.totalRings ?? 0}</strong>
-              </div>
-              <div>
-                Colors: <strong>{bom?.summary?.uniqueColors ?? 0}</strong>
-              </div>
-              <div>
-                Total Weight:{" "}
-                <strong>{(bom?.summary?.totalWeight ?? 0).toFixed(2)} g</strong>
-              </div>
-            </div>
-
-            {/* Color Breakdown */}
-            <div style={{ marginBottom: 10 }}>
-              <strong>By Color</strong>
-              {(bom?.lines ?? []).map((line: any) => (
-                <div
-                  key={`${line.supplier}-${line.colorHex}`}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginTop: 4,
-                  }}
-                >
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span
-                      style={{
-                        width: 12,
-                        height: 12,
-                        background: line.colorHex,
-                        borderRadius: 3,
-                        border: "1px solid #000",
-                      }}
-                    />
-                    {line.colorHex}
-                  </span>
-                  <span>{line.ringCount}</span>
-                </div>
-              ))}
-            </div>
-
-            {/* Supplier Breakdown */}
-            <div style={{ marginBottom: 10 }}>
-              <strong>By Supplier</strong>
-              {(bom?.summary?.suppliers ?? []).map((s: any) => (
-                <div
-                  key={s}
-                  style={{ display: "flex", justifyContent: "space-between" }}
-                >
-                  <span>{String(s).toUpperCase()}</span>
-                  <span>
-                    {(bom?.lines ?? [])
-                      .filter((l: any) => l.supplier === s)
-                      .reduce(
-                        (sum: number, l: any) => sum + (l.ringCount ?? 0),
-                        0,
-                      )}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {/* Print */}
-            <button
-              onClick={() => window.print()}
-              style={{
-                width: "100%",
-                marginTop: 8,
-                padding: "6px 8px",
-                borderRadius: 8,
-                background: "#2563eb",
-                color: "white",
-                border: "none",
-                cursor: "pointer",
-              }}
-            >
-              🖨 Print BOM
-            </button>
-          </div>
-        </DraggablePill>
       )}
 
       {/* === Compass Navigation Panel === */}
