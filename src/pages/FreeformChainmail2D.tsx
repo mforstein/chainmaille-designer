@@ -1963,10 +1963,10 @@ const FreeformChainmail2D: React.FC = () => {
     const offsetX = Number((overlay as any)?.offsetX ?? 0);
     const offsetY = Number((overlay as any)?.offsetY ?? 0);
     const scale = Math.max(1e-6, Number((overlay as any)?.scale ?? 1));
-    const opacity = Math.max(
-      0,
-      Math.min(1, Number((overlay as any)?.opacity ?? 1)),
-    );
+    // Overlay opacity is intentionally NOT baked into the transfer. The floating
+    // image preview uses opacity, but the transferred rings/scales always get the
+    // full-strength image color — reducing opacity must not fade the result
+    // toward white.
 
     const tileAny =
       !!(overlay as any)?.tile ||
@@ -2253,7 +2253,7 @@ const FreeformChainmail2D: React.FC = () => {
 
       if (a255 <= 2) return null;
 
-      const t = Math.max(0, Math.min(1, (a255 / 255) * opacity));
+      const t = Math.max(0, Math.min(1, a255 / 255));
       const outR = Math.round(baseR * (1 - t) + r * t);
       const outG = Math.round(baseG * (1 - t) + g * t);
       const outB = Math.round(baseB * (1 - t) + b * t);
@@ -4101,7 +4101,8 @@ const derived = useMemo(() => {
       const offsetX = Number((overlay as any)?.offsetX ?? 0);
       const offsetY = Number((overlay as any)?.offsetY ?? 0);
       const scl = Math.max(1e-6, Number((overlay as any)?.scale ?? 1));
-      const opacityVal = Math.max(0, Math.min(1, Number((overlay as any)?.opacity ?? 1)));
+      // Sampled-Colors preview mirrors the transfer result, which ignores
+      // opacity (always full-strength image — no fade toward white).
 
       const offCanvas = document.createElement("canvas");
       const offCtx = offCanvas.getContext("2d", {
@@ -4188,7 +4189,7 @@ const derived = useMemo(() => {
         const b = offData[idx + 2];
         const a255 = offData[idx + 3];
         if (a255 <= 2) return null;
-        const t = Math.max(0, Math.min(1, (a255 / 255) * opacityVal));
+        const t = Math.max(0, Math.min(1, a255 / 255));
         const outR = Math.round(baseR * (1 - t) + r * t);
         const outG = Math.round(baseG * (1 - t) + g * t);
         const outB = Math.round(baseB * (1 - t) + b * t);
