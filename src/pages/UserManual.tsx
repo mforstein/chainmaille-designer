@@ -487,11 +487,13 @@ export default function UserManual() {
           <Sub title="Camera & navigation" />
           <Feat title="📷 Camera Tools menu">Contains Image Overlay, Paint/Erase toggles, Reset View, Undo/Redo, Clear Paint, and the ⚙️ sub-panel.</Feat>
           <Feat title="Rotate (3D view)">When Paint Mode is off, click-drag orbits the camera. Pinch/scroll zooms.</Feat>
-          <Feat title="▶ Grid size">Sets columns × rows. Up to 400 × 400 (memory-limited).</Feat>
+          <Feat title="▶ Grid size">Sets columns × rows. Up to 400 × 400 (memory-limited). Opens as its own <strong>draggable floating panel</strong> — grab the "Grid Size" header to reposition it; it no longer widens the toolbar.</Feat>
 
           <Sub title="Materials & geometry presets" />
           <Feat title="Material picker">Quick presets (aluminum, sterling, stainless, brass, copper, etc.).</Feat>
-          <Feat title="🧰 Atlas panel">Apply an Atlas preset to instantly reconfigure ring geometry (ID, WD, spacing, tilt).</Feat>
+          <Feat title="🧰 Rings strip — UPDATED">
+            Open the gear (⚙️) → toolbox (🧰). The ring picker now matches Freeform's <strong>Calibrated Rings strip</strong>: each Tuner-saved ring is drawn to true proportions and color-coded by solution status (<span style={{ color: "#19c37d" }}>🟢 valid</span> · <span style={{ color: "#f59e0b" }}>🟡 rings-only</span> · <span style={{ color: "#ef4444" }}>🔴 no-solution</span>). Click a ring to apply its geometry (ID, WD, spacing, tilt) — the active ring stays highlighted. The strip is a draggable floating panel and stays open as a selection manager.
+          </Feat>
         </Sec>
 
         {/* ── RING SIZE CHART ──────────────────────────────────────────────── */}
