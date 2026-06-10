@@ -337,11 +337,15 @@ function templateToProject(t: StarterTemplate): any {
     },
     scaleSettings: {
       scaleEnabled: true,
-      scaleHoleDiameter: 7.94,
-      scaleWidth: 9.1,
-      scaleHeight: 22.2,
+      // Default standard scale (matches the Freeform/Tuner defaults) so template
+      // scales render as the proper almond/"leaf" shape WITH a visible mounting
+      // hole — the previous 9.1mm-wide / 7.94mm-hole values made a too-narrow
+      // scale whose hole filled almost the whole body.
+      scaleHoleDiameter: 6.35,
+      scaleWidth: 12.5,
+      scaleHeight: 23.5,
       scaleShape: "leaf",
-      scaleDrop: 9.2,
+      scaleDrop: 11.0,
       scaleColor: "#aaaaaa",
       scaleCenterSpacing: 19.6,
       scaleGridOffsetX: 0,
