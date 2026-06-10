@@ -6487,6 +6487,26 @@ const derived = useMemo(() => {
     }
   }, [ringSets, autoFollowTuner, applyRingSet]);
 
+  // Ring TILT (Angle In/Out) must reflect the active/latest Tuner ring set even
+  // when NOT auto-following — otherwise a manually-selected brush ring leaves the
+  // rings flat on first load until the user toggles "Auto" (which runs
+  // applyRingSet). Applying just the tilt here is safe: unlike applyRingSet it
+  // never changes ID/wire/centerSpacing, so it can't reposition the lattice
+  // ("jump" bug). The ref applies a given set's tilt once, so a manual override
+  // via the Ring Angle sliders persists across ring-set reloads.
+  const appliedAngleSetRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!ringSets.length) return;
+    const active =
+      (activeRingSetId && ringSets.find((r) => r.id === activeRingSetId)) ||
+      ringSets[ringSets.length - 1];
+    if (!active) return;
+    if (appliedAngleSetRef.current === active.id) return;
+    appliedAngleSetRef.current = active.id;
+    setAngleIn(active.angleIn ?? 25);
+    setAngleOut(active.angleOut ?? -25);
+  }, [ringSets, activeRingSetId]);
+
   useEffect(() => {
     safeLSSet(AUTO_FOLLOW_KEY, autoFollowTuner ? "true" : "false");
   }, [autoFollowTuner]);
@@ -9600,6 +9620,27 @@ const scales3D = useMemo(() => {
                   step={0.1}
                   unit="mm"
                 />
+                {/* Ring tilt — even rows use Angle In, odd rows Angle Out (matches the
+                    Weave Tuner). Editing here is a manual override, so it stops
+                    auto-following the Tuner. */}
+                <SliderRow
+                  label="Ring Angle In (°)"
+                  value={angleIn}
+                  setValue={(v) => { setAngleIn(v); setAutoFollowTuner(false); }}
+                  min={-75}
+                  max={75}
+                  step={1}
+                  unit="°"
+                />
+                <SliderRow
+                  label="Ring Angle Out (°)"
+                  value={angleOut}
+                  setValue={(v) => { setAngleOut(v); setAutoFollowTuner(false); }}
+                  min={-75}
+                  max={75}
+                  step={1}
+                  unit="°"
+                />
               </>
             )}
 
@@ -9761,10 +9802,10 @@ const scales3D = useMemo(() => {
                 <SliderRow label="Scale Drop (mm)" value={activeScaleSettings.dropMm}
                   setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, dropMm: v })); }}
                   min={-10} max={20} step={0.05} unit="mm" />
-                <SliderRow label="Angle In (°)" value={activeScaleSettings.angleInDeg}
+                <SliderRow label="Scale Angle In (°)" value={activeScaleSettings.angleInDeg}
                   setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, angleInDeg: v })); }}
                   min={-45} max={45} step={0.5} unit="°" />
-                <SliderRow label="Angle Out (°)" value={activeScaleSettings.angleOutDeg}
+                <SliderRow label="Scale Angle Out (°)" value={activeScaleSettings.angleOutDeg}
                   setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, angleOutDeg: v })); }}
                   min={-45} max={45} step={0.5} unit="°" />
                 <SliderRow label="Scale Plane Z (mm)" value={activeScaleSettings.scalePlaneZ}
