@@ -16,7 +16,6 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import SpriteText from "three-spritetext";
 import type { OverlayState } from "../components/ImageOverlayPanel";
 import RingRendererInstanced from "./RingRendererInstanced";
-import { getCustomShapeById } from "../lib/customScaleShapes";
 
 // ============================================================
 // Utility Constants & Conversions
@@ -114,30 +113,6 @@ export interface RenderParams {
 
 export type PaintMap = Map<string, string | null>;
 
-export type ScaleRenderItem = {
-  key: string;
-  row: number;
-  col: number;
-  x: number;
-  y: number;
-  z: number;
-  bodyX: number;
-  bodyY: number;
-  color: string;
-  holeDiameter: number;
-  width: number;
-  height: number;
-  shape: string;
-  tiltRad: number;
-  planeZMm: number;
-  tipLiftDeg: number;
-  rowClearanceZMm: number;
-  dropMm: number;
-  // Optional per-scale image patch (data URL). When set, the scale's
-  // material uses this image as a CanvasTexture map so the picture is
-  // painted directly onto the scale outline (clipped by the mesh).
-  imagePatchUrl?: string | null;
-};
 
 // ✅ External authoritative 2D view state (optional)
 export type ExternalViewState = {
@@ -157,15 +132,11 @@ type Props = {
   initialPaintMode?: boolean;
   initialEraseMode?: boolean;
   initialRotationLocked?: boolean;
-  scales3D?: ScaleRenderItem[];
-  showScales?: boolean;
-  scalesBehindRings?: boolean;
   onGridAspectChange?: (aspect: number) => void;
   // Keys (formatted as "row-col" or "row,col" — both formats are accepted) of
   // scales/rings that should be visually highlighted as "selected". Selected
   // scales render with a bright outline + glow so the user can see which one
   // an action (transfer, paint) will affect.
-  highlightedScaleKeys?: Set<string>;
   highlightedRingKeys?: Set<string>;
 };
 
@@ -212,118 +183,6 @@ export type RingRendererHandle = {
 // ============================================================
 // Scale rendering helpers (mirrors ChainmailWeaveTuner.tsx)
 // ============================================================
-function makeScaleShapeRR(
-  shape: string,
-  w: number,
-  h: number,
-  holeDia: number,
-  bodyOffY: number,
-): THREE.Shape {
-  const hw = w / 2;
-  const tipY = bodyOffY - h;
-  const shoulderY = bodyOffY - h * 0.08;
-  const bellyY = bodyOffY - h * 0.45;
-  const lowerY = bodyOffY - h * 0.78;
-  const s = new THREE.Shape();
-
-  // Custom polygon shapes ("custom:<id>"): place the polygon in the same
-  // vertical span as built-ins. Polygon is normalized to a unit square
-  // centered at (0, 0) with y-down — three.js Shape uses y-up, so flip y.
-  if (typeof shape === "string" && shape.startsWith("custom:")) {
-    const custom = getCustomShapeById(shape);
-    if (custom?.source === "base" && custom.baseShape) {
-      shape = custom.baseShape; // fall through to built-in path below
-    } else if (custom?.polygon && custom.polygon.length >= 3) {
-      // Bbox of built-ins spans roughly [tipY .. shoulderY] vertically.
-      // We want the polygon bbox to fit in that span and stay horizontally
-      // centered at x=0.
-      const yCenter = (shoulderY + tipY) / 2;
-      const spanY = shoulderY - tipY; // positive
-      // Note: polygon y is "down-positive" but three.js y is "up-positive",
-      // so we negate. Bbox of normalized polygon is at most [-0.5, 0.5].
-      const pts = custom.polygon;
-      const [x0, y0] = pts[0];
-      s.moveTo(x0 * w, yCenter - y0 * spanY);
-      for (let i = 1; i < pts.length; i++) {
-        const [px, py] = pts[i];
-        s.lineTo(px * w, yCenter - py * spanY);
-      }
-      s.closePath();
-      // Use traced inner holes if present (e.g. the scale's ring hole was
-      // detected in the image); otherwise fall back to the circular default.
-      if (custom.holes && custom.holes.length) {
-        for (const hole of custom.holes) {
-          if (hole.length < 3) continue;
-          const path = new THREE.Path();
-          const [hx0, hy0] = hole[0];
-          path.moveTo(hx0 * w, yCenter - hy0 * spanY);
-          for (let i = 1; i < hole.length; i++) {
-            const [px, py] = hole[i];
-            path.lineTo(px * w, yCenter - py * spanY);
-          }
-          path.closePath();
-          s.holes.push(path);
-        }
-      } else {
-        const hole = new THREE.Path();
-        hole.absellipse(0, 0, holeDia / 2, holeDia / 2, 0, Math.PI * 2, true, 0);
-        s.holes.push(hole);
-      }
-      return s;
-    }
-  }
-
-  if (shape === "round") {
-    s.moveTo(0, shoulderY);
-    s.bezierCurveTo(hw * 0.95, shoulderY, hw * 1.05, bodyOffY - h * 0.52, 0, tipY);
-    s.bezierCurveTo(-hw * 1.05, bodyOffY - h * 0.52, -hw * 0.95, shoulderY, 0, shoulderY);
-  } else if (shape === "kite") {
-    s.moveTo(0, shoulderY);
-    s.lineTo(hw * 0.96, bodyOffY - h * 0.3);
-    s.lineTo(hw * 0.56, lowerY);
-    s.lineTo(0, tipY);
-    s.lineTo(-hw * 0.56, lowerY);
-    s.lineTo(-hw * 0.96, bodyOffY - h * 0.3);
-    s.closePath();
-  } else {
-    // "Standard" chainmaille scale — almond / vesica piscis silhouette
-    // matching the physical scale photo (scale.jpg). Both top AND bottom
-    // are gently rounded (no sharp tip); max width is at vertical midpoint.
-    // Two cubic beziers, one per side, with horizontally-mirrored control
-    // points so the top/bottom transitions are tangent-continuous.
-    // This is also the fallback for legacy "teardrop" and any unknown
-    // shape value — teardrop bezier removed 2026-06-01 per Erin.
-    // Use bellyY (~0.45h) and lowerY (~0.78h) just for reference — actual
-    // control points pulled from those vertical bands.
-    void bellyY; void lowerY;
-    s.moveTo(0, shoulderY);
-    s.bezierCurveTo(
-      hw * 1.10, bodyOffY - h * 0.20,
-      hw * 1.10, bodyOffY - h * 0.82,
-      0, tipY,
-    );
-    s.bezierCurveTo(
-      -hw * 1.10, bodyOffY - h * 0.82,
-      -hw * 1.10, bodyOffY - h * 0.20,
-      0, shoulderY,
-    );
-  }
-  const hole = new THREE.Path();
-  hole.absellipse(0, 0, holeDia / 2, holeDia / 2, 0, Math.PI * 2, true, 0);
-  s.holes.push(hole);
-  return s;
-}
-
-function makeHoleRimRR(r: number, z: number, color: number): THREE.LineLoop {
-  const pts = new THREE.EllipseCurve(0, 0, r, r, 0, Math.PI * 2, false, 0)
-    .getPoints(64)
-    .map((p) => new THREE.Vector3(p.x, p.y, z));
-  return new THREE.LineLoop(
-    new THREE.BufferGeometry().setFromPoints(pts),
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 }),
-  );
-}
-
 function dollyCamera(
   camera: THREE.PerspectiveCamera,
   controls: OrbitControls | undefined,
@@ -538,11 +397,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       initialPaintMode = true,
       initialEraseMode = false,
       initialRotationLocked = true,
-      scales3D,
-      showScales,
-      scalesBehindRings,
       onGridAspectChange,
-      highlightedScaleKeys,
       highlightedRingKeys,
     },
     ref,
@@ -598,12 +453,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
 
     const meshesRef = useRef<THREE.Mesh[]>([]);
     const groupRef = useRef<THREE.Group | null>(null);
-    const scaleGroupRef = useRef<THREE.Group | null>(null);
     // Geometry cache: reuse identical ShapeGeometry across rebuilds (key = shape+dims)
-    const scaleGeoCacheRef = useRef<Map<string, THREE.ShapeGeometry>>(new Map());
-    const lastScaleShapeKeyRef = useRef<string>("");
-    const showScalesRef = useRef(showScales ?? false);
-    const scalesBehindRingsRef = useRef(scalesBehindRings ?? false);
 
     // For accurate picking & fast lookup
     const meshByKeyRef = useRef<Map<string, THREE.Mesh>>(new Map());
@@ -654,12 +504,9 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       panEnabledRef.current = panEnabled;
     }, [panEnabled]);
 
-    useEffect(() => { showScalesRef.current = showScales ?? false; }, [showScales]);
-    useEffect(() => { scalesBehindRingsRef.current = scalesBehindRings ?? false; }, [scalesBehindRings]);
 
     // Selection highlight refs — held alongside scale meshes so we can update
     // highlight visibility without rebuilding the entire scale group.
-    const scaleHighlightByKeyRef = useRef<Map<string, THREE.Group>>(new Map());
     const ringHighlightByKeyRef = useRef<Map<string, THREE.Mesh>>(new Map());
 
     // Persistent cache: dataURL → loaded THREE.Texture. The scale group is
@@ -669,10 +516,6 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
     // user drags a slider, so the image would flicker or never appear.
     // The cache survives rebuilds and is pruned when entries are no longer
     // referenced by the current scales3D.
-    const scaleTextureCacheRef = useRef<Map<string, THREE.Texture>>(new Map());
-    const highlightedScaleKeysRef = useRef<Set<string>>(
-      highlightedScaleKeys ?? new Set(),
-    );
     const highlightedRingKeysRef = useRef<Set<string>>(
       highlightedRingKeys ?? new Set(),
     );
@@ -686,13 +529,6 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       s.forEach((k) => out.add(normalizeKey(k)));
       return out;
     };
-
-    const applyScaleHighlight = useCallback(() => {
-      const sel = highlightedScaleKeysRef.current;
-      scaleHighlightByKeyRef.current.forEach((grp, key) => {
-        grp.visible = sel.has(key);
-      });
-    }, []);
 
     const applyRingHighlight = useCallback(() => {
       const sel = highlightedRingKeysRef.current;
@@ -709,11 +545,6 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         mat.needsUpdate = true;
       });
     }, []);
-
-    useEffect(() => {
-      highlightedScaleKeysRef.current = buildNormalizedSet(highlightedScaleKeys);
-      applyScaleHighlight();
-    }, [highlightedScaleKeys, applyScaleHighlight]);
 
     useEffect(() => {
       highlightedRingKeysRef.current = buildNormalizedSet(highlightedRingKeys);
@@ -1369,9 +1200,6 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         controlsRef.current = null;
         cameraRef.current = null;
         sceneRef.current = null;
-        scaleGroupRef.current = null;
-        scaleGeoCacheRef.current.forEach((g) => g.dispose());
-        scaleGeoCacheRef.current.clear();
       };
     }, [safeParams.bgColor, glEpoch]);
 
@@ -1386,12 +1214,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         if (!cam || !ctr) return;
         const zoom = Math.max(1e-6, vs.zoom);
         const dist = initialZRef.current / zoom;
-        if (showScalesRef.current) {
-          const tilt = scalesBehindRingsRef.current ? 0.08 : 0.22;
-          cam.position.set(vs.panX, vs.panY + dist * Math.sin(tilt), dist * Math.cos(tilt));
-        } else {
-          cam.position.set(vs.panX, vs.panY, dist);
-        }
+        cam.position.set(vs.panX, vs.panY, dist);
         ctr.target.set(vs.panX, vs.panY, 0);
         // Tight near/far keeps depth buffer precision adequate for sub-mm Z differences
         cam.near = Math.max(0.1, dist * 0.005);
@@ -1406,13 +1229,6 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
     useEffect(() => {
       applyExternalCamera(externalViewState);
     }, [externalViewState, applyExternalCamera]);
-
-    // Re-apply camera when scale tilt changes (showScales / scalesBehindRings)
-    const externalViewStateRef = useRef(externalViewState);
-    useEffect(() => { externalViewStateRef.current = externalViewState; }, [externalViewState]);
-    useEffect(() => {
-      applyExternalCamera(externalViewStateRef.current);
-    }, [showScales, scalesBehindRings, applyExternalCamera]);
 
     // ============================================================
     // Geometry Build (Rings) — CHECKED-IN STYLE (non-instanced)
@@ -1567,326 +1383,6 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       safeParams.centerSpacing,
       externalViewState,
     ]);
-
-    // ============================================================
-    // Scale geometry build
-    // ============================================================
-    // Helper: dispose the current scale group's per-instance materials and
-    // line geometries (mesh geometries are CACHED in scaleGeoCacheRef so do
-    // not get disposed here). Used both on re-run and on unmount.
-    const disposeScaleGroup = () => {
-      const scene = sceneRef.current;
-      const grp = scaleGroupRef.current;
-      if (!grp) return;
-      try {
-        // Track seen geometries so shared geometries (e.g. highlight glow +
-        // stroke share one BufferGeometry) don't get a double-dispose warning.
-        const seenGeo = new Set<unknown>();
-        grp.traverse((o: any) => {
-          // Materials are unique per object — always dispose, including any
-          // attached image-patch texture (mat.dispose() does NOT dispose its
-          // textures by default).
-          if (o.material) {
-            const mats: any[] = Array.isArray(o.material) ? o.material : [o.material];
-            mats.forEach((m: any) => {
-              if (!m) return;
-              if (m.map) m.map.dispose?.();
-              m.dispose?.();
-              // Flag so any in-flight async texture loader sees it's dead
-              // and bails before re-attaching to a freed material.
-              (m as any).disposed = true;
-            });
-          }
-          // Geometries are disposed only when they're not the cached mesh
-          // geometry (those live in scaleGeoCacheRef and are reused across
-          // rebuilds). Cached geometries are attached to o.isMesh; line
-          // geometries (outline / highlight / hole rim) are per-instance.
-          if (!o.isMesh && o.geometry && !seenGeo.has(o.geometry)) {
-            seenGeo.add(o.geometry);
-            o.geometry.dispose?.();
-          }
-        });
-      } catch {}
-      try { scene?.remove(grp); } catch {}
-      scaleGroupRef.current = null;
-      scaleHighlightByKeyRef.current.clear();
-    };
-
-    useEffect(() => {
-      const scene = sceneRef.current;
-      if (!scene) return;
-
-      // Clean up previous scale group before rebuilding.
-      disposeScaleGroup();
-
-      if (!showScales || !Array.isArray(scales3D) || scales3D.length === 0) return;
-
-      // Clear geo cache if scale shape params changed (slider adjustment, new snapshot)
-      if (scales3D.length > 0) {
-        const s0 = scales3D[0];
-        const shapeKey = `${s0.shape}|${s0.width.toFixed(2)}|${s0.height.toFixed(2)}|${s0.holeDiameter.toFixed(2)}|${s0.dropMm.toFixed(2)}`;
-        if (shapeKey !== lastScaleShapeKeyRef.current) {
-          scaleGeoCacheRef.current.forEach((g) => g.dispose());
-          scaleGeoCacheRef.current.clear();
-          lastScaleShapeKeyRef.current = shapeKey;
-        }
-      }
-
-      const sg = new THREE.Group();
-      const maxRow = scales3D.reduce((m, s) => Math.max(m, s.row), 0);
-      const showEdges = scales3D.length <= 120; // skip edges for large counts (perf)
-
-      // The stackedZ formula in FreeformChainmail2D creates negative planeZMm for bottom rows
-      // (e.g. an 80-row fill puts the bottom row at planeZMm = -48mm, far below the rings).
-      // rowZ alone (0.5mm for the bottom row) cannot compensate.
-      // Compute a globalLift so the lowest scale always clears the ring tube tops (WD/2 + buffer).
-      const wireRadius = (safeParams.wireDiameter ?? 2) / 2;
-      const zFloor = wireRadius + 0.3; // must sit above ring-tube tops
-      const minPivotZ = scales3D.reduce((m, s) => {
-        const rowZ = (maxRow - s.row + 1) * 0.5;
-        return Math.min(m, s.planeZMm + rowZ);
-      }, Infinity);
-      // The "lift above zFloor" safety exists to keep multi-row fills from
-      // burying scales beneath the rings on FIRST render. But it also blocks
-      // the user from intentionally putting scales BEHIND the rings (negative
-      // scalePlaneZ). Skip the lift when the user has either toggled
-      // "behind rings" OR explicitly sunk the plane below zero.
-      const userWantsBehind =
-        scalesBehindRingsRef.current ||
-        scales3D.some((s) => (s.planeZMm ?? 0) < 0);
-      const globalLift = userWantsBehind ? 0 : Math.max(0, zFloor - minPivotZ);
-
-      scales3D.forEach((s, i) => {
-        const hsi = Math.max(s.holeDiameter * 0.54, s.height * 0.15);
-        const bodyOffY = -hsi + s.dropMm;
-
-        // Flat ShapeGeometry (no extrusion) eliminates inner hole-wall triangles
-        // that would bleed scale color into the hole area from the tilted camera.
-        const geoKey = `${s.shape}|${s.width.toFixed(2)}|${s.height.toFixed(2)}|${s.holeDiameter.toFixed(2)}|${bodyOffY.toFixed(2)}`;
-        let geo = scaleGeoCacheRef.current.get(geoKey);
-        const shape = makeScaleShapeRR(s.shape, s.width, s.height, s.holeDiameter, bodyOffY);
-        if (!geo) {
-          geo = new THREE.ShapeGeometry(shape, 20);
-          geo.computeVertexNormals();
-          scaleGeoCacheRef.current.set(geoKey, geo);
-        }
-
-        const mat = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(s.color),
-          side: THREE.DoubleSide,
-          metalness: 0.08,
-          roughness: 0.8,
-          depthWrite: true,
-          depthTest: true,
-          polygonOffset: true,
-          polygonOffsetFactor: -1,
-          polygonOffsetUnits: -1,
-        });
-
-        const rowZ = (maxRow - s.row + 1) * 0.5;
-        const pivot = new THREE.Group();
-        pivot.position.set(s.x, -s.y, s.planeZMm + rowZ + globalLift + i * 0.001);
-        pivot.rotation.order = "YXZ";
-        pivot.rotation.y = s.tiltRad ?? 0;
-        pivot.rotation.x = -((s.tipLiftDeg ?? 0) * DEG_RR);
-
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.renderOrder = 20 + (maxRow - s.row);
-        // Store params for 3D export (ExtrudeGeometry generation in export3dModel.ts)
-        mesh.userData.scaleExportParams = {
-          shape: s.shape,
-          width: s.width,
-          height: s.height,
-          holeDia: s.holeDiameter,
-          bodyOffY,
-        };
-
-        // ── Per-scale image patch → CanvasTexture map ───────────────────
-        // When transferOverlayToRings runs with Image Fill on, it builds a
-        // small canvas per target scale containing the image region that
-        // maps to that scale's body footprint (with boundary inset and
-        // averaged-colour frame baked in). We attach it as the material's
-        // diffuse map so the image is painted onto the scale outline itself
-        // — no separate "image plane riding above the scales".
-        //
-        // ShapeGeometry sets UVs to raw vertex (x, y) coordinates rather
-        // than normalised [0,1], so we use the texture.offset/repeat
-        // transform to remap the shape's BBox into the canvas.
-        //
-        // Textures live in a persistent cache keyed by data URL; they
-        // survive scale-group rebuilds (triggered every time scales3D
-        // changes — including the user dragging the Scale Plane Z slider).
-        // Without the cache, async img loads can't keep up with rapid
-        // rebuilds and the texture never settles.
-        if (s.imagePatchUrl) {
-          const pts = shape.getPoints(20);
-          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-          for (const p of pts) {
-            if (p.x < minX) minX = p.x;
-            if (p.x > maxX) maxX = p.x;
-            if (p.y < minY) minY = p.y;
-            if (p.y > maxY) maxY = p.y;
-          }
-          const bbW = Math.max(1e-6, maxX - minX);
-          const bbH = Math.max(1e-6, maxY - minY);
-
-          const applyTex = (tex: THREE.Texture) => {
-            // Each material instance needs its own texture transform; we
-            // can't share offset/repeat across materials. Clone the cached
-            // texture so its matrix is independent.
-            const t = tex.clone();
-            t.needsUpdate = true;
-            // The patch is an sRGB-encoded image. Without this, three samples it
-            // as linear and the picture renders washed-out / desaturated. Tagging
-            // it sRGB restores the vibrant color of the source image.
-            t.colorSpace = THREE.SRGBColorSpace;
-            t.wrapS = THREE.ClampToEdgeWrapping;
-            t.wrapT = THREE.ClampToEdgeWrapping;
-            t.minFilter = THREE.LinearFilter;
-            t.magFilter = THREE.LinearFilter;
-            t.offset.set(-minX / bbW, -minY / bbH);
-            t.repeat.set(1 / bbW, 1 / bbH);
-            if ((mat as any).disposed) {
-              t.dispose();
-              return;
-            }
-            mat.map = t;
-            mat.color = new THREE.Color(0xffffff);
-            // "Lit but brightened": drive the emissive channel from the same
-            // patch so image-filled scales read vibrant (close to the flat
-            // overlay preview), while the lit diffuse map keeps a little
-            // surface shading. Non-image scales keep their default black
-            // emissive, so only picture scales get the lift.
-            mat.emissive = new THREE.Color(0xffffff);
-            mat.emissiveMap = t;
-            mat.emissiveIntensity = 0.4;
-            mat.needsUpdate = true;
-          };
-
-          const cached = scaleTextureCacheRef.current.get(s.imagePatchUrl);
-          if (cached) {
-            // Already loaded — apply synchronously so the user sees it on
-            // this very frame (no flicker during slider drag).
-            applyTex(cached);
-          } else {
-            const img = new Image();
-            img.onload = () => {
-              const tex = new THREE.Texture(img);
-              tex.needsUpdate = true;
-              // Cache the *master* texture; per-material clones above
-              // share the underlying image data.
-              scaleTextureCacheRef.current.set(s.imagePatchUrl!, tex);
-              applyTex(tex);
-            };
-            img.onerror = () => {
-              // Bad data URL — leave flat colour.
-            };
-            img.src = s.imagePatchUrl;
-          }
-        }
-        pivot.add(mesh);
-
-        if (showEdges) {
-          const edgeMat = new THREE.LineBasicMaterial({ color: 0x234050, transparent: true, opacity: 0.98 });
-          // ShapeGeometry has no hard edges between coplanar faces, so draw the outer
-          // perimeter explicitly as a LineLoop instead of using EdgesGeometry.
-          const outlinePts = shape.getPoints(20).map((p) => new THREE.Vector3(p.x, p.y, 0.008));
-          if (outlinePts.length > 1) outlinePts.push(outlinePts[0].clone());
-          const outlineGeo = new THREE.BufferGeometry().setFromPoints(outlinePts);
-          const outline = new THREE.Line(outlineGeo, edgeMat);
-          outline.renderOrder = mesh.renderOrder + 1;
-          pivot.add(outline);
-        }
-
-        const rimF = makeHoleRimRR(s.holeDiameter / 2, 0.008, 0x1f4755);
-        rimF.renderOrder = mesh.renderOrder + 2;
-        pivot.add(rimF);
-
-        const rimB = makeHoleRimRR(s.holeDiameter / 2, -0.008, 0x1f4755);
-        rimB.renderOrder = mesh.renderOrder + 2;
-        pivot.add(rimB);
-
-        // Selection highlight: a bright cyan outline a hair above the scale,
-        // plus a glow stroke a hair below. Hidden until applyScaleHighlight()
-        // toggles visibility based on highlightedScaleKeys.
-        const highlightGroup = new THREE.Group();
-        highlightGroup.visible = false;
-        const hlPts = shape.getPoints(28).map(
-          (p) => new THREE.Vector3(p.x, p.y, 0.012),
-        );
-        if (hlPts.length > 1) hlPts.push(hlPts[0].clone());
-        const hlGeo = new THREE.BufferGeometry().setFromPoints(hlPts);
-
-        // Outer glow (wider, semi-transparent)
-        const glowMat = new THREE.LineBasicMaterial({
-          color: 0xfde047, // amber-yellow
-          transparent: true,
-          opacity: 0.55,
-          linewidth: 3,
-        });
-        const glow = new THREE.Line(hlGeo, glowMat);
-        glow.renderOrder = mesh.renderOrder + 5;
-        highlightGroup.add(glow);
-
-        // Sharp inner stroke (bright cyan)
-        const strokeMat = new THREE.LineBasicMaterial({
-          color: 0x22d3ee,
-          transparent: true,
-          opacity: 0.98,
-          linewidth: 2,
-        });
-        const stroke = new THREE.Line(hlGeo, strokeMat);
-        stroke.renderOrder = mesh.renderOrder + 6;
-        highlightGroup.add(stroke);
-
-        pivot.add(highlightGroup);
-        // Register under both possible key formats so callers using either
-        // "row-col" or "row,col" work without coordination.
-        scaleHighlightByKeyRef.current.set(`${s.row}-${s.col}`, highlightGroup);
-
-        sg.add(pivot);
-      });
-
-      scaleGroupRef.current = sg;
-      scene.add(sg);
-
-      // Re-apply selection highlight visibility now that the highlight groups
-      // exist (the per-prop effect above runs before this build does).
-      applyScaleHighlight();
-
-      // Prune the persistent texture cache: drop entries whose data URLs
-      // are no longer referenced by any current scale (e.g. the user turned
-      // Image Fill off, deleted scales, or re-transferred a different image
-      // for the same scales). Disposes GPU memory promptly without dropping
-      // textures we still need.
-      const referencedUrls = new Set<string>();
-      for (const s of scales3D) if (s.imagePatchUrl) referencedUrls.add(s.imagePatchUrl);
-      for (const [url, tex] of scaleTextureCacheRef.current.entries()) {
-        if (!referencedUrls.has(url)) {
-          tex.dispose();
-          scaleTextureCacheRef.current.delete(url);
-        }
-      }
-
-      // Re-apply camera tilt now that scales are present
-      applyExternalCamera(externalViewStateRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [scales3D, showScales, scalesBehindRings, glEpoch]);
-
-    // On unmount: dispose the final scale group (the build effect above only
-    // disposes on re-runs, so without this the last build leaks GPU memory).
-    useEffect(() => {
-      return () => {
-        disposeScaleGroup();
-        // Also drop every cached scale texture — the cache survives across
-        // rebuilds but must go when the component unmounts.
-        for (const tex of scaleTextureCacheRef.current.values()) {
-          tex.dispose();
-        }
-        scaleTextureCacheRef.current.clear();
-      };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     // ============================================================
     // Keep mesh colors updated if paint changes (without rebuild)
@@ -2295,7 +1791,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       // ✅ Used by 3D model export (GLB / STL)
       getExportGroups: () => ({
         rings: groupRef.current,
-        scales: scaleGroupRef.current,
+        scales: null,
       }),
 
       applyOverlayToRings,

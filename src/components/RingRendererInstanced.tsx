@@ -25,7 +25,6 @@ import type {
   ExternalViewState,
   Ring as RingBase,
   RenderParams,
-  ScaleRenderItem,
 } from "./RingRenderer";
 
 import {
@@ -47,67 +46,6 @@ const DEG_RR = Math.PI / 180;
 // ============================================================
 // Scale geometry helpers (shared with non-instanced renderer)
 // ============================================================
-function makeScaleShapeRR(
-  shape: string,
-  w: number,
-  h: number,
-  holeDia: number,
-  bodyOffY: number,
-): THREE.Shape {
-  const hw = w / 2;
-  const tipY = bodyOffY - h;
-  const shoulderY = bodyOffY - h * 0.08;
-  const bellyY = bodyOffY - h * 0.45;
-  const lowerY = bodyOffY - h * 0.78;
-  const s = new THREE.Shape();
-  if (shape === "round") {
-    s.moveTo(0, shoulderY);
-    s.bezierCurveTo(hw * 0.95, shoulderY, hw * 1.05, bodyOffY - h * 0.52, 0, tipY);
-    s.bezierCurveTo(-hw * 1.05, bodyOffY - h * 0.52, -hw * 0.95, shoulderY, 0, shoulderY);
-  } else if (shape === "kite") {
-    s.moveTo(0, shoulderY);
-    s.lineTo(hw * 0.96, bodyOffY - h * 0.3);
-    s.lineTo(hw * 0.56, lowerY);
-    s.lineTo(0, tipY);
-    s.lineTo(-hw * 0.56, lowerY);
-    s.lineTo(-hw * 0.96, bodyOffY - h * 0.3);
-    s.closePath();
-  } else {
-    // Standard chainmaille scale — almond / vesica piscis. See
-    // RingRenderer.tsx makeScaleShapeRR (else branch) for the rationale;
-    // kept in sync so the instanced renderer (used at high ring counts)
-    // matches the standard renderer.
-    void bellyY; void lowerY;
-    s.moveTo(0, shoulderY);
-    s.bezierCurveTo(
-      hw * 1.10, bodyOffY - h * 0.20,
-      hw * 1.10, bodyOffY - h * 0.82,
-      0, tipY,
-    );
-    s.bezierCurveTo(
-      -hw * 1.10, bodyOffY - h * 0.82,
-      -hw * 1.10, bodyOffY - h * 0.20,
-      0, shoulderY,
-    );
-  }
-  const hole = new THREE.Path();
-  hole.absellipse(0, 0, holeDia / 2, holeDia / 2, 0, Math.PI * 2, true, 0);
-  s.holes.push(hole);
-  return s;
-}
-
-function makeHoleRimRR(r: number, z: number, color: number): THREE.LineLoop {
-  const pts = new THREE.EllipseCurve(0, 0, r, r, 0, Math.PI * 2, false, 0)
-    .getPoints(64)
-    .map((p) => new THREE.Vector3(p.x, p.y, z));
-  return new THREE.LineLoop(
-    new THREE.BufferGeometry().setFromPoints(pts),
-    new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 }),
-  );
-}
-
-// ============================================================
-// Color helpers
 // ============================================================
 function normalizeColor6(hex: string): string {
   const h = (hex || "").trim().toLowerCase();
@@ -275,9 +213,6 @@ type Props = {
   initialPaintMode?: boolean;
   initialEraseMode?: boolean;
   initialRotationLocked?: boolean;
-  scales3D?: ScaleRenderItem[];
-  showScales?: boolean;
-  scalesBehindRings?: boolean;
 };
 
 // ============================================================
@@ -315,9 +250,6 @@ const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
       initialPaintMode = true,
       initialEraseMode = false,
       initialRotationLocked = true,
-      scales3D,
-      showScales,
-      scalesBehindRings,
     },
     ref,
   ) {
@@ -426,11 +358,6 @@ if (calibrationProfileRef.current == null) {
     const envTexRef = useRef<THREE.Texture | null>(null);
 
     // Scale rendering refs
-    const scaleGroupRef = useRef<THREE.Group | null>(null);
-    const scaleGeoCacheRef = useRef<Map<string, THREE.ShapeGeometry>>(new Map());
-    const lastScaleShapeKeyRef = useRef<string>("");
-    const showScalesRef = useRef(showScales ?? false);
-    const scalesBehindRingsRef = useRef(scalesBehindRings ?? false);
 
     type GroupMesh = {
       key: string;
@@ -494,8 +421,6 @@ if (calibrationProfileRef.current == null) {
       panEnabledRef.current = panEnabled;
     }, [panEnabled]);
 
-    useEffect(() => { showScalesRef.current = showScales ?? false; }, [showScales]);
-    useEffect(() => { scalesBehindRingsRef.current = scalesBehindRings ?? false; }, [scalesBehindRings]);
 
     useEffect(() => {
       spatialCellSizeRef.current = safeParams.centerSpacing ?? 7.5;
@@ -1087,12 +1012,7 @@ const applyPaintAll = useCallback(() => {
         if (!cam || !ctr) return;
         const zoom = Math.max(1e-6, vs.zoom);
         const dist = initialZRef.current / zoom;
-        if (showScalesRef.current) {
-          const tilt = scalesBehindRingsRef.current ? 0.08 : 0.22;
-          cam.position.set(vs.panX, vs.panY + dist * Math.sin(tilt), dist * Math.cos(tilt));
-        } else {
-          cam.position.set(vs.panX, vs.panY, dist);
-        }
+        cam.position.set(vs.panX, vs.panY, dist);
         ctr.target.set(vs.panX, vs.panY, 0);
         cam.near = Math.max(0.1, dist * 0.005);
         cam.far = Math.max(10000, dist * 200);
@@ -1103,17 +1023,9 @@ const applyPaintAll = useCallback(() => {
       [],
     );
 
-    const externalViewStateRef = useRef(externalViewState);
-    useEffect(() => { externalViewStateRef.current = externalViewState; }, [externalViewState]);
-
     useEffect(() => {
       applyExternalCameraInstanced(externalViewState);
     }, [externalViewState, applyExternalCameraInstanced]);
-
-    // Re-apply camera tilt when showScales / scalesBehindRings changes
-    useEffect(() => {
-      applyExternalCameraInstanced(externalViewStateRef.current);
-    }, [showScales, scalesBehindRings, applyExternalCameraInstanced]);
 
     // ------------------------------------------------------------
     // Build / rebuild instanced geometry groups when rings change
@@ -1334,149 +1246,6 @@ prevPaintRef.current = new Map(paint);
 
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [rings, externalViewState, rebuildSpatialIndex, setInstanceColorByKey]);
-
-    // ------------------------------------------------------------
-    // Scale geometry build (mirrors non-instanced renderer logic)
-    // ------------------------------------------------------------
-    // Helper: dispose per-instance materials + line geometries (mesh
-    // geometries are cached and reused). Used on rebuild AND on unmount.
-    const disposeScaleGroupInstanced = () => {
-      const scene = sceneRef.current;
-      const grp = scaleGroupRef.current;
-      if (!grp) return;
-      try {
-        const seenGeo = new Set<unknown>();
-        grp.traverse((o: any) => {
-          if (o.material) {
-            const mats: any[] = Array.isArray(o.material) ? o.material : [o.material];
-            mats.forEach((m: any) => {
-              if (!m) return;
-              if (m.map) m.map.dispose?.();
-              m.dispose?.();
-              (m as any).disposed = true;
-            });
-          }
-          if (!o.isMesh && o.geometry && !seenGeo.has(o.geometry)) {
-            seenGeo.add(o.geometry);
-            o.geometry.dispose?.();
-          }
-        });
-      } catch {}
-      try { scene?.remove(grp); } catch {}
-      scaleGroupRef.current = null;
-    };
-
-    useEffect(() => {
-      const scene = sceneRef.current;
-      if (!scene) return;
-
-      disposeScaleGroupInstanced();
-
-      if (!showScales || !Array.isArray(scales3D) || scales3D.length === 0) return;
-
-      if (scales3D.length > 0) {
-        const s0 = scales3D[0];
-        const shapeKey = `${s0.shape}|${s0.width.toFixed(2)}|${s0.height.toFixed(2)}|${s0.holeDiameter.toFixed(2)}|${s0.dropMm.toFixed(2)}`;
-        if (shapeKey !== lastScaleShapeKeyRef.current) {
-          scaleGeoCacheRef.current.forEach((g) => g.dispose());
-          scaleGeoCacheRef.current.clear();
-          lastScaleShapeKeyRef.current = shapeKey;
-        }
-      }
-
-      const sg = new THREE.Group();
-      const maxRow = scales3D.reduce((m, s) => Math.max(m, s.row), 0);
-      const showEdges = scales3D.length <= 120;
-
-      const wireRadius = (safeParams.wireDiameter ?? 2) / 2;
-      const zFloor = wireRadius + 0.3;
-      const minPivotZ = scales3D.reduce((m, s) => {
-        const rowZ = (maxRow - s.row + 1) * 0.5;
-        return Math.min(m, s.planeZMm + rowZ);
-      }, Infinity);
-      // The "lift above zFloor" safety keeps multi-row stacked-Z fills from
-      // burying scales beneath rings on first render. But it also blocks the
-      // user from intentionally putting scales BEHIND the rings (negative
-      // scalePlaneZ from the Freeform Z slider). Skip the lift when the user
-      // has either toggled "behind rings" OR explicitly sunk the plane below
-      // zero — mirrors the non-instanced RingRenderer.
-      const userWantsBehind =
-        scalesBehindRingsRef.current ||
-        scales3D.some((s) => (s.planeZMm ?? 0) < 0);
-      const globalLift = userWantsBehind ? 0 : Math.max(0, zFloor - minPivotZ);
-
-      scales3D.forEach((s, i) => {
-        const hsi = Math.max(s.holeDiameter * 0.54, s.height * 0.15);
-        const bodyOffY = -hsi + s.dropMm;
-
-        const geoKey = `${s.shape}|${s.width.toFixed(2)}|${s.height.toFixed(2)}|${s.holeDiameter.toFixed(2)}|${bodyOffY.toFixed(2)}`;
-        let geo = scaleGeoCacheRef.current.get(geoKey);
-        const shape = makeScaleShapeRR(s.shape, s.width, s.height, s.holeDiameter, bodyOffY);
-        if (!geo) {
-          geo = new THREE.ShapeGeometry(shape, 20);
-          geo.computeVertexNormals();
-          scaleGeoCacheRef.current.set(geoKey, geo);
-        }
-
-        const mat = new THREE.MeshStandardMaterial({
-          color: new THREE.Color(s.color),
-          side: THREE.DoubleSide,
-          metalness: 0.08,
-          roughness: 0.8,
-          depthWrite: true,
-          depthTest: true,
-          polygonOffset: true,
-          polygonOffsetFactor: -1,
-          polygonOffsetUnits: -1,
-        });
-
-        const rowZ = (maxRow - s.row + 1) * 0.5;
-        const pivot = new THREE.Group();
-        pivot.position.set(s.x, -s.y, s.planeZMm + rowZ + globalLift + i * 0.001);
-        pivot.rotation.order = "YXZ";
-        pivot.rotation.y = s.tiltRad ?? 0;
-        pivot.rotation.x = -((s.tipLiftDeg ?? 0) * DEG_RR);
-
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.renderOrder = 20 + (maxRow - s.row);
-        pivot.add(mesh);
-
-        if (showEdges) {
-          const edgeMat = new THREE.LineBasicMaterial({ color: 0x234050, transparent: true, opacity: 0.98 });
-          const outlinePts = shape.getPoints(20).map((p) => new THREE.Vector3(p.x, p.y, 0.008));
-          if (outlinePts.length > 1) outlinePts.push(outlinePts[0].clone());
-          const outlineGeo = new THREE.BufferGeometry().setFromPoints(outlinePts);
-          const outline = new THREE.Line(outlineGeo, edgeMat);
-          outline.renderOrder = mesh.renderOrder + 1;
-          pivot.add(outline);
-        }
-
-        const rimF = makeHoleRimRR(s.holeDiameter / 2, 0.008, 0x1f4755);
-        rimF.renderOrder = mesh.renderOrder + 2;
-        pivot.add(rimF);
-
-        const rimB = makeHoleRimRR(s.holeDiameter / 2, -0.008, 0x1f4755);
-        rimB.renderOrder = mesh.renderOrder + 2;
-        pivot.add(rimB);
-
-        sg.add(pivot);
-      });
-
-      scaleGroupRef.current = sg;
-      scene.add(sg);
-
-      applyExternalCameraInstanced(externalViewStateRef.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [scales3D, showScales, scalesBehindRings]);
-
-    // Unmount cleanup — dispose the final scale group (rebuild effect above
-    // only fires on dep changes, not on component teardown).
-    useEffect(() => {
-      return () => {
-        disposeScaleGroupInstanced();
-      };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     // ------------------------------------------------------------
     // Paint changes: apply diff only
