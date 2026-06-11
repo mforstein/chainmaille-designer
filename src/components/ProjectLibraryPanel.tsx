@@ -14,7 +14,6 @@ export interface LibraryProject {
   thumbnail?: { pngDataUrl: string; width: number; height: number } | null;
   // partial project data stored lazily from localStorage
   ringCount?: number;
-  scaleCount?: number;
 }
 
 export type LoadMode = "replace" | "append";
@@ -74,10 +73,8 @@ function formatDate(ts: number): string {
 // ── Small canvas thumbnail for starter templates ──────────────────────────────
 function TemplateThumbnail({
   rings,
-  scaleColors,
 }: {
   rings: { row: number; col: number; color: string }[];
-  scaleColors: { key: string; color: string }[];
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
 
@@ -118,21 +115,9 @@ function TemplateThumbnail({
     const cellH = (H - pad * 2) / rangeR;
     const r0 = Math.min(cellW, cellH) * 0.42;
 
-    // Scale color lookup
-    const scaleMap = new Map(scaleColors.map((s) => [s.key, s.color]));
-
     for (const ring of rings) {
       const cx = pad + (ring.col - minC + 0.5) * cellW + ((ring.row - minR) & 1 ? cellW * 0.5 : 0);
       const cy = pad + (ring.row - minR + 0.5) * cellH;
-      const scColor = scaleMap.get(`${ring.row},${ring.col}`);
-
-      // Draw scale (if present) as a filled teardrop hint
-      if (scColor) {
-        ctx.fillStyle = scColor;
-        ctx.beginPath();
-        ctx.ellipse(cx, cy + r0 * 0.4, r0 * 0.55, r0 * 0.9, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
 
       // Draw ring as torus circle
       ctx.beginPath();
@@ -141,7 +126,7 @@ function TemplateThumbnail({
       ctx.lineWidth = Math.max(1, r0 * 0.28);
       ctx.stroke();
     }
-  }, [rings, scaleColors]);
+  }, [rings]);
 
   return (
     <canvas
@@ -160,7 +145,6 @@ function ProjectCard({
   thumbnail,
   thumbNode,
   ringCount,
-  scaleCount,
   date,
   canDelete,
   onLoad,
@@ -172,7 +156,6 @@ function ProjectCard({
   thumbnail?: string | null;
   thumbNode?: React.ReactNode;
   ringCount?: number;
-  scaleCount?: number;
   date?: string;
   canDelete?: boolean;
   onLoad: () => void;
@@ -248,7 +231,6 @@ function ProjectCard({
         )}
         <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>
           {ringCount !== undefined && `${ringCount} rings`}
-          {scaleCount !== undefined && scaleCount > 0 && ` · ${scaleCount} scales`}
           {date && <span style={{ marginLeft: 4, color: "#334155" }}>{date}</span>}
         </div>
       </div>
@@ -327,36 +309,12 @@ function templateToProject(t: StarterTemplate): any {
     type: "freeform",
     version: 2,
     rings: t.rings,
-    scaleColors: t.scaleColors,
     geometry: {
       innerDiameter: 7.94,
       wireDiameter: 1.2,
       centerSpacing: 7.0,
       angleIn: 0,
       angleOut: 0,
-    },
-    scaleSettings: {
-      scaleEnabled: true,
-      // Default standard scale (matches the Freeform/Tuner defaults) so template
-      // scales render as the proper almond/"leaf" shape WITH a visible mounting
-      // hole — the previous 9.1mm-wide / 7.94mm-hole values made a too-narrow
-      // scale whose hole filled almost the whole body.
-      scaleHoleDiameter: 6.35,
-      scaleWidth: 12.5,
-      scaleHeight: 23.5,
-      scaleShape: "leaf",
-      scaleDrop: 11.0,
-      scaleColor: "#aaaaaa",
-      scaleCenterSpacing: 19.6,
-      scaleGridOffsetX: 0,
-      scaleGridOffsetY: 0,
-      scaleHoleOffsetY: -6.2,
-      scalePlaneZ: 0,
-      scaleTipLiftDeg: 14,
-      scaleRowClearanceZ: 1.2,
-      scaleOnEveryCell: false,
-      lockScaleHolesToRingCenters: true,
-      scaleWeaveMode: "interlocked",
     },
     overlay: null,
     paletteAssignment: null,
@@ -579,14 +537,12 @@ export const ProjectLibraryPanel: React.FC<Props> = ({ onLoad, onClose }) => {
                   {filteredProjects.map((p) => {
                     const data = readProject(p.id);
                     const ringCount = data?.rings?.length ?? 0;
-                    const scaleCount = data?.scaleColors?.length ?? 0;
                     return (
                       <ProjectCard
                         key={p.id}
                         label={p.name}
                         thumbnail={p.thumbnail?.pngDataUrl ?? null}
                         ringCount={ringCount}
-                        scaleCount={scaleCount}
                         date={formatDate(p.updatedAt)}
                         canDelete
                         onLoad={() => handleLoadProject(p.id, "replace")}
@@ -614,10 +570,9 @@ export const ProjectLibraryPanel: React.FC<Props> = ({ onLoad, onClose }) => {
                   label={t.name}
                   description={t.description}
                   thumbNode={
-                    <TemplateThumbnail rings={t.rings} scaleColors={t.scaleColors} />
+                    <TemplateThumbnail rings={t.rings} />
                   }
                   ringCount={t.rings.length}
-                  scaleCount={t.scaleColors.length}
                   canDelete={false}
                   onLoad={() => handleLoadTemplate(t, "replace")}
                   onAppend={() => handleLoadTemplate(t, "append")}

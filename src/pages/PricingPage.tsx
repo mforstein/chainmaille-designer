@@ -84,7 +84,7 @@ const PLANS: Plan[] = [
     paymentLinkUrl: import.meta.env.VITE_STRIPE_PAYMENT_LINK_STUDIO ?? "",
     features: [
       "Everything in Crafter",
-      "Freeform 2D Designer — full ring & scale placement",
+      "Freeform 2D Designer — full ring placement",
       "Reference image overlay & color transfer",
       "Shape fill & spline drawing tools",
       "Check available colors at any supplier website",
