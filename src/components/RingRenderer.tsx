@@ -1736,6 +1736,10 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
             // texture so its matrix is independent.
             const t = tex.clone();
             t.needsUpdate = true;
+            // The patch is an sRGB-encoded image. Without this, three samples it
+            // as linear and the picture renders washed-out / desaturated. Tagging
+            // it sRGB restores the vibrant color of the source image.
+            t.colorSpace = THREE.SRGBColorSpace;
             t.wrapS = THREE.ClampToEdgeWrapping;
             t.wrapT = THREE.ClampToEdgeWrapping;
             t.minFilter = THREE.LinearFilter;
@@ -1748,6 +1752,14 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
             }
             mat.map = t;
             mat.color = new THREE.Color(0xffffff);
+            // "Lit but brightened": drive the emissive channel from the same
+            // patch so image-filled scales read vibrant (close to the flat
+            // overlay preview), while the lit diffuse map keeps a little
+            // surface shading. Non-image scales keep their default black
+            // emissive, so only picture scales get the lift.
+            mat.emissive = new THREE.Color(0xffffff);
+            mat.emissiveMap = t;
+            mat.emissiveIntensity = 0.4;
             mat.needsUpdate = true;
           };
 

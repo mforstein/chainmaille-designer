@@ -8874,12 +8874,11 @@ const scales3D = useMemo(() => {
         >
           <div
             style={{
-              width: "min(360px, calc(100vw - 32px))",
-              // Cap the panel at the viewport height and scroll the inner
-              // content when it overflows — without this, the Transfer button
-              // at the bottom falls off-screen on shorter windows.
+              width: "min(300px, calc(100vw - 32px))",
+              // Cap the panel at the viewport height. The header stays fixed and
+              // only the body scrolls, so the ✕ is always reachable even on
+              // short windows.
               maxHeight: "calc(100vh - 140px)",
-              overflowY: "auto",
               overscrollBehavior: "contain",
               background: "rgba(17,24,39,0.97)",
               border: "1px solid #1f2937",
@@ -8888,22 +8887,27 @@ const scales3D = useMemo(() => {
               color: "#f3f4f6",
               fontSize: 12,
               boxShadow: "0 8px 25px rgba(0,0,0,.5)",
-              display: "grid",
+              display: "flex",
+              flexDirection: "column",
               gap: 10,
+              overflow: "hidden",
             }}
             onPointerDown={(e) => e.stopPropagation()}
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
           >
-            {/* Header */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            {/* Fixed header — never scrolls, so the ✕ is always reachable. */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexShrink: 0 }}>
               <strong style={{ fontSize: 14, fontWeight: 700, color: "#e5e7eb" }}>🖼️ Image Overlay</strong>
               <button
                 onClick={() => setShowImageOverlay(false)}
-                style={{ background: "none", border: "none", color: "#9ca3af", cursor: "pointer", fontSize: 16 }}
+                style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.14)", borderRadius: 8, color: "#e5e7eb", cursor: "pointer", fontSize: 14, padding: "4px 9px", lineHeight: 1, flexShrink: 0 }}
                 title="Close"
               >✕</button>
             </div>
+
+            {/* Scrolling body — everything below the fixed header. */}
+            <div style={{ display: "grid", gap: 10, flex: 1, minHeight: 0, overflowY: "auto", overscrollBehavior: "contain", paddingRight: 2 }}>
 
             {/* Drop zone */}
             <div
@@ -8979,6 +8983,18 @@ const scales3D = useMemo(() => {
                 {overlay?.dataUrl ? "🔄 Click or drop to replace image" : "📂 Click or drop an image to overlay"}
               </div>
             </div>
+
+            {/* Transfer button — placed just above the preview so it's reachable
+                without scrolling once an image is loaded. */}
+            <button type="button" onClick={transferOverlayToRings}
+              disabled={isTransferring || !overlay?.dataUrl || (overlayScope === "selection" && overlayMaskKeys.size === 0)}
+              style={{
+                width: "100%", padding: "10px 12px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.14)",
+                background: "#22c55e", color: "#052e16", fontWeight: 900,
+                cursor: isTransferring || !overlay?.dataUrl ? "not-allowed" : "pointer",
+                opacity: isTransferring || !overlay?.dataUrl || (overlayScope === "selection" && overlayMaskKeys.size === 0) ? 0.6 : 1,
+              }}
+            >{isTransferring ? "Transferring…" : transferTarget === "rings" ? "Transfer to Rings" : transferTarget === "scales" ? "Transfer to Scales" : "Transfer to Rings + Scales"}</button>
 
             {/* Source preview — STABLE. Shows the image content (scale +
                 rotation applied) so the user knows what will be painted.
@@ -9211,16 +9227,7 @@ const scales3D = useMemo(() => {
               </div>
             </div>
 
-            {/* Transfer button */}
-            <button type="button" onClick={transferOverlayToRings}
-              disabled={isTransferring || !overlay?.dataUrl || (overlayScope === "selection" && overlayMaskKeys.size === 0)}
-              style={{
-                width: "100%", padding: "10px 12px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.14)",
-                background: "#22c55e", color: "#052e16", fontWeight: 900,
-                cursor: isTransferring || !overlay?.dataUrl ? "not-allowed" : "pointer",
-                opacity: isTransferring || !overlay?.dataUrl || (overlayScope === "selection" && overlayMaskKeys.size === 0) ? 0.6 : 1,
-              }}
-            >{isTransferring ? "Transferring…" : transferTarget === "rings" ? "Transfer to Rings" : transferTarget === "scales" ? "Transfer to Scales" : "Transfer to Rings + Scales"}</button>
+            </div>{/* end scrolling body */}
           </div>
         </DraggablePill>
       )}

@@ -858,9 +858,13 @@ const ErinPattern2D: React.FC = () => {
               onClick={(e) => { e.stopPropagation(); window.location.href = "/wovenrainbowsbyerin"; }}>
               🏠
             </ToolBtn>
-            <ToolBtn title="Toggle paint mode" active={paintActive}
-              onClick={() => setPaintActive((v) => !v)}>
+            <ToolBtn title="Paint mode" active={paintActive}
+              onClick={() => setPaintActive(true)}>
               🎨
+            </ToolBtn>
+            <ToolBtn title="Pan / move (drag to pan)" active={!paintActive}
+              onClick={() => setPaintActive(false)}>
+              ✋
             </ToolBtn>
             {paintActive && (
               <>

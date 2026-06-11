@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useNavigate, useSearchParams, useLocation, Navigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 
@@ -31,7 +31,7 @@ export default function AuthPage() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { signIn, signUp, resetPassword, updatePassword, user, loading } = useAuth();
+  const { signIn, signUp, resetPassword, updatePassword, signOut, user, loading } = useAuth();
 
   const initialMode = (searchParams.get("mode") as Mode) ?? "signin";
   const [mode, setMode] = useState<Mode>(initialMode);
@@ -45,15 +45,9 @@ export default function AuthPage() {
   const redirectTo =
     (location.state as { redirect?: string })?.redirect ?? "/workspace";
 
-  // Already logged in — bounce straight through, UNLESS:
-  //   - mode is "upgrade" (canonical pricing page lives elsewhere)
-  //   - mode is "reset" (Supabase issued a recovery session; user MUST stay
-  //     on this page to set a new password before the session is useful)
-  useEffect(() => {
-    if (!loading && user && mode !== "upgrade" && mode !== "reset") {
-      navigate(redirectTo, { replace: true });
-    }
-  }, [user, loading, mode, navigate, redirectTo]);
+  // Signed-in users are NOT bounced away anymore — this is the sign-in /
+  // sign-out page, so it shows an account view (email + Sign Out) below.
+  // (Exceptions: "upgrade" → /pricing, "reset" → password form, handled later.)
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
@@ -122,6 +116,47 @@ export default function AuthPage() {
   // ── Upgrade view: canonical pricing UI lives at /pricing now ──────────────
   if (mode === "upgrade") {
     return <Navigate to="/pricing" replace />;
+  }
+
+  // ── Account view: when already signed in, this page shows who is signed in
+  //    with a Sign Out button (reset mode keeps its own password form). ──────
+  if (user && mode !== "reset") {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0F1115", color: "#E5E7EB", padding: 24 }}>
+        <div style={{ width: "min(380px, 100%)", textAlign: "center" }}>
+          <h1 style={{ marginBottom: 4, fontSize: 20, fontWeight: 800 }}>
+            Woven Rainbows by Erin
+          </h1>
+          <p style={{ color: "#9CA3AF", marginBottom: 24, fontSize: 14 }}>
+            Signed in as <strong style={{ color: "#E5E7EB" }}>{user.email}</strong>
+          </p>
+          <button
+            type="button"
+            onClick={() => navigate(redirectTo, { replace: true })}
+            style={{ ...btnPrimary, marginBottom: 12 }}
+          >
+            Continue to app
+          </button>
+          <button
+            type="button"
+            onClick={async () => { await signOut(); navigate("/wovenrainbowsbyerin", { replace: true }); }}
+            style={{
+              width: "100%",
+              padding: "11px",
+              background: "none",
+              border: "1px solid #374151",
+              borderRadius: 8,
+              color: "#9CA3AF",
+              cursor: "pointer",
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    );
   }
 
   // ── Auth card ──────────────────────────────────────────────────────────────

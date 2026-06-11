@@ -7,15 +7,9 @@
 // "Access Studio" hero were all removed.
 // ======================================================
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
-
-interface BlogEntry {
-  author: string;
-  content: string;
-  timestamp: string;
-}
 
 const TIER_BADGE_COLOR: Record<string, string> = {
   free: "#6b7280",
@@ -51,23 +45,16 @@ const sectionPanel: React.CSSProperties = {
 const HomeWovenRainbows: React.FC = () => {
   const navigate = useNavigate();
   const { user, tier, signOut } = useAuth();
-  const [latestPost, setLatestPost] = useState<BlogEntry | null>(null);
+  const [showAbout, setShowAbout] = useState(false);
 
-  // Load most recent release note (used to be the "blog" entries; same source).
-  useEffect(() => {
-    fetch("/blog_entries.json")
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          const sorted = [...data].sort(
-            (a, b) =>
-              new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-          );
-          setLatestPost(sorted[0]);
-        }
-      })
-      .catch(() => setLatestPost(null));
-  }, []);
+  // Plan shown on the home page: Free unless the user is signed in AND has a
+  // Stripe customer (i.e. a real paid subscription set by the Stripe webhook).
+  // This ignores dev/legacy tier overrides for display so the badge reflects the
+  // actual billed plan — Free when not signed in or no Stripe account.
+  const stripeCustomerId = (user as any)?.user_metadata?.stripeCustomerId as
+    | string
+    | undefined;
+  const displayPlan = user && stripeCustomerId ? tier : "free";
 
   return (
     <div
@@ -115,103 +102,27 @@ const HomeWovenRainbows: React.FC = () => {
           🌈 Woven Rainbows by Erin
         </h1>
 
-        {/* Byline */}
-        <p
+        {/* Sub-title */}
+        <div
           style={{
             textAlign: "center",
-            color: "#9ca3af",
-            fontSize: 14,
-            marginBottom: 36,
+            fontSize: "1.15rem",
+            fontWeight: 700,
+            color: "#a78bfa",
+            margin: "0 0 32px",
           }}
         >
-          This app was created by{" "}
-          <strong style={{ color: "#e5e7eb" }}>Micah Forstein</strong>
-        </p>
+          Chainmail Studio
+        </div>
 
         {/* Workspace Navigator panel */}
         <section style={sectionPanel}>
-          {/* Header row */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 12,
-              flexWrap: "wrap",
-              gap: 10,
-            }}
-          >
-            <h2 style={{ fontSize: 20, fontWeight: 800, margin: 0 }}>
-              Workspace Navigator
-            </h2>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <Link
-                to="/pricing"
-                style={{
-                  fontSize: 12,
-                  color: "#a78bfa",
-                  textDecoration: "none",
-                  fontWeight: 600,
-                }}
-              >
-                Pricing
-              </Link>
-              <span
-                style={{
-                  background: TIER_BADGE_COLOR[tier] ?? "#6b7280",
-                  color: "white",
-                  borderRadius: 6,
-                  padding: "3px 10px",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  textTransform: "capitalize",
-                }}
-              >
-                {tier}
-              </span>
-              {user ? (
-                <button
-                  onClick={async () => {
-                    await signOut();
-                  }}
-                  style={{
-                    background: "none",
-                    border: "1px solid #374151",
-                    borderRadius: 6,
-                    color: "#9ca3af",
-                    padding: "3px 10px",
-                    cursor: "pointer",
-                    fontSize: 12,
-                  }}
-                >
-                  Sign out
-                </button>
-              ) : (
-                <Link
-                  to="/auth"
-                  style={{
-                    background: "none",
-                    border: "1px solid #374151",
-                    borderRadius: 6,
-                    color: "#9ca3af",
-                    padding: "3px 10px",
-                    fontSize: 12,
-                    textDecoration: "none",
-                  }}
-                >
-                  Sign in
-                </Link>
-              )}
-            </div>
-          </div>
+          {/* Header */}
+          <h2 style={{ fontSize: 20, fontWeight: 800, margin: "0 0 12px", textAlign: "center" }}>
+            Workspace Navigator
+          </h2>
 
-          {user && (
-            <div style={{ color: "#6b7280", fontSize: 12, marginBottom: 10 }}>
-              {user.email}
-            </div>
-          )}
-
-          <div style={{ color: "#9ca3af", marginBottom: 12, fontSize: 13 }}>
+          <div style={{ color: "#9ca3af", marginBottom: 12, fontSize: 13, textAlign: "center" }}>
             Choose a workspace:
           </div>
 
@@ -241,6 +152,7 @@ const HomeWovenRainbows: React.FC = () => {
               textTransform: "uppercase",
               letterSpacing: 1,
               margin: "22px 0 10px",
+              textAlign: "center",
             }}
           >
             Utilities
@@ -265,32 +177,50 @@ const HomeWovenRainbows: React.FC = () => {
           </div>
         </section>
 
-        {/* Latest Release Notes */}
-        {latestPost && (
-          <section style={sectionPanel}>
-            <h3 style={{ fontSize: 16, fontWeight: 800, margin: "0 0 10px" }}>
-              Latest Release Notes
-            </h3>
-            <p
+        {/* Plan & Account panel */}
+        <section style={sectionPanel}>
+          <h3 style={{ fontSize: 16, fontWeight: 800, margin: "0 0 14px", textAlign: "center" }}>
+            Plan
+          </h3>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
+            <button
+              onClick={() => navigate("/pricing")}
               style={{
-                whiteSpace: "pre-wrap",
-                lineHeight: 1.6,
-                color: "#cbd5e1",
-                margin: "0 0 10px",
+                background: "#0f172a",
+                color: "#a78bfa",
+                border: "1px solid #334155",
+                borderRadius: 8,
+                padding: "7px 14px",
+                cursor: "pointer",
+                fontSize: 13,
+                fontWeight: 700,
               }}
             >
-              {latestPost.content}
-            </p>
-            <div style={{ color: "#9ca3af", fontSize: 12, marginBottom: 14 }}>
-              — {latestPost.author},{" "}
-              {new Date(latestPost.timestamp).toLocaleDateString()}
-            </div>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              💲 Pricing
+            </button>
+            <button
+              onClick={() => navigate("/pricing")}
+              title="Your current plan"
+              style={{
+                background: TIER_BADGE_COLOR[displayPlan] ?? "#0f172a",
+                color: "#fff",
+                border: `1px solid ${TIER_BADGE_COLOR[displayPlan] ?? "#334155"}`,
+                borderRadius: 8,
+                padding: "7px 14px",
+                cursor: "pointer",
+                fontSize: 13,
+                fontWeight: 800,
+                textTransform: "capitalize",
+              }}
+            >
+              {displayPlan}
+            </button>
+            {user ? (
               <button
-                onClick={() => navigate("/release-notes")}
+                onClick={async () => { await signOut(); }}
                 style={{
                   background: "#0f172a",
-                  color: "#94a3b8",
+                  color: "#9ca3af",
                   border: "1px solid #334155",
                   borderRadius: 8,
                   padding: "7px 14px",
@@ -299,13 +229,14 @@ const HomeWovenRainbows: React.FC = () => {
                   fontWeight: 600,
                 }}
               >
-                View All Release Notes
+                Sign Out
               </button>
+            ) : (
               <button
-                onClick={() => navigate("/manual")}
+                onClick={() => navigate("/auth")}
                 style={{
                   background: "#0f172a",
-                  color: "#60a5fa",
+                  color: "#9ca3af",
                   border: "1px solid #334155",
                   borderRadius: 8,
                   padding: "7px 14px",
@@ -314,35 +245,156 @@ const HomeWovenRainbows: React.FC = () => {
                   fontWeight: 600,
                 }}
               >
-                📖 User Manual
+                Sign In
               </button>
-            </div>
-          </section>
-        )}
+            )}
+          </div>
+        </section>
 
-        {/* Footer */}
-        <footer
-          style={{
-            display: "flex",
-            justifyContent: "center",
-            gap: 14,
-            marginTop: 32,
-            fontSize: 12,
-            color: "#6b7280",
-          }}
-        >
-          <Link to="/eula" style={{ color: "#6b7280", textDecoration: "none" }}>
-            EULA
-          </Link>
-          <span>·</span>
-          <Link to="/privacy" style={{ color: "#6b7280", textDecoration: "none" }}>
-            Privacy
-          </Link>
-          <span>·</span>
-          <Link to="/manual" style={{ color: "#6b7280", textDecoration: "none" }}>
-            Manual
-          </Link>
-        </footer>
+        {/* Release Notes / Manual / About */}
+        <section style={sectionPanel}>
+          <h3 style={{ fontSize: 16, fontWeight: 800, margin: "0 0 14px", textAlign: "center" }}>
+            Documentation
+          </h3>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
+            <button
+              onClick={() => navigate("/release-notes")}
+              style={{
+                background: "#0f172a",
+                color: "#94a3b8",
+                border: "1px solid #334155",
+                borderRadius: 8,
+                padding: "7px 14px",
+                cursor: "pointer",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              View All Release Notes
+            </button>
+            <button
+              onClick={() => navigate("/manual")}
+              style={{
+                background: "#0f172a",
+                color: "#60a5fa",
+                border: "1px solid #334155",
+                borderRadius: 8,
+                padding: "7px 14px",
+                cursor: "pointer",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              📖 User Manual
+            </button>
+            <button
+              onClick={() => setShowAbout(true)}
+              style={{
+                background: "#0f172a",
+                color: "#a78bfa",
+                border: "1px solid #334155",
+                borderRadius: 8,
+                padding: "7px 14px",
+                cursor: "pointer",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              ℹ️ About
+            </button>
+            <button
+              onClick={() => navigate("/eula")}
+              style={{
+                background: "#0f172a",
+                color: "#94a3b8",
+                border: "1px solid #334155",
+                borderRadius: 8,
+                padding: "7px 14px",
+                cursor: "pointer",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              EULA
+            </button>
+            <button
+              onClick={() => navigate("/privacy")}
+              style={{
+                background: "#0f172a",
+                color: "#94a3b8",
+                border: "1px solid #334155",
+                borderRadius: 8,
+                padding: "7px 14px",
+                cursor: "pointer",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
+            >
+              Privacy
+            </button>
+          </div>
+        </section>
+
+        {/* About dialog */}
+        {showAbout && (
+          <div
+            onClick={() => setShowAbout(false)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.7)",
+              backdropFilter: "blur(6px)",
+              zIndex: 100000,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 20,
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: "#0f172a",
+                border: "1px solid rgba(148,163,184,0.25)",
+                borderRadius: 18,
+                padding: "28px 32px",
+                maxWidth: 360,
+                width: "100%",
+                textAlign: "center",
+                boxShadow: "0 24px 64px rgba(0,0,0,0.75)",
+                color: "#e5e7eb",
+              }}
+            >
+              <div style={{ fontSize: 20, fontWeight: 800, marginBottom: 6 }}>
+                Chainmail Studio
+              </div>
+              <div style={{ fontSize: 14, color: "#a78bfa", fontWeight: 700, marginBottom: 16 }}>
+                Version 1.0
+              </div>
+              <div style={{ fontSize: 14, color: "#cbd5e1", lineHeight: 1.7 }}>
+                Written by Micah Forstein
+                <br />
+                6/10/2026
+              </div>
+              <button
+                onClick={() => setShowAbout(false)}
+                style={{
+                  marginTop: 22,
+                  background: "rgba(167,139,250,0.18)",
+                  color: "#e5e7eb",
+                  border: "1px solid rgba(167,139,250,0.5)",
+                  borderRadius: 10,
+                  padding: "9px 22px",
+                  cursor: "pointer",
+                  fontSize: 14,
+                  fontWeight: 700,
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -100,7 +100,7 @@ export default function ReleaseNotes() {
               {e.content}
             </div>
             <div style={{ color: "#6b7280", fontSize: 12 }}>
-              — {e.author}, {new Date(e.timestamp).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+              — {e.author}, {new Date(e.timestamp).toLocaleDateString("en-US", { year: "numeric", month: "numeric", day: "numeric" })}
             </div>
           </div>
         ))}
