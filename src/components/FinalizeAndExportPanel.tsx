@@ -338,39 +338,6 @@ function drawScaleGlyph(args: {
 }
 
 /* ---------------------- types ---------------------- */
-type ExportScale = {
-  key?: string;
-  row?: number;
-  col?: number;
-  x_mm?: number;
-  y_mm?: number;
-  colorHex?: string;
-  holeId_mm?: number;
-  width_mm?: number;
-  height_mm?: number;
-  // Accepts the four built-in shapes plus custom shape IDs ("custom:..." etc.)
-  // via the (string & {}) tail — keeps autocomplete for the literals but allows
-  // any string. Mirrors the ScaleShape type in FreeformChainmail2D.
-  shape?: "leaf" | "round" | "kite" | (string & {});
-  drop_mm?: number;
-  holeOffsetY_mm?: number;
-};
-
-type ScaleSettings = {
-  enabled?: boolean;
-  holeIdMm?: number;
-  widthMm?: number;
-  heightMm?: number;
-  colorHex?: string;
-  // Accepts the four built-in shapes plus custom shape IDs ("custom:..." etc.)
-  // via the (string & {}) tail — keeps autocomplete for the literals but allows
-  // any string. Mirrors the ScaleShape type in FreeformChainmail2D.
-  shape?: "leaf" | "round" | "kite" | (string & {});
-  dropMm?: number;
-  holeOffsetYMm?: number;
-};
-
-/* ---------------------- normalized models ---------------------- */
 type NormRing = {
   kind: "ring";
   row?: number;
@@ -425,46 +392,6 @@ function normalizeRings(rings: ExportRing[]): NormRing[] {
   });
 }
 
-function normalizeScales(
-  scales: ExportScale[],
-  scaleSettings?: ScaleSettings | null,
-): NormScale[] {
-  return (scales as any[]).map((s) => {
-    const x = Number.isFinite(s.x_mm) ? Number(s.x_mm) : 0;
-    const y = Number.isFinite(s.y_mm) ? Number(s.y_mm) : 0;
-    return {
-      kind: "scale",
-      row: Number.isFinite(s.row) ? Number(s.row) : undefined,
-      col: Number.isFinite(s.col) ? Number(s.col) : undefined,
-      x,
-      y,
-      colorHex: quantizeToPalette(
-        String(s.colorHex || scaleSettings?.colorHex || "#67d4e8"),
-      ),
-      holeId: Number(s.holeId_mm ?? scaleSettings?.holeIdMm ?? 6.6),
-      width: Number(s.width_mm ?? scaleSettings?.widthMm ?? 15.9),
-      height: Number(s.height_mm ?? scaleSettings?.heightMm ?? 26.6),
-      // Legacy "teardrop" saves coerce to "leaf" here so downstream
-      // renderers never see teardrop. Teardrop bezier removed 2026-06-01.
-      shape:
-        s.shape === "leaf" ||
-        s.shape === "round" ||
-        s.shape === "kite"
-          ? s.shape
-          : (s.shape === "teardrop")
-            ? "leaf"
-            : (scaleSettings?.shape === "leaf" ||
-                scaleSettings?.shape === "round" ||
-                scaleSettings?.shape === "kite")
-              ? (scaleSettings.shape as "leaf" | "round" | "kite")
-              : "leaf",
-      drop: Number(s.drop_mm ?? scaleSettings?.dropMm ?? 3),
-      holeOffsetY: Number(
-        s.holeOffsetY_mm ?? scaleSettings?.holeOffsetYMm ?? 0,
-      ),
-    };
-  });
-}
 
 function estimateCenterSpacingMm(rings: NormRing[]): number {
   const withRows = rings.filter(
@@ -1066,8 +993,6 @@ function buildPreviewFallback(rings: NormRing[], scales: NormScale[]) {
 /* ---------------------- component ---------------------- */
 type Props = {
   rings: ExportRing[];
-  scales?: ExportScale[];
-  scaleSettings?: ScaleSettings | null;
   initialAssignment?: PaletteAssignment | null;
   onAssignmentChange?: (p: PaletteAssignment | null) => void;
   getRendererCanvas?: () => HTMLCanvasElement | null;
@@ -1078,8 +1003,6 @@ type Props = {
 
 const FinalizeAndExportPanel: React.FC<Props> = ({
   rings,
-  scales = [],
-  scaleSettings = null,
   initialAssignment,
   onAssignmentChange,
   getRendererCanvas,
@@ -1091,10 +1014,8 @@ const FinalizeAndExportPanel: React.FC<Props> = ({
   const [busy3D, setBusy3D] = useState(false);
 
   const normalizedRings = useMemo(() => normalizeRings(rings), [rings]);
-  const normalizedScales = useMemo(
-    () => normalizeScales(scales, scaleSettings),
-    [scales, scaleSettings],
-  );
+  // Scales removed from the app — export is ring-only.
+  const normalizedScales = useMemo<NormScale[]>(() => [], []);
 
   const derived = useMemo(() => {
     let maxRow = -1;
