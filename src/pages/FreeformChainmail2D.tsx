@@ -8248,7 +8248,7 @@ const derived = useMemo(() => {
                 cursor: isTransferring || !overlay?.dataUrl ? "not-allowed" : "pointer",
                 opacity: isTransferring || !overlay?.dataUrl || (overlayScope === "selection" && overlayMaskKeys.size === 0) ? 0.6 : 1,
               }}
-            >{isTransferring ? "Transferring…" : transferTarget === "rings" ? "Transfer to Rings" : transferTarget === "scales" ? "Transfer to Scales" : "Transfer to Rings + Scales"}</button>
+            >{isTransferring ? "Transferring…" : "Transfer to Rings"}</button>
 
             {/* Source preview — STABLE. Shows the image content (scale +
                 rotation applied) so the user knows what will be painted.
@@ -8347,63 +8347,14 @@ const derived = useMemo(() => {
               </label>
             )}
 
-            {/* Image Fill on Scales — paints the actual image region into each
-                scale (CanvasTexture) instead of just sampling one flat colour.
-                The boundary slider insets the image inside the scale outline. */}
-            <div style={{ display: "grid", gap: 6, padding: 10, borderRadius: 12, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(2,6,23,0.75)" }}>
-              <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }} title="When on, the actual image region is drawn onto each scale, clipped to the scale outline. When off, scales get a single sampled colour (legacy behaviour).">
-                <input
-                  type="checkbox"
-                  checked={!!(overlay as any)?.imageFill}
-                  onChange={(e) =>
-                    setOverlay((p) =>
-                      p ? ({ ...p, imageFill: e.target.checked } as any) : p,
-                    )
-                  }
-                />
-                <span style={{ fontWeight: 700 }}>Image Fill on Scales</span>
-              </label>
-              <label style={{ display: "grid", gap: 4 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                  <span title="0 = image fills the scale edge-to-edge. Higher values leave a coloured frame around the image.">
-                    Image Boundary (%)
-                  </span>
-                  <span style={{ fontVariantNumeric: "tabular-nums", color: "#94a3b8", minWidth: 28, textAlign: "right" }}>
-                    {Math.round(((overlay as any)?.boundaryPct ?? 0))}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={50}
-                  step={1}
-                  value={Math.round(((overlay as any)?.boundaryPct ?? 0))}
-                  onChange={(e) => {
-                    const n = parseFloat(e.target.value);
-                    setOverlay((p) =>
-                      p
-                        ? ({
-                            ...p,
-                            boundaryPct: Number.isFinite(n)
-                              ? Math.max(0, Math.min(50, n))
-                              : 0,
-                          } as any)
-                        : p,
-                    );
-                  }}
-                  style={{ width: "100%" }}
-                />
-              </label>
-            </div>
-
             {/* Mask Outline controls — let the user snap the mask back to
-                the auto-bounds of all current scales/rings, in case they've
+                the auto-bounds of all current rings, in case they've
                 dragged it to an unintended position. */}
             <div style={{ display: "flex", gap: 8, padding: 10, borderRadius: 12, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(2,6,23,0.75)", alignItems: "center", justifyContent: "space-between" }}>
               <div>
                 <div style={{ fontWeight: 800 }}>Mask Outline</div>
                 <div style={{ fontSize: 10, color: "#94a3b8" }}>
-                  {overlayMaskOverride ? "Custom (dragged)" : "Auto (matches scales/rings)"}
+                  {overlayMaskOverride ? "Custom (dragged)" : "Auto (matches rings)"}
                 </div>
               </div>
               <button
@@ -8420,7 +8371,7 @@ const derived = useMemo(() => {
                   fontWeight: 800,
                   fontSize: 12,
                 }}
-                title="Snap the mask outline back to auto-bounds of the current scales/rings"
+                title="Snap the mask outline back to auto-bounds of the current rings"
               >Reset</button>
             </div>
 
@@ -8453,19 +8404,6 @@ const derived = useMemo(() => {
                   </div>
                 </div>
               )}
-            </div>
-
-            {/* Transfer Target */}
-            <div style={{ display: "grid", gap: 6, padding: 10, borderRadius: 12, border: "1px solid rgba(255,255,255,0.10)", background: "rgba(2,6,23,0.75)" }}>
-              <div style={{ fontWeight: 800, fontSize: 11, color: "#94a3b8" }}>TRANSFER TARGET</div>
-              <div style={{ display: "flex", gap: 6 }}>
-                {(["rings", "scales", "both"] as const).map((t) => (
-                  <label key={t} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, cursor: "pointer", padding: "5px 4px", borderRadius: 8, border: `1px solid ${transferTarget === t ? "rgba(59,130,246,0.65)" : "rgba(255,255,255,0.10)"}`, background: transferTarget === t ? "rgba(59,130,246,0.25)" : "rgba(255,255,255,0.04)" }}>
-                    <input type="radio" name="transferTarget" style={{ display: "none" }} checked={transferTarget === t} onChange={() => setTransferTarget(t)} />
-                    <span style={{ fontSize: 11, fontWeight: 700, color: transferTarget === t ? "#93c5fd" : "#94a3b8", textTransform: "capitalize" }}>{t}</span>
-                  </label>
-                ))}
-              </div>
             </div>
 
             {/* Preview Mode */}
