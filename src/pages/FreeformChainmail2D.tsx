@@ -2058,58 +2058,6 @@ const FreeformChainmail2D: React.FC = () => {
         maxY = Math.max(maxY, wy);
       });
     }
-    if (doScales) {
-      // Pre-compute body-offset terms from active scale settings so the
-      // transfer bounds match the visible scale silhouettes (same convention
-      // as overlayAutoBounds). This is what keeps the mask outline and the
-      // painted result aligned.
-      const useInterlockedTx =
-        activeScaleSettings.lockScaleHolesToRingCenters ||
-        activeScaleSettings.weaveMode === "interlocked";
-      const holeShoulderInsetTx = Math.max(
-        activeScaleSettings.holeIdMm * 0.54,
-        activeScaleSettings.heightMm * 0.15,
-      );
-      const bodyDyTx =
-        -holeShoulderInsetTx +
-        activeScaleSettings.dropMm +
-        (useInterlockedTx ? 0 : activeScaleSettings.holeOffsetYMm);
-      const sWmm = activeScaleSettings.widthMm;
-      const sHmm = activeScaleSettings.heightMm;
-
-      for (const [k] of scaleColorsRef.current.entries()) {
-        const [rowStr, colStr] = k.split(",");
-        const row = Number(rowStr);
-        const col = Number(colStr);
-        if (!Number.isFinite(row) || !Number.isFinite(col)) continue;
-
-        const dashKey = `${row}-${col}`;
-        if (targetKeys && !targetKeys.has(dashKey)) continue;
-
-        const { x: lx, y: ly } = rcToLogical(row, col);
-        const bodyLx = lx;
-        // 3D mesh convention: shoulder at hole + (0.08*h - bodyOff) in
-        // logical Y DOWN, tip at hole + (h - bodyOff). bodyOff = drop -
-        // shoulderInset. Matches overlayAutoBounds and the actual rendered
-        // body position in RingRenderer.
-        const bodyOff = activeScaleSettings.dropMm - holeShoulderInsetTx;
-        const topRel = sHmm * 0.08 - bodyOff;
-        const tipRel = sHmm - bodyOff;
-        const corners: Array<[number, number]> = [
-          [bodyLx - sWmm / 2, ly + topRel],
-          [bodyLx + sWmm / 2, ly + topRel],
-          [bodyLx - sWmm / 2, ly + tipRel],
-          [bodyLx + sWmm / 2, ly + tipRel],
-        ];
-        for (const [lxx, lyy] of corners) {
-          const { wx, wy } = logicalToWorldLocal(lxx, lyy);
-          minX = Math.min(minX, wx);
-          maxX = Math.max(maxX, wx);
-          minY = Math.min(minY, wy);
-          maxY = Math.max(maxY, wy);
-        }
-      }
-    }
 
     if (!Number.isFinite(minX) || !Number.isFinite(maxX) || !Number.isFinite(minY) || !Number.isFinite(maxY)) return;
 
@@ -2298,241 +2246,6 @@ const FreeformChainmail2D: React.FC = () => {
       return;
     }
 
-    if (doScales) {
-      // ---------------------------
-      // Apply to scales
-      //
-      // Two paths:
-      //   1. Legacy flat colour — sample one pixel at the body centre (now
-      //      correctly at the body, not at the hole) and fill the scale with
-      //      that colour. Fast, but ignores image detail.
-      //   2. Image Fill — for each target scale, generate a per-scale canvas
-      //      patch containing the image region that maps to its body bbox.
-      //      The patch is converted to a data URL and stored in
-      //      scaleImagePatches; RingRenderer applies it as a CanvasTexture
-      //      so the image is painted INTO the scale outline (clipped by the
-      //      mesh) instead of floating above it.
-      //
-      // The boundaryPct slider insets the image inside the scale outline,
-      // leaving a coloured frame around the image.
-      // ---------------------------
-      const useImageFill = !!(overlay as any)?.imageFill;
-      const boundaryPct = Math.max(
-        0,
-        Math.min(50, Number((overlay as any)?.boundaryPct ?? 0)),
-      );
-      const inset01 = boundaryPct / 100; // 0–0.5
-
-      // Scale body geometry (mm) — matches exportScales mapping.
-      const sWidthMm = activeScaleSettings.widthMm;
-      const sHeightMm = activeScaleSettings.heightMm;
-      const sDropMm = activeScaleSettings.dropMm;
-      const sHoleShoulderInset = Math.max(
-        activeScaleSettings.holeIdMm * 0.54,
-        sHeightMm * 0.15,
-      );
-      // bodyCenter is the scale's body geometric centre. The 3D mesh
-      // constructs the body around bodyOffY = drop - shoulderInset, with
-      // shoulder at +(bodyOff - 0.08*h) above hole and tip at -(h - bodyOff)
-      // below hole. Body span = 0.92*h, half-span = 0.46*h. Body centre =
-      // half-way between shoulder and tip:
-      //   shoulder_world_Y_offset = +(bodyOff - 0.08*h)
-      //   tip_world_Y_offset      = -(h - bodyOff)
-      //   centre_world_Y_offset   = (shoulder + tip)/2 = bodyOff - 0.54*h
-      // bodyCenterDyMm is the offset FROM hole DOWN to body centre in world
-      // (positive = body below hole). The centre is bodyOff - 0.54*h ABOVE
-      // hole in mesh terms; below hole when negative. So:
-      //   bodyCenterDyMm = -(bodyOff - 0.54*h) = 0.54*h - bodyOff
-      const sBodyOff = sDropMm - sHoleShoulderInset;
-      const bodyCenterDyMm = sHeightMm * 0.54 - sBodyOff;
-
-      // For Image Fill: compute the (sx,sy) of an arbitrary world point in
-      // the already-rendered offCanvas. Mirrors sampleAtWorld's inverse
-      // transform but returns the coordinate instead of the colour.
-      const worldToOffCanvas = (wx: number, wy: number) => {
-        const nxWorld = (wx - worldCenterX) / worldW;
-        const nyWorld = (wy - worldCenterY) / worldH;
-        if (isTiled) {
-          return {
-            sx: PREVIEW_W * (0.5 + nxWorld),
-            sy: PREVIEW_H * (0.5 - nyWorld),
-          };
-        }
-        let dx = PREVIEW_W * nxWorld - offsetX;
-        let dy = -PREVIEW_H * nyWorld - offsetY;
-        dx /= scale;
-        dy /= scale;
-        const rdx = dx * cosR + dy * sinR;
-        const rdy = -dx * sinR + dy * cosR;
-        return {
-          sx: rdx + PREVIEW_W / 2,
-          sy: rdy + imageDisplayH / 2,
-        };
-      };
-
-      // Patch canvas dimensions: keep the scale's BB aspect so the texture
-      // doesn't stretch when mapped through ShapeGeometry's default UVs.
-      const PATCH_LONG = 128;
-      const aspect = sWidthMm / Math.max(1e-3, sHeightMm);
-      const patchW = aspect >= 1
-        ? PATCH_LONG
-        : Math.max(8, Math.round(PATCH_LONG * aspect));
-      const patchH = aspect >= 1
-        ? Math.max(8, Math.round(PATCH_LONG / aspect))
-        : PATCH_LONG;
-
-      // Compute the next colour map AND patch map up front, in a single
-      // synchronous pass — then commit both with concrete values. This
-      // avoids the previous pattern of mutating `nextPatches` from inside
-      // a setState updater (a closure mutation that fires lazily during
-      // commit and is hard to reason about, especially in React 18 strict
-      // mode where updaters are double-invoked).
-      const prevColors = scaleColorsRef.current;
-      const nextColors = new Map(prevColors);
-      const nextPatches = new Map(scaleImagePatches);
-
-      for (const [k] of prevColors.entries()) {
-        const [rowStr, colStr] = k.split(",");
-        const row = Number(rowStr);
-        const col = Number(colStr);
-        if (!Number.isFinite(row) || !Number.isFinite(col)) continue;
-
-        const dashKey = `${row}-${col}`;
-        if (targetKeys && !targetKeys.has(dashKey)) continue;
-
-        const { x: lx, y: ly } = rcToLogical(row, col);
-        const { wx: holeWx, wy: holeWy } = logicalToWorldLocal(lx, ly);
-        // Body centre in world coords. Logical Y maps to world Y inverted
-        // (see logicalToWorldLocal above), so a positive logical Y offset
-        // becomes a negative world Y offset.
-        const bodyWx = holeWx;
-        const bodyWy = holeWy - bodyCenterDyMm;
-
-        // Mask defines the paint area: skip scales whose body centre falls
-        // outside the rectangle. Leave their previous colour/patch alone.
-        if (!isInsideMask(bodyWx, bodyWy)) continue;
-
-        if (!useImageFill) {
-          // Legacy: single sample at the BODY centre (was hole — fixed).
-          const sampled = sampleAtWorld(bodyWx, bodyWy);
-          if (sampled) nextColors.set(k, normalizeColor6(sampled));
-          // Drop any stale patch from a previous Image Fill run.
-          nextPatches.delete(k);
-          continue;
-        }
-
-        // Image Fill: compute the average colour AND build a per-scale
-        // canvas patch with the image region drawn into it.
-        const halfW = sWidthMm / 2;
-        // 3D mesh body span = h - 0.08*h = 0.92*h vertically (shoulder at
-        // +(bodyOff - 0.08*h), tip at -(h - bodyOff) → span 0.92*h).
-        // Half-extent from body centre = 0.46*h. Matches the mesh exactly so
-        // the patch covers the full visible body when stretched via UV.
-        const halfH = sHeightMm * 0.46;
-
-        // World-space bounds of this scale's body bbox. We sample the patch
-        // per-pixel via sampleAtWorld below (which clamps to the rendered
-        // image) instead of drawImage'ing the offCanvas region — drawImage
-        // silently clips when the source rect falls outside the canvas,
-        // which was leaving patches filled with only the averaged colour.
-        const wxL = bodyWx - halfW;
-        const wxR = bodyWx + halfW;
-        const wyT = bodyWy + halfH; // top of body (larger world Y)
-        const wyB = bodyWy - halfH; // bottom (smaller world Y)
-
-        // Average colour for the framed area (and as a fallback when the
-        // patch fails). Sampled inside the inset region.
-        const halfWi = halfW * (1 - inset01 * 2);
-        const halfHi = halfH * (1 - inset01 * 2);
-        const N = 5;
-        const denom = N - 1;
-        let rSum = 0, gSum = 0, bSum = 0, cnt = 0;
-        for (let iy = 0; iy < N; iy++) {
-          const ty = iy / denom;
-          const dyMm = (ty - 0.5) * halfHi * 2;
-          const sampleWy = bodyWy - dyMm;
-          for (let ix = 0; ix < N; ix++) {
-            const tx = ix / denom;
-            const dxMm = (tx - 0.5) * halfWi * 2;
-            const sampleWx = bodyWx + dxMm;
-            const hex = sampleAtWorld(sampleWx, sampleWy);
-            if (!hex) continue;
-            const m = /^#([0-9a-f]{6})$/i.exec(hex);
-            if (!m) continue;
-            const n = parseInt(m[1], 16);
-            rSum += (n >> 16) & 0xff;
-            gSum += (n >> 8) & 0xff;
-            bSum += n & 0xff;
-            cnt++;
-          }
-        }
-        const avgHex = cnt > 0
-          ? normalizeColor6(
-              `#${hex2(Math.round(rSum / cnt))}${hex2(Math.round(gSum / cnt))}${hex2(Math.round(bSum / cnt))}`,
-            )
-          : normalizeColor6(prevColors.get(k) || activeScaleSettings.colorHex);
-        nextColors.set(k, avgHex);
-
-        // Build the patch canvas: fill with avg colour (frame), then
-        // drawImage the inset region.
-        try {
-          const patch = document.createElement("canvas");
-          patch.width = patchW;
-          patch.height = patchH;
-          const pCtx = patch.getContext("2d");
-          if (!pCtx) {
-            nextPatches.delete(k);
-            continue;
-          }
-          // Background: averaged scale colour — fills the boundary frame.
-          pCtx.fillStyle = avgHex;
-          pCtx.fillRect(0, 0, patchW, patchH);
-
-          // Destination rectangle inside the patch (inset by boundary).
-          const insetX = Math.round(patchW * inset01);
-          const insetY = Math.round(patchH * inset01);
-          const dstW = Math.max(1, patchW - insetX * 2);
-          const dstH = Math.max(1, patchH - insetY * 2);
-
-          // Build patch by sampling the SAME source image used for legacy
-          // colour transfer. sampleAtWorld() clamps to the rendered image
-          // bounds, so every pixel of the patch gets a valid colour even
-          // when the scale's body extends outside the design bbox.
-          const pImage = pCtx.createImageData(dstW, dstH);
-          const pData = pImage.data;
-          for (let py = 0; py < dstH; py++) {
-            const ty = dstH > 1 ? py / (dstH - 1) : 0.5;
-            // top of patch (py=0) → top of body (wyT); bottom → wyB
-            const sampleWy = wyT + (wyB - wyT) * ty;
-            for (let px = 0; px < dstW; px++) {
-              const tx = dstW > 1 ? px / (dstW - 1) : 0.5;
-              const sampleWx = wxL + (wxR - wxL) * tx;
-              const hex = sampleAtWorld(sampleWx, sampleWy);
-              if (!hex) continue;
-              const m = /^#([0-9a-f]{6})$/i.exec(hex);
-              if (!m) continue;
-              const n = parseInt(m[1], 16);
-              const di = (py * dstW + px) * 4;
-              pData[di] = (n >> 16) & 0xff;
-              pData[di + 1] = (n >> 8) & 0xff;
-              pData[di + 2] = n & 0xff;
-              pData[di + 3] = 255;
-            }
-          }
-          pCtx.putImageData(pImage, insetX, insetY);
-
-          nextPatches.set(k, patch.toDataURL("image/png"));
-        } catch {
-          // Tainted-canvas or quota — fall back to flat colour by dropping
-          // the patch entry.
-          nextPatches.delete(k);
-        }
-      }
-
-      // Commit both maps with concrete values in one synchronous batch.
-      setScaleColors(nextColors);
-      setScaleImagePatches(nextPatches);
-    }
 
     setIsTransferring(false);
   }, [
@@ -3489,261 +3202,7 @@ const derived = useMemo(() => {
   /**
    * Draw a 2D scale using the same geometry fields as Tuner.
    */
-  function drawScaleFromExport(
-    ctx: CanvasRenderingContext2D,
-    scale: ExportScale,
-    project: (xMm: number, yMm: number) => { x: number; y: number },
-    mmToPx: (mm: number) => number,
-  ) {
-    const hole = project(scale.x_mm, scale.y_mm);
-    const body = project(scale.bodyX_mm, scale.bodyY_mm);
-    const w = Math.max(2, mmToPx(scale.widthMm));
-    const h = Math.max(2, mmToPx(scale.heightMm));
-    const holeR = Math.max(1, mmToPx(scale.holeIdMm) / 2);
-    const dx = body.x - hole.x;
-    const dy = body.y - hole.y;
-    const tilt = scale.tiltRad ?? 0;
-    const tipLiftRad = (scale.tipLiftDeg ?? 0) * (Math.PI / 180);
 
-    ctx.save();
-    ctx.translate(hole.x, hole.y);
-    ctx.scale(Math.cos(tilt), Math.cos(tipLiftRad));
-
-    const topY = -h * 0.08 + dy;
-    const midY = h * 0.38 + dy;
-    const tipY = h * 0.98 + dy;
-    const halfW = w / 2;
-
-    const outer = new Path2D();
-    const customHolePaths: Path2D[] = [];
-    // Custom polygon: shape is a "custom:<id>" reference. Look up its polygon
-    // and place it in the same vertical span as the built-in shapes (center
-    // of the bbox sits at y ≈ 0.45*h + dy so it covers the topY..tipY span).
-    const customShape =
-      typeof scale.shape === "string" && scale.shape.startsWith("custom:")
-        ? customShapeEntries.find((e) => e.id === scale.shape)
-        : null;
-    const customPoly =
-      customShape && customShape.source !== "base"
-        ? customShape.polygon
-        : null;
-
-    if (customPoly && customPoly.length >= 3) {
-      const yCenter = 0.45 * h + dy;
-      const [x0, y0] = customPoly[0];
-      outer.moveTo(x0 * w, y0 * h + yCenter);
-      for (let i = 1; i < customPoly.length; i++) {
-        const [px, py] = customPoly[i];
-        outer.lineTo(px * w, py * h + yCenter);
-      }
-      outer.closePath();
-      // Cut traced inner holes (e.g. the scale's ring hole) out of the shape.
-      const customHoles = customShape?.holes ?? [];
-      for (const hole of customHoles) {
-        if (hole.length < 3) continue;
-        const hp = new Path2D();
-        const [hx0, hy0] = hole[0];
-        hp.moveTo(hx0 * w, hy0 * h + yCenter);
-        for (let i = 1; i < hole.length; i++) {
-          const [px, py] = hole[i];
-          hp.lineTo(px * w, py * h + yCenter);
-        }
-        hp.closePath();
-        customHolePaths.push(hp);
-      }
-    } else {
-      // Base-source custom shapes fall through to the underlying built-in
-      // geometry via customShape?.baseShape; otherwise use scale.shape directly.
-      // Default fallback is "leaf" (Standard almond/lancet), never teardrop.
-      const baseName =
-        customShape?.source === "base"
-          ? (customShape.baseShape ?? "leaf")
-          : (scale.shape as string);
-      switch (baseName) {
-        case "round":
-          outer.moveTo(0, topY);
-          outer.bezierCurveTo(halfW * 0.95, topY, halfW * 1.05, h * 0.46 + dy, 0, tipY);
-          outer.bezierCurveTo(-halfW * 1.05, h * 0.46 + dy, -halfW * 0.95, topY, 0, topY);
-          outer.closePath();
-          break;
-        case "kite":
-          outer.moveTo(0, topY);
-          outer.lineTo(halfW * 0.96, h * 0.2 + dy);
-          outer.lineTo(halfW * 0.56, h * 0.78 + dy);
-          outer.lineTo(0, tipY);
-          outer.lineTo(-halfW * 0.56, h * 0.78 + dy);
-          outer.lineTo(-halfW * 0.96, h * 0.2 + dy);
-          outer.closePath();
-          break;
-        case "leaf":
-        // Legacy "teardrop" saves fall through to leaf as of 2026-06-01.
-        // No teardrop bezier remains in the renderer; the Standard
-        // (almond / vesica piscis) silhouette is the only fallback path.
-        // eslint-disable-next-line no-fallthrough
-        default:
-          // Standard chainmaille scale — almond / vesica piscis matching
-          // the physical scale photo (scale.jpg). Both top AND bottom
-          // are gently rounded; max width at vertical midpoint. Kept in
-          // sync with RingRenderer.makeScaleShapeRR else-branch so the 2D
-          // preview matches the 3D render exactly.
-          void midY;
-          outer.moveTo(0, topY);
-          outer.bezierCurveTo(
-            halfW * 1.10, h * 0.20 + dy,
-            halfW * 1.10, h * 0.82 + dy,
-            0, tipY,
-          );
-          outer.bezierCurveTo(
-            -halfW * 1.10, h * 0.82 + dy,
-            -halfW * 1.10, h * 0.20 + dy,
-            0, topY,
-          );
-          outer.closePath();
-          break;
-      }
-    }
-
-    const holePath = new Path2D();
-    holePath.arc(0, 0, holeR, 0, Math.PI * 2);
-    const shape = new Path2D();
-    shape.addPath(outer);
-    if (customHolePaths.length) {
-      // Custom polygon brought its own traced inner holes — use those.
-      for (const p of customHolePaths) shape.addPath(p);
-    } else {
-      shape.addPath(holePath);
-    }
-
-    ctx.globalAlpha = 0.95;
-    ctx.fillStyle = scale.colorHex;
-    ctx.fill(shape, "evenodd");
-
-    ctx.globalAlpha = 0.12;
-    ctx.fillStyle = "#000";
-    const shade = new Path2D();
-    shade.moveTo(0, holeR * 0.5);
-    shade.bezierCurveTo(halfW * 0.3, h * 0.34 + dy, halfW * 0.16, tipY, 0, tipY - h * 0.12);
-    shade.bezierCurveTo(-halfW * 0.1, tipY - h * 0.14, -halfW * 0.06, h * 0.34 + dy, 0, holeR * 0.5);
-    shade.closePath();
-    ctx.fill(shade);
-
-    ctx.globalAlpha = 0.55;
-    ctx.strokeStyle = "#0b1220";
-    ctx.lineWidth = Math.max(1, w * 0.03);
-    ctx.stroke(outer);
-
-    ctx.globalAlpha = 0.8;
-    if (customHolePaths.length) {
-      for (const p of customHolePaths) ctx.stroke(p);
-    } else {
-      ctx.beginPath();
-      ctx.arc(0, 0, holeR, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
-
-  function drawAllScales(args: {
-    ctx: CanvasRenderingContext2D;
-    scales: ExportScale[];
-    project: (xMm: number, yMm: number) => { x: number; y: number };
-    mmToPx: (mm: number) => number;
-  }) {
-    const { ctx, scales, project, mmToPx } = args;
-    const ordered = [...scales].sort((a, b) => (a.row !== b.row ? b.row - a.row : a.col - b.col));
-    for (const scale of ordered) drawScaleFromExport(ctx, scale, project, mmToPx);
-  }
- const exportScales = useMemo<ExportScale[]>(() => {
-  if (scaleColors.size === 0) return [];
-
-  return Array.from(scaleColors.entries()).flatMap(([key, colorHex]) => {
-    const m = /^(-?\d+),(-?\d+)$/.exec(key);
-    if (!m) return [];
-
-    const row = Number(m[1]);
-    const col = Number(m[2]);
-    if (!Number.isFinite(row) || !Number.isFinite(col)) return [];
-
-    // V2: per-cell geometry (size) override → else the global slider values.
-    const cellMeta = scaleMeta.get(key);
-    const geom = resolveScaleGeom(cellMeta, {
-      widthMm: activeScaleSettings.widthMm,
-      heightMm: activeScaleSettings.heightMm,
-      holeIdMm: activeScaleSettings.holeIdMm,
-      dropMm: activeScaleSettings.dropMm,
-    });
-
-    const useInterlocked =
-      activeScaleSettings.lockScaleHolesToRingCenters ||
-      activeScaleSettings.weaveMode === "interlocked";
-
-    const ringP = rcToLogical(row, col);
-    const gx = Number.isFinite(activeScaleSettings.gridOffsetXmm)
-      ? activeScaleSettings.gridOffsetXmm
-      : 0;
-    const gy = Number.isFinite(activeScaleSettings.gridOffsetYmm)
-      ? activeScaleSettings.gridOffsetYmm
-      : 0;
-    let holeX: number;
-    let holeY: number;
-
-    if (useInterlocked) {
-      // Lock keeps each scale snapped to its ring's center, but Grid X / Y
-      // still apply as a UNIFORM offset of the whole scale plane (every
-      // scale shifts by the same vector — registration to ring centers is
-      // preserved). Matches the Tuner UI behavior so saved tune pairs with
-      // non-zero gridOffsetXmm/Ymm + lock-on render correctly here.
-      holeX = ringP.x + gx;
-      holeY = ringP.y + gy;
-    } else {
-      const rowOffset = row & 1 ? activeScaleSettings.centerSpacingMm / 2 : 0;
-      holeX = col * activeScaleSettings.centerSpacingMm + rowOffset + gx;
-      holeY = row * activeScaleSettings.centerSpacingMm * 0.866 + gy;
-    }
-
-    const holeShoulderInset = Math.max(
-      geom.holeIdMm * 0.54,
-      geom.heightMm * 0.15
-    );
-
-    const bodyY =
-      holeY -
-      holeShoulderInset +
-      geom.dropMm +
-      (useInterlocked ? 0 : activeScaleSettings.holeOffsetYMm);
-
-    const isIn = row % 2 === 0;
-    const tiltDeg = isIn ? activeScaleSettings.angleInDeg : activeScaleSettings.angleOutDeg;
-    const tipLiftDeg = activeScaleSettings.scaleTipLiftDeg;
-
-    return [
-      {
-        key,
-        row,
-        col,
-        x_mm: holeX,
-        y_mm: holeY,
-        bodyX_mm: holeX,
-        bodyY_mm: bodyY,
-        colorHex: normalizeColor6(
-          colorHex || activeScaleSettings.colorHex
-        ),
-        // V2: per-cell size (geom) + shape overrides → else global.
-        holeIdMm: geom.holeIdMm,
-        widthMm: geom.widthMm,
-        heightMm: geom.heightMm,
-        shape: resolveScaleShape(cellMeta, activeScaleSettings.shape),
-        dropMm: geom.dropMm,
-        holeOffsetYMm: activeScaleSettings.holeOffsetYMm,
-        tiltRad: tiltDeg * DEG,
-        planeZMm: activeScaleSettings.scalePlaneZ,
-        tipLiftDeg,
-        rowClearanceZMm: activeScaleSettings.scaleRowClearanceZ,
-        imagePatchUrl: scaleImagePatches.get(key) ?? null,
-      },
-    ];
-  });
-}, [scaleColors, scaleMeta, activeScaleSettings, rcToLogical, scaleImagePatches]);
 
   // ====================================================
   // IMAGE OVERLAY GEOMETRY (shared by preview + transfer)
@@ -3763,7 +3222,7 @@ const derived = useMemo(() => {
   // if there's nothing to paint on (no rings/scales for the selected target).
   const overlayAutoBounds = useMemo(() => {
     const doRings = (transferTarget === "rings" || transferTarget === "both") && rings.size > 0;
-    const doScales = (transferTarget === "scales" || transferTarget === "both") && exportScales.length > 0;
+    const doScales = false;
     if (!doRings && !doScales) return null;
 
     const useSelection = overlayScope === "selection" && overlayMaskKeys.size > 0;
@@ -3783,46 +3242,6 @@ const derived = useMemo(() => {
         n++;
       }
     }
-    if (doScales) {
-      for (const s of exportScales) {
-        const k1 = `${s.row}-${s.col}`;
-        const k2 = `${s.row},${s.col}`;
-        if (useSelection && !overlayMaskKeys.has(k1) && !overlayMaskKeys.has(k2)) continue;
-        // Bound matches the 3D MESH body extent (what the user actually
-        // sees rendered), NOT the 2D path which uses a different convention.
-        // In mesh Y-UP relative to hole: shoulder at (bodyOffY - 0.08*h)
-        // ABOVE hole, tip at (bodyOffY - h) (which is below hole when
-        // bodyOffY < h). bodyOffY = drop - shoulderInset.
-        //
-        // In logical Y DOWN relative to hole:
-        //   top = -(bodyOffY - 0.08*h) = 0.08*h - bodyOffY (negative → above)
-        //   tip = -(bodyOffY - h) = h - bodyOffY (positive → below)
-        const bodyLx = s.bodyX_mm;
-        const hW = s.widthMm;
-        const hH = s.heightMm;
-        const shoulderInset = Math.max(s.holeIdMm * 0.54, hH * 0.15);
-        const bodyOff = s.dropMm - shoulderInset;
-        const topRel = hH * 0.08 - bodyOff;  // logical Y offset of shoulder from hole
-        const tipRel = hH - bodyOff;          // logical Y offset of tip from hole
-        const holeLogical = rcToLogical(s.row, s.col);
-        const bodyTopLy = holeLogical.y + topRel;
-        const bodyTipLy = holeLogical.y + tipRel;
-        const corners: Array<[number, number]> = [
-          [bodyLx - hW / 2, bodyTopLy],
-          [bodyLx + hW / 2, bodyTopLy],
-          [bodyLx - hW / 2, bodyTipLy],
-          [bodyLx + hW / 2, bodyTipLy],
-        ];
-        for (const [lxx, lyy] of corners) {
-          const w = logicalToWorld(lxx, lyy);
-          if (w.wx < minX) minX = w.wx;
-          if (w.wx > maxX) maxX = w.wx;
-          if (w.wy < minY) minY = w.wy;
-          if (w.wy > maxY) maxY = w.wy;
-        }
-        n++;
-      }
-    }
     if (n === 0) return null;
     return {
       worldW: Math.max(1e-6, maxX - minX),
@@ -3830,7 +3249,7 @@ const derived = useMemo(() => {
       worldCenterX: (minX + maxX) * 0.5,
       worldCenterY: (minY + maxY) * 0.5,
     };
-  }, [transferTarget, overlayScope, overlayMaskKeys, rings, exportScales, rcToLogical, logicalToWorld]);
+  }, [transferTarget, overlayScope, overlayMaskKeys, rings, rcToLogical, logicalToWorld]);
 
   // Effective bounds: user mask if set, else auto. Falls back to a unit box
   // when nothing is paintable — the preview render condition gates this so it
@@ -3908,7 +3327,7 @@ const derived = useMemo(() => {
     // write to, so the user sees exactly where the image will land. Matches
     // the doRings/doScales logic in the transfer handler.
     const doRings = (transferTarget === "rings" || transferTarget === "both") && rings.size > 0;
-    const doScales = (transferTarget === "scales" || transferTarget === "both") && exportScales.length > 0;
+    const doScales = false;
     const useSelection = overlayScope === "selection" && overlayMaskKeys.size > 0;
     const shapes: React.ReactNode[] = [];
 
@@ -3968,83 +3387,6 @@ const derived = useMemo(() => {
       }
     }
 
-    if (doScales && exportScales.length > 0) {
-      const w0 = logicalToWorld(0, 0);
-      const w1 = logicalToWorld(1, 0);
-      const o1 = worldToScreen(w0.wx, w0.wy);
-      const o2 = worldToScreen(w1.wx, w1.wy);
-      const pxPerMm = Math.abs(o2.sx - o1.sx) || 1;
-      const project = (xMm: number, yMm: number) => {
-        const w = logicalToWorld(xMm, yMm);
-        const sp = worldToScreen(w.wx, w.wy);
-        return { x: sp.sx, y: sp.sy };
-      };
-      const mmToPx = (mm: number) => mm * pxPerMm;
-      for (const scale of exportScales) {
-        const scaleKey = `${scale.row}-${scale.col}`;
-        const altKey = `${scale.row},${scale.col}`;
-        if (useSelection && !overlayMaskKeys.has(scaleKey) && !overlayMaskKeys.has(altKey)) continue;
-        // Body centre in world coords for the mask test.
-        const bodyW = logicalToWorld(scale.bodyX_mm, scale.bodyY_mm);
-        if (!insideMask(bodyW.wx, bodyW.wy)) continue;
-        const hole = project(scale.x_mm, scale.y_mm);
-        const body = project(scale.bodyX_mm, scale.bodyY_mm);
-        const w = Math.max(2, mmToPx(scale.widthMm));
-        const h = Math.max(2, mmToPx(scale.heightMm));
-        const dx = body.x - hole.x;
-        const dy = body.y - hole.y;
-        const tilt = scale.tiltRad ?? 0;
-        const tipLiftRad = (scale.tipLiftDeg ?? 0) * (Math.PI / 180);
-        const sx = Math.cos(tilt);
-        const sy = Math.cos(tipLiftRad);
-        // Match the 3D mesh body construction (makeScaleShapeRR). In mesh
-        // Y-UP relative to hole: shoulder at (bodyOff - 0.08*h), tip at
-        // (bodyOff - h). In path-local Y DOWN we negate to get above/below
-        // hole correctly:
-        //   topY (shoulder above hole) = 0.08*h - dy
-        //   tipY (tip below hole)      = h - dy
-        //   midY (belly)               = 0.45*h - dy
-        // where dy = body.y_screen - hole.y_screen = bodyOff * pxPerMm.
-        const topY = h * 0.08 - dy;
-        const midY = h * 0.45 - dy;
-        const tipY = h - dy;
-        const halfW = w / 2;
-        const shapeStr = String(scale.shape);
-        // Build the SVG path data for this scale's outer silhouette.
-        let d = "";
-        switch (shapeStr) {
-          case "leaf":
-            // Standard chainmaille scale — almond / vesica piscis. Both
-            // top and bottom rounded; max width at vertical midpoint.
-            // Kept in sync with RingRenderer.makeScaleShapeRR else-branch.
-            d = `M 0 ${topY} ` +
-                `C ${halfW * 1.10} ${h * 0.20 - dy}, ${halfW * 1.10} ${h * 0.82 - dy}, 0 ${tipY} ` +
-                `C ${-halfW * 1.10} ${h * 0.82 - dy}, ${-halfW * 1.10} ${h * 0.20 - dy}, 0 ${topY} Z`;
-            break;
-          case "round":
-            // 3D mesh round: control at (hw*1.05, bodyOff - 0.52*h)
-            d = `M 0 ${topY} ` +
-                `C ${halfW * 0.95} ${topY}, ${halfW * 1.05} ${h * 0.52 - dy}, 0 ${tipY} ` +
-                `C ${-halfW * 1.05} ${h * 0.52 - dy}, ${-halfW * 0.95} ${topY}, 0 ${topY} Z`;
-            break;
-          case "kite":
-            // 3D mesh kite: corners at h*0.3 and h*0.78 in mesh, negated.
-            d = `M 0 ${topY} L ${halfW * 0.96} ${h * 0.3 - dy} L ${halfW * 0.56} ${h * 0.78 - dy} L 0 ${tipY} L ${-halfW * 0.56} ${h * 0.78 - dy} L ${-halfW * 0.96} ${h * 0.3 - dy} Z`;
-            break;
-          default:
-            // Anything else (including legacy "teardrop" saves) → render
-            // the Standard almond silhouette. Same path as case "leaf".
-            d = `M 0 ${topY} ` +
-                `C ${halfW * 1.10} ${h * 0.20 - dy}, ${halfW * 1.10} ${h * 0.82 - dy}, 0 ${tipY} ` +
-                `C ${-halfW * 1.10} ${h * 0.82 - dy}, ${-halfW * 1.10} ${h * 0.20 - dy}, 0 ${topY} Z`;
-        }
-        // Translate to hole.x/hole.y and apply the same x/y squash as the 2D
-        // draw so the clip matches the visible scale exactly.
-        const transform = `translate(${hole.x} ${hole.y}) scale(${sx} ${sy})`;
-        const fill = previewSampledColors.get(`scale:${scaleKey}`) ?? "transparent";
-        shapes.push(<path key={`scale:${scaleKey}`} d={d} transform={transform} fill={fill} />);
-      }
-    }
     return shapes;
   }, [
     overlay?.dataUrl,
@@ -4053,7 +3395,6 @@ const derived = useMemo(() => {
     overlayMaskKeys,
     overlayWorldBounds,
     rings,
-    exportScales,
     rcToLogical,
     logicalToWorld,
     worldToScreen,
@@ -4197,7 +3538,7 @@ const derived = useMemo(() => {
       };
 
       const doRings = (transferTarget === "rings" || transferTarget === "both") && rings.size > 0;
-      const doScales = (transferTarget === "scales" || transferTarget === "both") && exportScales.length > 0;
+      const doScales = false;
       const useSelection = overlayScope === "selection" && overlayMaskKeys.size > 0;
 
       const out = new Map<string, string>();
@@ -4209,30 +3550,6 @@ const derived = useMemo(() => {
           if (!insideMask(wx, wy)) continue;
           const hex = sampleAtWorld(wx, wy);
           if (hex) out.set(`ring:${key}`, hex);
-        }
-      }
-      if (doScales) {
-        // Sample at scale BODY center (matches transferOverlayToRings, which
-        // samples bodyWx/bodyWy — bodyCenter is bodyOff - 0.54*h above hole).
-        const sHeightMm = activeScaleSettings.heightMm;
-        const sDropMm = activeScaleSettings.dropMm;
-        const sHoleShoulderInset = Math.max(
-          activeScaleSettings.holeIdMm * 0.54,
-          sHeightMm * 0.15,
-        );
-        const sBodyOff = sDropMm - sHoleShoulderInset;
-        const bodyCenterDyMm = sHeightMm * 0.54 - sBodyOff;
-        for (const s of exportScales) {
-          const k1 = `${s.row}-${s.col}`;
-          const k2 = `${s.row},${s.col}`;
-          if (useSelection && !overlayMaskKeys.has(k1) && !overlayMaskKeys.has(k2)) continue;
-          const holeLogical = rcToLogical(s.row, s.col);
-          const holeW = logicalToWorld(holeLogical.x, holeLogical.y);
-          const bodyWx = holeW.wx;
-          const bodyWy = holeW.wy - bodyCenterDyMm;
-          if (!insideMask(bodyWx, bodyWy)) continue;
-          const hex = sampleAtWorld(bodyWx, bodyWy);
-          if (hex) out.set(`scale:${k1}`, hex);
         }
       }
       if (!cancelled) setPreviewSampledColors(out);
@@ -4259,7 +3576,6 @@ const derived = useMemo(() => {
     overlayMaskKeys,
     overlayWorldBounds,
     rings,
-    exportScales,
     rcToLogical,
     logicalToWorld,
     activeScaleSettings.heightMm,
@@ -6915,68 +6231,6 @@ const derived = useMemo(() => {
     [innerIDmm, wireMm, centerSpacing, maxRowSpan, maxColSpan, canvasBg],
   );
 
-const scales3D = useMemo(() => {
-  if (!exportScales.length) return [];
-
-  const maxScaleRow = exportScales.reduce(
-    (maxRow, s) => Math.max(maxRow, Number.isFinite(s.row) ? s.row : 0),
-    0,
-  );
-
-  return exportScales.map((s, index) => {
-    const row = Number.isFinite(s.row) ? s.row : 0;
-    const col = Number.isFinite(s.col) ? s.col : 0;
-
-    const rowClearance = s.rowClearanceZMm ?? 0;
-    const planeZ = s.planeZMm ?? 0;
-    // Tilt axis at center row so Scale Plane Z stays as the true average Z depth
-    const centerRow = maxScaleRow / 2;
-    const stackedZ = planeZ + (centerRow - row) * rowClearance;
-
-    // holeX/holeY = where pivot sits (ring center = scale hole center)
-    const holeX = (s.x_mm ?? 0) - logicalOrigin.ox;
-    const holeY = (s.y_mm ?? 0) - logicalOrigin.oy;
-
-    // bodyY in world space (origin-shifted), used by RingRenderer for bodyOffsetY
-    const bodyY = (s.bodyY_mm ?? s.y_mm ?? 0) - logicalOrigin.oy;
-
-    return {
-      key: s.key,
-      row,
-      col,
-      x: holeX,
-      y: holeY,
-      z: stackedZ + index * 0.001,
-      bodyX: holeX,   // bodyX == holeX (scales hang directly below hole)
-      bodyY,
-      color: visibleColor(normalizeColor6(s.colorHex ?? activeScaleSettings.colorHex ?? activeColorRef.current ?? "#ffffff")),
-      holeDiameter: s.holeIdMm,
-      width: s.widthMm,
-      height: s.heightMm,
-      shape: s.shape,
-      tiltRad: s.tiltRad,
-      planeZMm: stackedZ,
-      tipLiftDeg: s.tipLiftDeg,
-      rowClearanceZMm: 0,  // stacking already baked into stackedZ above
-      dropMm: s.dropMm,
-      // Forward the optional per-scale image patch (set when the user
-      // transferred an image with Image Fill on). RingRenderer attaches it
-      // as a CanvasTexture so the image is painted onto the scale outline.
-      imagePatchUrl: s.imagePatchUrl ?? null,
-    };
-  });
-}, [
-  exportScales,
-  logicalOrigin.ox,
-  logicalOrigin.oy,
-  activeScaleSettings.colorHex,
-  activeScaleSettings.scalePlaneZ,
-  activeScaleSettings.scaleTipLiftDeg,
-  activeScaleSettings.scaleRowClearanceZ,
-  activeScaleSettings.angleInDeg,
-  activeScaleSettings.angleOutDeg,
-  calibrationVersion,
-]);
 
   // ====================================================
   // RENDER
@@ -9235,7 +8489,6 @@ const scales3D = useMemo(() => {
       {finalizeOpen && (
         <FinalizeAndExportPanel
           rings={exportRings}
-          scales={exportScales}
           scaleSettings={activeScaleSettings}
           initialAssignment={assignment}
           onAssignmentChange={(p) => setAssignment(p)}
@@ -9324,14 +8577,9 @@ const scales3D = useMemo(() => {
             initialEraseMode={false}
             initialRotationLocked={true}
             externalViewState={externalViewState}
-            scales3D={scales3D}
-            showScales={scales3D.length > 0}
-            scalesBehindRings={activeScaleSettings.behindRings}
-            // Selection feedback: highlight cells that are either the active
-            // overlay-transfer target (persistent picked set) OR the in-progress
-            // selection drag set. RingRenderer accepts "row-col" or "row,col";
-            // we forward both as-is.
-            highlightedScaleKeys={highlightedKeys}
+            // Selection feedback: highlight cells that are the active
+            // overlay-transfer target (picked set) OR the in-progress selection
+            // drag set. RingRenderer accepts "row-col" or "row,col".
             highlightedRingKeys={highlightedKeys}
           />
         </div>
