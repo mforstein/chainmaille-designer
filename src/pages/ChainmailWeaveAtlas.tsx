@@ -170,31 +170,16 @@ export default function ChainmailWeaveAtlas() {
                     </td>
                   );
 
-                // 3-state color coding:
-                //   valid       → green (rings + scales both work)
-                //   rings_only  → orange (rings work, scales don't)
-                //   no_solution → red (neither works)
-                // Backward compatibility: any unknown status string is
-                // treated as "no_solution" rather than crashing.
-                const cellColor =
-                  entry.status === "valid"
-                    ? "#19c37d"
-                    : entry.status === "rings_only"
-                      ? "#f59e0b"
-                      : "#ef4444";
+                // 2-state color coding:
+                //   no_solution → red (rings don't weave)
+                //   anything else (valid / legacy rings_only) → green (rings weave)
+                const noSolution = entry.status === "no_solution";
+                const cellColor = noSolution ? "#ef4444" : "#19c37d";
                 const cellBg = isActiveBg(entry, activeWeaveId);
-                const cellIcon =
-                  entry.status === "valid"
-                    ? "✅"
-                    : entry.status === "rings_only"
-                      ? "🟠"
-                      : "❌";
-                const cellTitle =
-                  entry.status === "valid"
-                    ? "Rings + Scales both valid"
-                    : entry.status === "rings_only"
-                      ? "Rings valid — scales not woven at this AR"
-                      : "No solution (rings or scales)";
+                const cellIcon = noSolution ? "❌" : "✅";
+                const cellTitle = noSolution
+                  ? "No solution — rings don't weave at this AR"
+                  : "Rings weave at this combination";
 
                 return (
                   <td
@@ -224,9 +209,8 @@ Angles: ${entry.angleIn}/${entry.angleOut}°`}
       </table>
 
       <div style={{ marginTop: 16, color: "#64748b", fontSize: 12, display: "flex", gap: 20, flexWrap: "wrap" }}>
-        <span style={{ color: "#19c37d" }}>✅ Rings + Scales — both weave</span>
-        <span style={{ color: "#f59e0b" }}>🟠 Rings only — scales don't weave at this AR</span>
-        <span style={{ color: "#ef4444" }}>❌ No solution — neither weaves</span>
+        <span style={{ color: "#19c37d" }}>✅ Rings weave</span>
+        <span style={{ color: "#ef4444" }}>❌ No solution — rings don't weave</span>
         <span style={{ color: "#4a7a9b" }}>+ Untested — click to tune</span>
       </div>
 
