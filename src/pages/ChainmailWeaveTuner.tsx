@@ -1,5 +1,5 @@
 // src/pages/ChainmailWeaveTuner.tsx
-import React, {
+import {
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -12,17 +12,6 @@ import { Link, useSearchParams } from "react-router-dom";
 import { DraggableCompassNav, DraggablePill } from "../App";
 import { computeRingVarsIndependent } from "../utils/ringMath";
 import { IconHamburger } from "../components/icons/ToolIcons";
-import CustomShapeEditor from "../components/CustomShapeEditor";
-import {
-  type CustomScaleShape,
-  loadCustomShapes,
-  saveCustomShapes,
-  getCustomShapeById,
-  notifyCustomShapesChanged,
-  CUSTOM_SHAPES_EVENT,
-  loadDefaultScaleShape,
-  saveDefaultScaleShape,
-} from "../lib/customScaleShapes";
 
 // ========================================
 // CONSTANTS
@@ -32,70 +21,18 @@ const ID_OPTIONS = [
   "5/16", "3/8", "7/16", "1/2", "5/8",
 ] as const;
 const WIRE_OPTIONS = [0.9, 1.2, 1.6, 2.0, 2.5, 3.0] as const;
-// "teardrop" removed 2026-06-01 — silently coerced to "leaf" on load via
-// migrateLegacyShape from ../lib/customScaleShapes.
-const SCALE_SHAPES = ["leaf", "round", "kite"] as const;
-type BuiltinScaleShape = (typeof SCALE_SHAPES)[number];
-// Includes "custom:<uuid>" entries that resolve to user-defined polygons.
-type ScaleShape = BuiltinScaleShape | (string & {});
-type ScaleWeaveMode = "independent" | "interlocked";
-type TunerMode = "calibrate_rings" | "calibrate_scales" | "tune_rings" | "tune_scales" | "tune_weave";
+type TunerMode = "calibrate_rings" | "tune_rings";
 
 const TUNER_MODES: { id: TunerMode; icon: string; label: string }[] = [
   { id: "calibrate_rings",  icon: "📐", label: "Calibrate Rings" },
   { id: "tune_rings",       icon: "🔧", label: "Tune Rings" },
-  { id: "calibrate_scales", icon: "⚖️", label: "Calibrate Scales" },
-  { id: "tune_scales",      icon: "✨", label: "Tune Scales" },
-  { id: "tune_weave",       icon: "🧩", label: "Tune Weave" },
 ];
 
-const DEFAULT_SCALE_COLOR = "#4dd0e1";
 const FOV = 40;
 const DEG = Math.PI / 180;
-const SCALE_THICKNESS = 0.32;
-const DEFAULT_SCALE_TIP_LIFT_DEG = 18;
-const DEFAULT_SCALE_ROW_CLEARANCE_Z = 0.22;
 
 const TUNER_STORAGE_KEY = "chainmailMatrix";
-const TUNER_SCALE_PREFS_KEY = "chainmailTuner.scalePrefs.v4.same3dscene.holelock";
 const FREEFORM_TUNER_SNAPSHOT_KEY = "freeform.tunerSnapshot.v1";
-
-// ─── Commercially available scale presets ─────────────────────────────────────
-// Dimensions sourced from common dragon-scale product lines across major
-// chainmail suppliers. Fine-tune with sliders after selecting.
-interface ScalePreset {
-  id: string;
-  label: string;
-  holeDiaMm: number;   // mounting hole inner diameter
-  widthMm: number;     // scale width at widest point
-  heightMm: number;    // scale body height (hole top to tip)
-  dropMm: number;      // body drop from hole shoulder
-}
-
-// All presets keep width/holeDia ratio ≥ 1.5 so the almond bezier curves
-// have enough room to produce a well-formed shape (narrower ratios cause the
-// shoulder to degenerate into a flat arch).
-const SCALE_PRESETS: readonly ScalePreset[] = [
-  { id: "baby",    label: "Baby Dragon",  holeDiaMm: 3.97,  widthMm: 6.5,  heightMm: 8.5,  dropMm: 4.5  }, // TRL 5/32" hole
-  { id: "xs",      label: "XS Dragon",   holeDiaMm: 4.76,  widthMm: 8.0,  heightMm: 11.5, dropMm: 6.0  }, // TRL 3/16" hole
-  { id: "sm",      label: "Sm Dragon",   holeDiaMm: 6.35,  widthMm: 10.5, heightMm: 15.5, dropMm: 8.0  }, // TRL 1/4" hole
-  { id: "md",      label: "Md Dragon",   holeDiaMm: 7.94,  widthMm: 12.5, heightMm: 18.5, dropMm: 9.5  }, // TRL 5/16" hole, standard
-  { id: "lg",      label: "Lg Dragon",   holeDiaMm: 7.94,  widthMm: 13.0, heightMm: 22.2, dropMm: 7.5  }, // TRL 5/16" hole, tall
-  { id: "xl",      label: "XL Dragon",   holeDiaMm: 9.53,  widthMm: 15.5, heightMm: 25.5, dropMm: 11.0 }, // TRL 3/8" hole
-  { id: "jumbo",   label: "Jumbo",       holeDiaMm: 11.11, widthMm: 18.5, heightMm: 32.0, dropMm: 14.0 }, // TRL 7/16" hole
-  { id: "wide_sm", label: "Wide Sm",     holeDiaMm: 6.35,  widthMm: 13.5, heightMm: 15.0, dropMm: 8.0  }, // wide-body small
-  { id: "wide_lg", label: "Wide Lg",     holeDiaMm: 9.53,  widthMm: 17.5, heightMm: 22.0, dropMm: 10.5 }, // wide-body large
-] as const;
-
-function nearestPreset(widthMm: number, heightMm: number): string | null {
-  let bestId: string | null = null;
-  let bestDist = Infinity;
-  for (const p of SCALE_PRESETS) {
-    const d = Math.abs(p.widthMm - widthMm) + Math.abs(p.heightMm - heightMm);
-    if (d < bestDist) { bestDist = d; bestId = p.id; }
-  }
-  return bestDist < 1.5 ? bestId : null;
-}
 
 // ========================================
 // TYPES
@@ -109,45 +46,6 @@ type LogicalRing = {
   wireDiameter: number;
   radius: number;
   tiltRad: number;
-};
-
-type OverlayScale = {
-  key: string;
-  row: number;
-  col: number;
-  holeX: number;
-  holeY: number;
-  bodyX: number;
-  bodyY: number;
-  holeDiameter: number;
-  width: number;
-  height: number;
-  color: string;
-  shape: ScaleShape;
-  tiltRad: number;
-};
-
-type PersistedScalePrefs = {
-  scaleEnabled?: boolean;
-  scaleBehindRings?: boolean;
-  scaleHoleDiameter?: number;
-  scaleWidth?: number;
-  scaleHeight?: number;
-  scaleShape?: ScaleShape;
-  scaleDrop?: number;
-  scaleColor?: string;
-  scaleOnEveryCell?: boolean;
-  lockScaleHolesToRingCenters?: boolean;
-  scaleCenterSpacing?: number;
-  scaleGridOffsetX?: number;
-  scaleGridOffsetY?: number;
-  scaleHoleOffsetY?: number;
-  scaleWeaveMode?: ScaleWeaveMode;
-  scaleAngleIn?: number;
-  scaleAngleOut?: number;
-  scalePlaneZ?: number;
-  scaleTipLiftDeg?: number;
-  scaleRowClearanceZ?: number;
 };
 
 // ========================================
@@ -169,107 +67,6 @@ function rcToLogical(row: number, col: number, spacing: number, offsetX = 0, off
   };
 }
 
-function sortScalesForDraw(scales?: OverlayScale[]) {
-  if (!Array.isArray(scales)) return [];
-
-  return [...scales].sort((a, b) => {
-    if (a.row !== b.row) return a.row - b.row;
-
-    const center = 0;
-    const da = Math.abs(a.col - center);
-    const db = Math.abs(b.col - center);
-
-    if (da !== db) return da - db;
-
-    return a.col - b.col;
-  });
-}
-function buildOverlayScales(args: {
-  rings: LogicalRing[];
-  scaleEnabled: boolean;
-  scaleHoleId: number;
-  scaleWidth: number;
-  scaleHeight: number;
-  scaleColor: string;
-  scaleShape: ScaleShape;
-  scaleDrop: number;
-  scaleHoleOffsetY: number;
-  scaleOnEveryCell: boolean;
-  lockScaleHolesToRingCenters: boolean;
-  scaleCenterSpacing: number;
-  scaleGridOffsetX: number;
-  scaleGridOffsetY: number;
-  scaleWeaveMode: ScaleWeaveMode;
-  scaleAngleIn: number;
-  scaleAngleOut: number;
-}): OverlayScale[] {
-  const {
-    rings,
-    scaleEnabled,
-    scaleHoleId,
-    scaleWidth,
-    scaleHeight,
-    scaleColor,
-    scaleShape,
-    scaleDrop,
-    scaleHoleOffsetY,
-    scaleOnEveryCell,
-    lockScaleHolesToRingCenters,
-    scaleCenterSpacing,
-    scaleGridOffsetX,
-    scaleGridOffsetY,
-    scaleWeaveMode,
-    scaleAngleIn,
-    scaleAngleOut,
-  } = args;
-
-  if (!scaleEnabled) return [];
-
-  const chosen = scaleOnEveryCell
-    ? rings
-    : rings.filter((r) => r.row >= 1 && r.row <= 3 && r.col >= 1 && r.col <= 4);
-
-  return chosen.map((ring) => {
-    const useInterlocked = lockScaleHolesToRingCenters || scaleWeaveMode === "interlocked";
-    let holeX: number;
-    let holeY: number;
-
-    if (useInterlocked) {
-      // Lock keeps each scale snapped to its ring's center, but Grid X / Y
-      // still apply as a UNIFORM offset of the whole scale plane relative to
-      // the ring plane (every scale shifts by the same vector — alignment
-      // to ring centers is preserved). Lets the user dial in horizontal /
-      // vertical scale-vs-ring registration without giving up the snap.
-      holeX = ring.x + scaleGridOffsetX;
-      holeY = ring.y + scaleGridOffsetY;
-    } else {
-      const p = rcToLogical(ring.row, ring.col, scaleCenterSpacing, scaleGridOffsetX, scaleGridOffsetY);
-      holeX = p.x;
-      holeY = p.y;
-    }
-
-    const holeShoulderInset = Math.max(scaleHoleId * 0.54, scaleHeight * 0.15);
-    const bodyY = holeY - holeShoulderInset + scaleDrop + (useInterlocked ? 0 : scaleHoleOffsetY);
-    const angleDeg = ring.row % 2 === 0 ? scaleAngleIn : scaleAngleOut;
-
-    return {
-      key: `${ring.row}-${ring.col}`,
-      row: ring.row,
-      col: ring.col,
-      holeX,
-      holeY,
-      bodyX: holeX,
-      bodyY,
-      holeDiameter: scaleHoleId,
-      width: scaleWidth,
-      height: scaleHeight,
-      color: scaleColor,
-      shape: scaleShape,
-      tiltRad: angleDeg * DEG,
-    };
-  });
-}
-
 function disposeObject3D(obj: THREE.Object3D) {
   obj.traverse((child) => {
     const mesh = child as THREE.Mesh;
@@ -286,111 +83,6 @@ function clearGroup(group: THREE.Group) {
     disposeObject3D(child);
     group.remove(child);
   }
-}
-
-function ensureHoleWinding(path: THREE.Path, radius: number) {
-  // Reverse winding so the hole reliably subtracts from the outer contour.
-  path.absellipse(0, 0, radius, radius, 0, Math.PI * 2, true, 0);
-}
-
-function makeScaleShape(
-  shape: ScaleShape,
-  width: number,
-  height: number,
-  holeDiameter: number,
-  bodyOffsetY: number,
-): THREE.Shape {
-  const halfW = width / 2;
-  const tipY = bodyOffsetY - height;
-  const shoulderY = bodyOffsetY - height * 0.08;
-  const lowerY = bodyOffsetY - height * 0.78; // still used by the "kite" case
-
-  const s = new THREE.Shape();
-
-  // Custom polygon shape (shared library): map a normalized polygon into
-  // the same vertical span built-ins occupy.
-  if (typeof shape === "string" && shape.startsWith("custom:")) {
-    const custom = getCustomShapeById(shape);
-    if (custom?.source === "base" && custom.baseShape) {
-      shape = custom.baseShape;
-    } else if (custom?.polygon && custom.polygon.length >= 3) {
-      const yCenter = (shoulderY + tipY) / 2;
-      const spanY = shoulderY - tipY;
-      const pts = custom.polygon;
-      const [x0, y0] = pts[0];
-      s.moveTo(x0 * width, yCenter - y0 * spanY);
-      for (let i = 1; i < pts.length; i++) {
-        const [px, py] = pts[i];
-        s.lineTo(px * width, yCenter - py * spanY);
-      }
-      s.closePath();
-      if (custom.holes && custom.holes.length) {
-        for (const hole of custom.holes) {
-          if (hole.length < 3) continue;
-          const path = new THREE.Path();
-          const [hx0, hy0] = hole[0];
-          path.moveTo(hx0 * width, yCenter - hy0 * spanY);
-          for (let i = 1; i < hole.length; i++) {
-            const [px, py] = hole[i];
-            path.lineTo(px * width, yCenter - py * spanY);
-          }
-          path.closePath();
-          s.holes.push(path);
-        }
-      } else {
-        const holeR = holeDiameter / 2;
-        const hole = new THREE.Path();
-        ensureHoleWinding(hole, holeR);
-        s.holes.push(hole);
-      }
-      return s;
-    }
-  }
-
-  switch (shape) {
-    case "leaf": {
-      // Standard chainmaille scale — symmetric almond / pointed-oval matching
-      // the physical scale photo (scale.jpg): gently pointed at BOTH top and
-      // bottom, widest at the vertical midpoint. Mirrors RingRenderer.tsx's
-      // makeScaleShapeRR so the tuner preview and the woven render are
-      // identical. Replaces the old asymmetric round-top/pointed-bottom
-      // ("teardrop") silhouette removed 2026-06-01 per Erin.
-      s.moveTo(0, shoulderY);
-      s.bezierCurveTo(halfW * 1.10, bodyOffsetY - height * 0.20, halfW * 1.10, bodyOffsetY - height * 0.82, 0, tipY);
-      s.bezierCurveTo(-halfW * 1.10, bodyOffsetY - height * 0.82, -halfW * 1.10, bodyOffsetY - height * 0.20, 0, shoulderY);
-      break;
-    }
-    case "round": {
-      s.moveTo(0, shoulderY);
-      s.bezierCurveTo(halfW * 0.95, shoulderY, halfW * 1.05, bodyOffsetY - height * 0.52, 0, tipY);
-      s.bezierCurveTo(-halfW * 1.05, bodyOffsetY - height * 0.52, -halfW * 0.95, shoulderY, 0, shoulderY);
-      break;
-    }
-    case "kite": {
-      s.moveTo(0, shoulderY);
-      s.lineTo(halfW * 0.96, bodyOffsetY - height * 0.3);
-      s.lineTo(halfW * 0.56, lowerY);
-      s.lineTo(0, tipY);
-      s.lineTo(-halfW * 0.56, lowerY);
-      s.lineTo(-halfW * 0.96, bodyOffsetY - height * 0.3);
-      s.closePath();
-      break;
-    }
-    default: {
-      // Any unknown / legacy shape value (including legacy "teardrop" data)
-      // renders as the Standard symmetric almond — never the old teardrop.
-      s.moveTo(0, shoulderY);
-      s.bezierCurveTo(halfW * 1.10, bodyOffsetY - height * 0.20, halfW * 1.10, bodyOffsetY - height * 0.82, 0, tipY);
-      s.bezierCurveTo(-halfW * 1.10, bodyOffsetY - height * 0.82, -halfW * 1.10, bodyOffsetY - height * 0.20, 0, shoulderY);
-      break;
-    }
-  }
-
-  const holeRadius = holeDiameter / 2;
-  const hole = new THREE.Path();
-  ensureHoleWinding(hole, holeRadius);
-  s.holes.push(hole);
-  return s;
 }
 
 function fitCameraToBounds(
@@ -411,78 +103,6 @@ function fitCameraToBounds(
   camera.updateProjectionMatrix();
 }
 
-function makeHoleRim(radius: number, z: number, color = 0x20404d) {
-  const curve = new THREE.EllipseCurve(0, 0, radius, radius, 0, Math.PI * 2, false, 0);
-  const points = curve.getPoints(96).map((p) => new THREE.Vector3(p.x, p.y, z));
-  const geometry = new THREE.BufferGeometry().setFromPoints(points);
-  const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 });
-  return new THREE.LineLoop(geometry, material);
-}
-
-function makeScalePivot(
-  scale: OverlayScale,
-  planeZ: number,
-  tipLiftDeg: number,
-  rowClearanceZ: number,
-  maxRow: number,
-): THREE.Group {
-  const bodyOffsetY = scale.bodyY - scale.holeY;
-  const shape = makeScaleShape(scale.shape, scale.width, scale.height, scale.holeDiameter, bodyOffsetY);
-
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: SCALE_THICKNESS,
-    bevelEnabled: false,
-    curveSegments: 72,
-    steps: 1,
-  });
-  geometry.translate(0, 0, -SCALE_THICKNESS / 2);
-  geometry.computeVertexNormals();
-
-  const fillMaterial = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(scale.color),
-    side: THREE.DoubleSide,
-    transparent: false,
-    metalness: 0.08,
-    roughness: 0.8,
-    depthWrite: true,
-    depthTest: true,
-    polygonOffset: true,
-    polygonOffsetFactor: 1,
-    polygonOffsetUnits: 1,
-  });
-
-  const edgeMaterial = new THREE.LineBasicMaterial({
-    color: 0x234050,
-    transparent: true,
-    opacity: 0.98,
-  });
-
-  const pivot = new THREE.Group();
-  const rowStackZ = (maxRow - scale.row) * rowClearanceZ;
-  pivot.position.set(scale.holeX, -scale.holeY, planeZ + rowStackZ);
-  pivot.rotation.order = "YXZ";
-  pivot.rotation.y = scale.tiltRad;
-  pivot.rotation.x = -tipLiftDeg * DEG;
-
-  const mesh = new THREE.Mesh(geometry, fillMaterial);
-  mesh.renderOrder = 20 + (maxRow - scale.row);
-  pivot.add(mesh);
-
-  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), edgeMaterial);
-  edges.renderOrder = mesh.renderOrder + 1;
-  pivot.add(edges);
-
-  const holeRimFront = makeHoleRim(scale.holeDiameter / 2, SCALE_THICKNESS / 2 + 0.004, 0x1f4755);
-  const holeRimBack = makeHoleRim(scale.holeDiameter / 2, -SCALE_THICKNESS / 2 - 0.004, 0x1f4755);
-  holeRimFront.renderOrder = mesh.renderOrder + 2;
-  holeRimBack.renderOrder = mesh.renderOrder + 2;
-  pivot.add(holeRimFront);
-  pivot.add(holeRimBack);
-
-  return pivot;
-}
-
-// ========================================
 // MAIN COMPONENT
 // ========================================
 export default function ChainmailWeaveTuner() {
@@ -503,7 +123,6 @@ export default function ChainmailWeaveTuner() {
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rootGroupRef = useRef<THREE.Group | null>(null);
   const ringGroupRef = useRef<THREE.Group | null>(null);
-  const scaleGroupRef = useRef<THREE.Group | null>(null);
 
   // Ring params — seed from URL when guided, fall back to defaults
   const [id, setId] = useState(isGuided ? guidedId : "5/16");
@@ -515,46 +134,6 @@ export default function ChainmailWeaveTuner() {
   // Guided workflow step: null = normal, 0 = ring step, 1 = scale step
   const [guidanceStep, setGuidanceStep] = useState<0 | 1 | null>(isGuided ? 0 : null);
 
-  // Scale params
-  const [scaleEnabled, setScaleEnabled] = useState(isGuided ? false : true);
-  const [scaleBehindRings, setScaleBehindRings] = useState(false);
-  // Scale mounting hole = 1/4" (6.35mm). A larger 5/16" hole is too big to sit
-  // fully inside the body at these proportions and pokes past the scale's point.
-  const [scaleHoleId, setScaleHoleId] = useState(convertToMM("1/4"));
-  const [scaleWidth, setScaleWidth] = useState(12.5);
-  const [scaleDrop, setScaleDrop] = useState(11.0);
-  const [scaleHeight, setScaleHeight] = useState(23.5);
-  // Tuner respects the user's pinned default scale shape (Save & make default
-  // in the Custom Shape Editor). If a custom Standard shape is pinned, load
-  // that; otherwise fall back to the built-in "leaf" — the symmetric almond /
-  // pointed-oval silhouette that matches the physical Standard scale photo
-  // (scale.jpg); the UI labels this as "Standard".
-  const [scaleShape, setScaleShape] = useState<ScaleShape>(() => {
-    const pinned = loadDefaultScaleShape();
-    if (pinned && pinned.startsWith("custom:")) return pinned as ScaleShape;
-    // Legacy teardrop pins are migrated to leaf in loadDefaultScaleShape; we
-    // also coerce here defensively in case any other code path slipped through.
-    if (pinned === "leaf" || pinned === "round" || pinned === "kite") {
-      return pinned as ScaleShape;
-    }
-    return "leaf";
-  });
-  const [scaleColor, setScaleColor] = useState(DEFAULT_SCALE_COLOR);
-  const [scaleOnEveryCell, setScaleOnEveryCell] = useState(true);
-  const [lockScaleHolesToRingCenters, setLockScaleHolesToRingCenters] = useState(true);
-  const [scaleCenterSpacing, setScaleCenterSpacing] = useState(19.6);
-  const [scaleGridOffsetX, setScaleGridOffsetX] = useState(0);
-  const [scaleGridOffsetY, setScaleGridOffsetY] = useState(0);
-  const [scaleHoleOffsetY, setScaleHoleOffsetY] = useState(-6.2);
-  const [scaleWeaveMode, setScaleWeaveMode] = useState<ScaleWeaveMode>("interlocked");
-  // Scale angles default LESS than the ring angles (25° / -25°) so scales
-  // sit naturally relative to the rings. Users can "Sync to ring angles"
-  // via the button in the Tune Scales panel when they want them matched.
-  const [scaleAngleIn, setScaleAngleIn] = useState(9);
-  const [scaleAngleOut, setScaleAngleOut] = useState(-9);
-  const [scalePlaneZ, setScalePlaneZ] = useState(0);
-  const [scaleTipLiftDeg, setScaleTipLiftDeg] = useState(14);
-  const [scaleRowClearanceZ, setScaleRowClearanceZ] = useState(1.2);
   const [cameraZoom, setCameraZoom] = useState(1);
 
   // 3-state weave status, surfaced in the Atlas with green / orange / red.
@@ -565,36 +144,6 @@ export default function ChainmailWeaveTuner() {
   const [showCompass, setShowCompass] = useState(false);
   const [tunerMode, setTunerMode] = useState<TunerMode>("tune_rings");
   const [panelOpen, setPanelOpen] = useState(true);
-  const [calibrateScaleTab, setCalibrateScaleTab] = useState<"size" | "dims">("size");
-  const [tuneScaleTab, setTuneScaleTab] = useState<"angles" | "depth">("angles");
-
-  // Shared custom scale shapes (created in Freeform or here).
-  const [customShapes, setCustomShapes] = useState<CustomScaleShape[]>(() =>
-    loadCustomShapes(),
-  );
-  const [shapeEditor, setShapeEditor] = useState<
-    | { mode: "add" }
-    | { mode: "edit"; initial: CustomScaleShape }
-    | null
-  >(null);
-
-  useEffect(() => {
-    const onChanged = () => setCustomShapes(loadCustomShapes());
-    window.addEventListener(CUSTOM_SHAPES_EVENT, onChanged);
-    window.addEventListener("storage", onChanged);
-    return () => {
-      window.removeEventListener(CUSTOM_SHAPES_EVENT, onChanged);
-      window.removeEventListener("storage", onChanged);
-    };
-  }, []);
-
-  // Tuner shows ALL built-in scale presets and shapes — the hide/restore that
-  // exists in the Freeform menu doesn't apply here, because calibration needs
-  // the reference shapes on hand.
-  const visiblePresets = SCALE_PRESETS;
-  // Only the Standard scale (internally "leaf" — the elongated, pointed
-  // silhouette of the physical Standard) is exposed.
-  const visibleBuiltins: BuiltinScaleShape[] = ["leaf"];
 
   const pendingSnapshotSaveRef = useRef(false);
 
@@ -617,126 +166,11 @@ export default function ChainmailWeaveTuner() {
       if (typeof last.angleIn === "number") setAngleIn(last.angleIn);
       if (typeof last.angleOut === "number") setAngleOut(last.angleOut);
       if (last.status === "valid" || last.status === "rings_only" || last.status === "no_solution") setStatus(last.status);
-      // Scale settings
-      if (typeof last.scaleEnabled === "boolean") setScaleEnabled(last.scaleEnabled);
-      if (typeof last.scaleBehindRings === "boolean") setScaleBehindRings(last.scaleBehindRings);
-      if (typeof last.scaleHoleDiameter === "number") setScaleHoleId(last.scaleHoleDiameter);
-      if (typeof last.scaleWidth === "number") setScaleWidth(last.scaleWidth);
-      if (typeof last.scaleHeight === "number") setScaleHeight(last.scaleHeight);
-      if (typeof last.scaleShape === "string" && ((SCALE_SHAPES as readonly string[]).includes(last.scaleShape) || last.scaleShape.startsWith("custom:"))) setScaleShape(last.scaleShape as ScaleShape);
-      if (typeof last.scaleDrop === "number") setScaleDrop(last.scaleDrop);
-      if (typeof last.scaleColor === "string") setScaleColor(last.scaleColor);
-      if (typeof last.scaleOnEveryCell === "boolean") setScaleOnEveryCell(last.scaleOnEveryCell);
-      if (typeof last.lockScaleHolesToRingCenters === "boolean") setLockScaleHolesToRingCenters(last.lockScaleHolesToRingCenters);
-      if (typeof last.scaleCenterSpacing === "number") setScaleCenterSpacing(last.scaleCenterSpacing);
-      if (typeof last.scaleGridOffsetX === "number") setScaleGridOffsetX(last.scaleGridOffsetX);
-      if (typeof last.scaleGridOffsetY === "number") setScaleGridOffsetY(last.scaleGridOffsetY);
-      if (typeof last.scaleHoleOffsetY === "number") setScaleHoleOffsetY(last.scaleHoleOffsetY);
-      if (last.scaleWeaveMode === "independent" || last.scaleWeaveMode === "interlocked") setScaleWeaveMode(last.scaleWeaveMode);
-      if (typeof last.scaleAngleIn === "number") setScaleAngleIn(last.scaleAngleIn);
-      if (typeof last.scaleAngleOut === "number") setScaleAngleOut(last.scaleAngleOut);
-      if (typeof last.scalePlaneZ === "number") setScalePlaneZ(last.scalePlaneZ);
-      if (typeof last.scaleTipLiftDeg === "number") setScaleTipLiftDeg(last.scaleTipLiftDeg);
-      if (typeof last.scaleRowClearanceZ === "number") setScaleRowClearanceZ(last.scaleRowClearanceZ);
       pendingSnapshotSaveRef.current = true;
     } catch (err) {
       alert("Failed to reload: " + String(err));
     }
   }, []);
-
-  useEffect(() => {
-    // Don't restore saved prefs over a fresh guided combination from the Atlas
-    if (isGuided) return;
-
-    try {
-      const raw = localStorage.getItem(TUNER_SCALE_PREFS_KEY);
-      if (!raw) return;
-      const s = JSON.parse(raw) as PersistedScalePrefs;
-      if (typeof s.scaleEnabled === "boolean") setScaleEnabled(s.scaleEnabled);
-      if (typeof s.scaleBehindRings === "boolean") setScaleBehindRings(s.scaleBehindRings);
-      if (typeof s.scaleHoleDiameter === "number") setScaleHoleId(s.scaleHoleDiameter);
-      if (typeof s.scaleWidth === "number") setScaleWidth(s.scaleWidth);
-      if (typeof s.scaleHeight === "number") setScaleHeight(s.scaleHeight);
-      if (typeof s.scaleShape === "string" && ((SCALE_SHAPES as readonly string[]).includes(s.scaleShape) || s.scaleShape.startsWith("custom:"))) setScaleShape(s.scaleShape as ScaleShape);
-      if (typeof s.scaleDrop === "number") setScaleDrop(s.scaleDrop);
-      if (typeof s.scaleColor === "string") setScaleColor(s.scaleColor);
-      if (typeof s.scaleOnEveryCell === "boolean") setScaleOnEveryCell(s.scaleOnEveryCell);
-      if (typeof s.lockScaleHolesToRingCenters === "boolean") setLockScaleHolesToRingCenters(s.lockScaleHolesToRingCenters);
-      if (typeof s.scaleCenterSpacing === "number") setScaleCenterSpacing(s.scaleCenterSpacing);
-      if (typeof s.scaleGridOffsetX === "number") setScaleGridOffsetX(s.scaleGridOffsetX);
-      if (typeof s.scaleGridOffsetY === "number") setScaleGridOffsetY(s.scaleGridOffsetY);
-      if (typeof s.scaleHoleOffsetY === "number") setScaleHoleOffsetY(s.scaleHoleOffsetY);
-      if (s.scaleWeaveMode === "independent" || s.scaleWeaveMode === "interlocked") setScaleWeaveMode(s.scaleWeaveMode);
-      if (typeof s.scaleAngleIn === "number") setScaleAngleIn(s.scaleAngleIn);
-      if (typeof s.scaleAngleOut === "number") setScaleAngleOut(s.scaleAngleOut);
-      if (typeof s.scalePlaneZ === "number") setScalePlaneZ(s.scalePlaneZ);
-      if (typeof s.scaleTipLiftDeg === "number") setScaleTipLiftDeg(s.scaleTipLiftDeg);
-      if (typeof s.scaleRowClearanceZ === "number") setScaleRowClearanceZ(s.scaleRowClearanceZ);
-    } catch {}
-
-    // Fallback: if the latest Freeform snapshot has newer scale settings,
-    // reuse them so shape / angles / Z survive full page reloads.
-    try {
-      const rawSnapshot = localStorage.getItem(FREEFORM_TUNER_SNAPSHOT_KEY);
-      if (!rawSnapshot) return;
-      const snap = JSON.parse(rawSnapshot) as any;
-      const s = snap?.scaleSettings;
-      if (!s) return;
-      if (typeof s.scaleEnabled === "boolean") setScaleEnabled(s.scaleEnabled);
-      if (typeof s.scaleBehindRings === "boolean") setScaleBehindRings(s.scaleBehindRings);
-      if (typeof s.scaleHoleDiameter === "number") setScaleHoleId(s.scaleHoleDiameter);
-      if (typeof s.scaleWidth === "number") setScaleWidth(s.scaleWidth);
-      if (typeof s.scaleHeight === "number") setScaleHeight(s.scaleHeight);
-      if (typeof s.scaleShape === "string" && ((SCALE_SHAPES as readonly string[]).includes(s.scaleShape) || s.scaleShape.startsWith("custom:"))) setScaleShape(s.scaleShape as ScaleShape);
-      if (typeof s.scaleDrop === "number") setScaleDrop(s.scaleDrop);
-      if (typeof s.scaleColor === "string") setScaleColor(s.scaleColor);
-      if (typeof s.scaleOnEveryCell === "boolean") setScaleOnEveryCell(s.scaleOnEveryCell);
-      if (typeof s.lockScaleHolesToRingCenters === "boolean") setLockScaleHolesToRingCenters(s.lockScaleHolesToRingCenters);
-      if (typeof s.scaleCenterSpacing === "number") setScaleCenterSpacing(s.scaleCenterSpacing);
-      if (typeof s.scaleGridOffsetX === "number") setScaleGridOffsetX(s.scaleGridOffsetX);
-      if (typeof s.scaleGridOffsetY === "number") setScaleGridOffsetY(s.scaleGridOffsetY);
-      if (typeof s.scaleHoleOffsetY === "number") setScaleHoleOffsetY(s.scaleHoleOffsetY);
-      if (s.scaleWeaveMode === "independent" || s.scaleWeaveMode === "interlocked") setScaleWeaveMode(s.scaleWeaveMode);
-      if (typeof s.scaleAngleIn === "number") setScaleAngleIn(s.scaleAngleIn);
-      if (typeof s.scaleAngleOut === "number") setScaleAngleOut(s.scaleAngleOut);
-      if (typeof s.scalePlaneZ === "number") setScalePlaneZ(s.scalePlaneZ);
-      if (typeof s.scaleTipLiftDeg === "number") setScaleTipLiftDeg(s.scaleTipLiftDeg);
-      if (typeof s.scaleRowClearanceZ === "number") setScaleRowClearanceZ(s.scaleRowClearanceZ);
-    } catch {}
-  }, []);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(TUNER_SCALE_PREFS_KEY, JSON.stringify({
-        scaleEnabled,
-        scaleBehindRings,
-        scaleHoleDiameter: +scaleHoleId.toFixed(4),
-        scaleWidth: +scaleWidth.toFixed(3),
-        scaleHeight: +scaleHeight.toFixed(3),
-        scaleShape,
-        scaleDrop: +scaleDrop.toFixed(3),
-        scaleColor,
-        scaleOnEveryCell,
-        lockScaleHolesToRingCenters,
-        scaleCenterSpacing: +scaleCenterSpacing.toFixed(3),
-        scaleGridOffsetX: +scaleGridOffsetX.toFixed(3),
-        scaleGridOffsetY: +scaleGridOffsetY.toFixed(3),
-        scaleHoleOffsetY: +scaleHoleOffsetY.toFixed(3),
-        scaleWeaveMode,
-        scaleAngleIn: +scaleAngleIn.toFixed(1),
-        scaleAngleOut: +scaleAngleOut.toFixed(1),
-        scalePlaneZ: +scalePlaneZ.toFixed(3),
-        scaleTipLiftDeg: +scaleTipLiftDeg.toFixed(1),
-        scaleRowClearanceZ: +scaleRowClearanceZ.toFixed(3),
-      } satisfies PersistedScalePrefs));
-    } catch {}
-  }, [
-    scaleEnabled, scaleBehindRings, scaleHoleId, scaleWidth, scaleHeight, scaleShape,
-    scaleDrop, scaleColor, scaleOnEveryCell, lockScaleHolesToRingCenters,
-    scaleCenterSpacing, scaleGridOffsetX, scaleGridOffsetY, scaleHoleOffsetY,
-    scaleWeaveMode, scaleAngleIn, scaleAngleOut, scalePlaneZ,
-    scaleTipLiftDeg, scaleRowClearanceZ,
-  ]);
 
   const ringVars = useMemo(() => computeRingVarsIndependent(id, wire), [id, wire]);
   const arDisplay = useMemo(
@@ -765,34 +199,6 @@ export default function ChainmailWeaveTuner() {
     return items;
   }, [angleIn, angleOut, centerSpacing, ringVars]);
 
-  const overlayScales = useMemo(() => buildOverlayScales({
-    rings,
-    scaleEnabled,
-    scaleHoleId,
-    scaleWidth,
-    scaleHeight,
-    scaleColor,
-    scaleShape,
-    scaleDrop,
-    scaleHoleOffsetY,
-    scaleOnEveryCell,
-    lockScaleHolesToRingCenters,
-    scaleCenterSpacing,
-    scaleGridOffsetX,
-    scaleGridOffsetY,
-    scaleWeaveMode,
-    scaleAngleIn,
-    scaleAngleOut,
-  }), [
-    rings, scaleEnabled, scaleHoleId, scaleWidth, scaleHeight, scaleColor, scaleShape,
-    scaleDrop, scaleHoleOffsetY, scaleOnEveryCell, lockScaleHolesToRingCenters,
-    scaleCenterSpacing, scaleGridOffsetX, scaleGridOffsetY, scaleWeaveMode,
-    scaleAngleIn, scaleAngleOut,
-  ]);
-
-const sortedScales = useMemo(() => sortScalesForDraw(overlayScales), [overlayScales]);
-
-
 const saveFreeformTunerSnapshot = useCallback(() => {
   try {
     const snapshot = {
@@ -803,46 +209,10 @@ const saveFreeformTunerSnapshot = useCallback(() => {
         angleIn,
         angleOut,
       },
-      scaleSettings: {
-        scaleEnabled,
-        scaleBehindRings,
-        scaleHoleDiameter: +scaleHoleId.toFixed(4),
-        scaleWidth: +scaleWidth.toFixed(3),
-        scaleHeight: +scaleHeight.toFixed(3),
-        scaleShape,
-        scaleDrop: +scaleDrop.toFixed(3),
-        scaleColor,
-        scaleOnEveryCell,
-        lockScaleHolesToRingCenters,
-        scaleCenterSpacing: +scaleCenterSpacing.toFixed(3),
-        scaleGridOffsetX: +scaleGridOffsetX.toFixed(3),
-        scaleGridOffsetY: +scaleGridOffsetY.toFixed(3),
-        scaleHoleOffsetY: +scaleHoleOffsetY.toFixed(3),
-        scaleWeaveMode,
-        scaleAngleIn,
-        scaleAngleOut,
-        scalePlaneZ: +scalePlaneZ.toFixed(3),
-        scaleTipLiftDeg: +scaleTipLiftDeg.toFixed(1),
-        scaleRowClearanceZ: +scaleRowClearanceZ.toFixed(3),
-      },
       rings: rings.map((r) => ({
         row: r.row,
         col: r.col,
         color: "#ffffff",
-      })),
-      scales: sortedScales.map((s) => ({
-        row: s.row,
-        col: s.col,
-        colorHex: s.color,
-        holeX: s.holeX,
-        holeY: s.holeY,
-        bodyX: s.bodyX,
-        bodyY: s.bodyY,
-        holeDiameter: s.holeDiameter,
-        width: s.width,
-        height: s.height,
-        shape: s.shape,
-        tiltRad: s.tiltRad,
       })),
       savedAt: new Date().toISOString(),
     };
@@ -866,28 +236,7 @@ const saveFreeformTunerSnapshot = useCallback(() => {
   centerSpacing,
   angleIn,
   angleOut,
-  scaleEnabled,
-  scaleBehindRings,
-  scaleHoleId,
-  scaleWidth,
-  scaleHeight,
-  scaleShape,
-  scaleDrop,
-  scaleColor,
-  scaleOnEveryCell,
-  lockScaleHolesToRingCenters,
-  scaleCenterSpacing,
-  scaleGridOffsetX,
-  scaleGridOffsetY,
-  scaleHoleOffsetY,
-  scaleWeaveMode,
-  scaleAngleIn,
-  scaleAngleOut,
-  scalePlaneZ,
-  scaleTipLiftDeg,
-  scaleRowClearanceZ,
   rings,
-  sortedScales,
 ]);
 
 useEffect(() => {
@@ -908,46 +257,10 @@ useEffect(() => {
           angleIn,
           angleOut,
         },
-        scaleSettings: {
-          scaleEnabled,
-          scaleBehindRings,
-          scaleHoleDiameter: scaleHoleId,
-          scaleWidth,
-          scaleHeight,
-          scaleShape,
-          scaleDrop,
-          scaleColor,
-          scaleOnEveryCell,
-          lockScaleHolesToRingCenters,
-          scaleCenterSpacing,
-          scaleGridOffsetX,
-          scaleGridOffsetY,
-          scaleHoleOffsetY,
-          scaleWeaveMode,
-          scaleAngleIn,
-          scaleAngleOut,
-          scalePlaneZ,
-          scaleTipLiftDeg,
-          scaleRowClearanceZ,
-        },
         rings: rings.map((r) => ({
           row: r.row,
           col: r.col,
           color: "#ffffff",
-        })),
-        scales: sortedScales.map((s) => ({
-          row: s.row,
-          col: s.col,
-          colorHex: s.color,
-          holeX: s.holeX,
-          holeY: s.holeY,
-          bodyX: s.bodyX,
-          bodyY: s.bodyY,
-          holeDiameter: s.holeDiameter,
-          width: s.width,
-          height: s.height,
-          shape: s.shape,
-          tiltRad: s.tiltRad,
         })),
         savedAt: new Date().toISOString(),
       }),
@@ -963,43 +276,7 @@ useEffect(() => {
             angleIn,
             angleOut,
           },
-          scaleSettings: {
-            scaleEnabled,
-            scaleBehindRings,
-            scaleHoleDiameter: scaleHoleId,
-            scaleWidth,
-            scaleHeight,
-            scaleShape,
-            scaleDrop,
-            scaleColor,
-            scaleOnEveryCell,
-            lockScaleHolesToRingCenters,
-            scaleCenterSpacing,
-            scaleGridOffsetX,
-            scaleGridOffsetY,
-            scaleHoleOffsetY,
-            scaleWeaveMode,
-            scaleAngleIn,
-            scaleAngleOut,
-            scalePlaneZ,
-            scaleTipLiftDeg,
-            scaleRowClearanceZ,
-          },
           rings: rings.map((r) => ({ row: r.row, col: r.col, color: "#ffffff" })),
-          scales: sortedScales.map((s) => ({
-            row: s.row,
-            col: s.col,
-            colorHex: s.color,
-            holeX: s.holeX,
-            holeY: s.holeY,
-            bodyX: s.bodyX,
-            bodyY: s.bodyY,
-            holeDiameter: s.holeDiameter,
-            width: s.width,
-            height: s.height,
-            shape: s.shape,
-            tiltRad: s.tiltRad,
-          })),
           savedAt: new Date().toISOString(),
         },
       }),
@@ -1011,28 +288,7 @@ useEffect(() => {
   centerSpacing,
   angleIn,
   angleOut,
-  scaleEnabled,
-  scaleBehindRings,
-  scaleHoleId,
-  scaleWidth,
-  scaleHeight,
-  scaleShape,
-  scaleDrop,
-  scaleColor,
-  scaleOnEveryCell,
-  lockScaleHolesToRingCenters,
-  scaleCenterSpacing,
-  scaleGridOffsetX,
-  scaleGridOffsetY,
-  scaleHoleOffsetY,
-  scaleWeaveMode,
-  scaleAngleIn,
-  scaleAngleOut,
-  scalePlaneZ,
-  scaleTipLiftDeg,
-  scaleRowClearanceZ,
   rings,
-  sortedScales,
 ]);
   useLayoutEffect(() => {
     const host = sceneHostRef.current;
@@ -1066,11 +322,8 @@ useEffect(() => {
     rootGroupRef.current = root;
 
     const ringGroup = new THREE.Group();
-    const scaleGroup = new THREE.Group();
     root.add(ringGroup);
-    root.add(scaleGroup);
     ringGroupRef.current = ringGroup;
-    scaleGroupRef.current = scaleGroup;
 
     let raf = 0;
     const renderLoop = () => {
@@ -1082,7 +335,6 @@ useEffect(() => {
     return () => {
       cancelAnimationFrame(raf);
       clearGroup(ringGroup);
-      clearGroup(scaleGroup);
       renderer.dispose();
       host.removeChild(renderer.domElement);
       rendererRef.current = null;
@@ -1090,7 +342,6 @@ useEffect(() => {
       cameraRef.current = null;
       rootGroupRef.current = null;
       ringGroupRef.current = null;
-      scaleGroupRef.current = null;
     };
   }, []);
 
@@ -1137,12 +388,10 @@ useEffect(() => {
 
   useEffect(() => {
     const ringGroup = ringGroupRef.current;
-    const scaleGroup = scaleGroupRef.current;
     const camera = cameraRef.current;
-    if (!ringGroup || !scaleGroup || !camera) return;
+    if (!ringGroup || !camera) return;
 
     clearGroup(ringGroup);
-    clearGroup(scaleGroup);
 
     const ringMaterial = new THREE.MeshStandardMaterial({
       color: 0x353535,
@@ -1174,43 +423,10 @@ useEffect(() => {
       ringGroup.add(hi);
     }
 
-// ===== DRAW SCALES (3D, CORRECT) =====
-if (scaleEnabled) {
-  const maxScaleRow = Math.max(...sortedScales.map(s => s.row));
-
-  sortedScales.forEach((scale, index) => {
-    const pivot = makeScalePivot(
-      scale,
-      scalePlaneZ,
-      scaleTipLiftDeg,
-      scaleRowClearanceZ,
-      maxScaleRow,
-    );
-
-    // 👇 CRITICAL FIX: intra-row depth separation
-    pivot.position.z += index * 0.01;
-
-    scaleGroup.add(pivot);
-  });
-}
-
-    const scaleMinX = sortedScales.length
-      ? Math.min(...sortedScales.map((s) => s.holeX - s.width * 0.7))
-      : Infinity;
-    const scaleMaxX = sortedScales.length
-      ? Math.max(...sortedScales.map((s) => s.holeX + s.width * 0.7))
-      : -Infinity;
-    const scaleMinY = sortedScales.length
-      ? Math.min(...sortedScales.map((s) => -(s.holeY + 1)))
-      : Infinity;
-    const scaleMaxY = sortedScales.length
-      ? Math.max(...sortedScales.map((s) => -(s.bodyY - s.height) + 2))
-      : -Infinity;
-
-    const minX = Math.min(...rings.map((r) => r.x - r.radius), scaleMinX);
-    const maxX = Math.max(...rings.map((r) => r.x + r.radius), scaleMaxX);
-    const minY = Math.min(...rings.map((r) => -r.y - r.radius), scaleMinY);
-    const maxY = Math.max(...rings.map((r) => -r.y + r.radius), scaleMaxY);
+    const minX = Math.min(...rings.map((r) => r.x - r.radius));
+    const maxX = Math.max(...rings.map((r) => r.x + r.radius));
+    const minY = Math.min(...rings.map((r) => -r.y - r.radius));
+    const maxY = Math.max(...rings.map((r) => -r.y + r.radius));
     fitCameraToBounds(
       camera,
       maxX - minX,
@@ -1219,13 +435,7 @@ if (scaleEnabled) {
       cameraZoom,
     );
     resizeScene();
-  }, [rings, sortedScales, scaleEnabled, scalePlaneZ, scaleTipLiftDeg, scaleRowClearanceZ, cameraZoom, resizeScene]);
-
-  useEffect(() => {
-    const root = rootGroupRef.current;
-    if (!root) return;
-    root.rotation.x = scaleBehindRings ? -0.08 : -0.22;
-  }, [scaleBehindRings]);
+  }, [rings, cameraZoom, resizeScene]);
 
   const handleSave = useCallback(() => {
     const entry = {
@@ -1238,26 +448,6 @@ if (scaleEnabled) {
       status,
       aspectRatio: (ringVars.ID_mm / ringVars.WD_mm).toFixed(2),
       savedAt: new Date().toISOString(),
-      scaleEnabled,
-      scaleBehindRings,
-      scaleHoleDiameter: +scaleHoleId.toFixed(4),
-      scaleWidth: +scaleWidth.toFixed(3),
-      scaleHeight: +scaleHeight.toFixed(3),
-      scaleShape,
-      scaleDrop: +scaleDrop.toFixed(3),
-      scaleColor,
-      scaleOnEveryCell,
-      lockScaleHolesToRingCenters,
-      scaleCenterSpacing: +scaleCenterSpacing.toFixed(3),
-      scaleGridOffsetX: +scaleGridOffsetX.toFixed(3),
-      scaleGridOffsetY: +scaleGridOffsetY.toFixed(3),
-      scaleHoleOffsetY: +scaleHoleOffsetY.toFixed(3),
-      scaleWeaveMode,
-      scaleAngleIn,
-      scaleAngleOut,
-      scalePlaneZ: +scalePlaneZ.toFixed(3),
-      scaleTipLiftDeg: +scaleTipLiftDeg.toFixed(1),
-      scaleRowClearanceZ: +scaleRowClearanceZ.toFixed(3),
     };
     const existing = JSON.parse(localStorage.getItem(TUNER_STORAGE_KEY) || "[]");
     localStorage.setItem(
@@ -1271,12 +461,7 @@ if (scaleEnabled) {
 
     alert(`✅ Saved ${entry.id} (${status})`);
   }, [
-    id, wire, ringVars, centerSpacing, angleIn, angleOut, status, scaleEnabled,
-    scaleBehindRings, scaleHoleId, scaleWidth, scaleHeight, scaleShape, scaleDrop,
-    scaleColor, scaleOnEveryCell, lockScaleHolesToRingCenters, scaleCenterSpacing,
-    scaleGridOffsetX, scaleGridOffsetY, scaleHoleOffsetY, scaleWeaveMode,
-    scaleAngleIn, scaleAngleOut, scalePlaneZ,
-    scaleTipLiftDeg, scaleRowClearanceZ,
+    id, wire, ringVars, centerSpacing, angleIn, angleOut, status,
     saveFreeformTunerSnapshot,
   ]);
 
@@ -1354,42 +539,18 @@ if (scaleEnabled) {
         {/* ── Guided-mode coaching banner ── */}
         {guidanceStep !== null && (
           <div style={{ background: "#071c30", border: "1px solid #1d4ed8", borderRadius: 10, padding: "10px 12px", marginBottom: 4 }}>
-            {guidanceStep === 0 ? (
-              <>
-                <div style={{ color: "#7dd3fc", fontWeight: 700, fontSize: 12, marginBottom: 4 }}>
-                  Step 1 of 2 — Tune Ring Geometry
-                </div>
-                <div style={{ color: "#94a3b8", fontSize: 11, lineHeight: 1.5, marginBottom: 8 }}>
-                  Adjust center spacing and angles until the ring arrangement looks right for your weave. Scales are hidden so you can see the rings clearly.
-                </div>
-                <button
-                  onClick={() => {
-                    setGuidanceStep(1);
-                    setScaleEnabled(true);
-                    setTunerMode("calibrate_scales");
-                    setPanelOpen(true);
-                  }}
-                  style={{ padding: "6px 14px", borderRadius: 8, background: "#1d4ed8", color: "#fff", border: "none", cursor: "pointer", fontWeight: 700, fontSize: 12 }}
-                >
-                  Next: Add Scales →
-                </button>
-              </>
-            ) : (
-              <>
-                <div style={{ color: "#86efac", fontWeight: 700, fontSize: 12, marginBottom: 4 }}>
-                  Step 2 of 2 — Calibrate Scales
-                </div>
-                <div style={{ color: "#94a3b8", fontSize: 11, lineHeight: 1.5, marginBottom: 8 }}>
-                  Pick the scale size closest to your physical scales, then fine-tune with the sliders. Switch to Tune Scales (✨) to adjust angles and depth. Save when it looks right.
-                </div>
-                <button
-                  onClick={() => setGuidanceStep(null)}
-                  style={{ padding: "5px 12px", borderRadius: 8, background: "#14532d", color: "#a7f3d0", border: "1px solid #166534", cursor: "pointer", fontWeight: 700, fontSize: 11 }}
-                >
-                  Dismiss
-                </button>
-              </>
-            )}
+            <div style={{ color: "#7dd3fc", fontWeight: 700, fontSize: 12, marginBottom: 4 }}>
+              Tune Ring Geometry
+            </div>
+            <div style={{ color: "#94a3b8", fontSize: 11, lineHeight: 1.5, marginBottom: 8 }}>
+              Adjust center spacing and angles until the ring arrangement looks right for your weave, then save.
+            </div>
+            <button
+              onClick={() => setGuidanceStep(null)}
+              style={{ padding: "5px 12px", borderRadius: 8, background: "#14532d", color: "#a7f3d0", border: "1px solid #166534", cursor: "pointer", fontWeight: 700, fontSize: 11 }}
+            >
+              Dismiss
+            </button>
           </div>
         )}
 
@@ -1412,161 +573,13 @@ if (scaleEnabled) {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
               <div style={{ minWidth: 70, color: "#cbd5e1", fontWeight: 700 }}>Ring ID</div>
-              <select value={id} onChange={(e) => { const nextId = e.target.value; const prevMm = convertToMM(id); const nextMm = convertToMM(nextId); setId(nextId); setScaleHoleId((prev) => (Math.abs(prev - prevMm) < 0.01 ? nextMm : prev)); }} style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }}>
+              <select value={id} onChange={(e) => setId(e.target.value)} style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }}>
                 {ID_OPTIONS.map((v) => (<option key={v} value={v}>{v}"</option>))}
               </select>
             </div>
             <div style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.5 }}>
               Set wire gauge and inner diameter to match your physical rings. AR = ID ÷ Wire. Use Calibrate to verify screen accuracy.
             </div>
-          </>
-        )}
-
-        {/* ── Calibrate Scales ── */}
-        {tunerMode === "calibrate_scales" && (
-          <>
-            {/* Sub-tab toggle */}
-            <div style={{ display: "flex", gap: 4 }}>
-              {(["size", "dims"] as const).map((t) => (
-                <button key={t} onClick={() => setCalibrateScaleTab(t)} style={{ flex: 1, padding: "4px 0", borderRadius: 7, border: "none", background: calibrateScaleTab === t ? "#1e40af" : "#1e293b", color: calibrateScaleTab === t ? "#fff" : "#64748b", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
-                  {t === "size" ? "Size & Style" : "Dimensions"}
-                </button>
-              ))}
-            </div>
-
-            {calibrateScaleTab === "size" && (
-              <>
-                <div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <div style={{ color: "#cbd5e1", fontWeight: 700, fontSize: 12 }}>Scale size</div>
-                    <div style={{ color: "#475569", fontSize: 11 }}>
-                      {nearestPreset(scaleWidth, scaleHeight)
-                        ? SCALE_PRESETS.find((p) => p.id === nearestPreset(scaleWidth, scaleHeight))!.label
-                        : "Custom"}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                    {visiblePresets.map((p) => {
-                      const active = nearestPreset(scaleWidth, scaleHeight) === p.id;
-                      return (
-                        <button
-                          key={p.id}
-                          onClick={() => { setScaleHoleId(p.holeDiaMm); setScaleWidth(p.widthMm); setScaleHeight(p.heightMm); setScaleDrop(p.dropMm); }}
-                          title={`Hole: ${p.holeDiaMm.toFixed(2)}mm  W: ${p.widthMm}mm  H: ${p.heightMm}mm  Drop: ${p.dropMm}mm`}
-                          style={{ padding: "4px 9px", borderRadius: 8, border: `1px solid ${active ? "#3b82f6" : "#334155"}`, background: active ? "#1e40af" : "#0f172a", color: active ? "#fff" : "#94a3b8", cursor: "pointer", fontSize: 11, fontWeight: 600 }}
-                        >
-                          {p.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <div style={{ color: "#475569", fontSize: 10, marginTop: 4 }}>
-                    Presets based on TRL/commercial dragon scales.
-                  </div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
-                  <div style={{ minWidth: 70, color: "#cbd5e1", fontWeight: 700 }}>Shape</div>
-                  <select
-                    value={scaleShape}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v === "__add_custom__") {
-                        setShapeEditor({ mode: "add" });
-                        return;
-                      }
-                      setScaleShape(v as ScaleShape);
-                    }}
-                    style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }}
-                  >
-                    {visibleBuiltins.map((v) => (
-                      <option key={v} value={v}>
-                        {v === "leaf" ? "Standard" : v}
-                      </option>
-                    ))}
-                    {customShapes.length > 0 && <option disabled>──────────</option>}
-                    {customShapes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.emoji} {c.label}
-                      </option>
-                    ))}
-                    <option value="__add_custom__">+ Add custom…</option>
-                  </select>
-                  {typeof scaleShape === "string" && scaleShape.startsWith("custom:") && (
-                    <>
-                      <button
-                        type="button"
-                        title="Edit custom shape"
-                        onClick={() => {
-                          const c = getCustomShapeById(scaleShape);
-                          if (c) setShapeEditor({ mode: "edit", initial: c });
-                        }}
-                        style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid #334155", background: "#0f172a", color: "#cbd5e1", cursor: "pointer", fontSize: 12 }}
-                      >
-                        ✏️
-                      </button>
-                      <button
-                        type="button"
-                        title="Set as default scale shape"
-                        onClick={() => saveDefaultScaleShape(scaleShape)}
-                        style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid #334155", background: "#0f172a", color: "#cbd5e1", cursor: "pointer", fontSize: 12 }}
-                      >
-                        ⭐
-                      </button>
-                      <button
-                        type="button"
-                        title="Delete custom shape"
-                        onClick={() => {
-                          const next = customShapes.filter((c) => c.id !== scaleShape);
-                          setCustomShapes(next);
-                          saveCustomShapes(next);
-                          notifyCustomShapesChanged();
-                          // Fall back to first visible built-in, or any remaining custom.
-                          // Final default is "leaf" (Standard almond/lancet) — never teardrop.
-                          const fallback =
-                            visibleBuiltins[0] ?? next[0]?.id ?? "leaf";
-                          setScaleShape(fallback);
-                          if (loadDefaultScaleShape() === scaleShape) {
-                            saveDefaultScaleShape(null);
-                          }
-                        }}
-                        style={{ padding: "6px 8px", borderRadius: 8, border: "1px solid #334155", background: "#0f172a", color: "#cbd5e1", cursor: "pointer", fontSize: 12 }}
-                      >
-                        🗑️
-                      </button>
-                    </>
-                  )}
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
-                  <div style={{ minWidth: 70, color: "#cbd5e1", fontWeight: 700 }}>Color</div>
-                  <input type="color" value={scaleColor} onChange={(e) => setScaleColor(e.target.value)} style={{ width: 56, height: 34, padding: 0, border: "1px solid #334155", borderRadius: 8, background: "#0b1220" }} />
-                </div>
-              </>
-            )}
-
-            {calibrateScaleTab === "dims" && (
-              <>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                  <div style={{ color: "#cbd5e1", fontWeight: 700 }}>Hole ID</div>
-                  <input type="number" min={1} max={20} step={0.1} value={scaleHoleId} onChange={(e) => setScaleHoleId(clamp(parseFloat(e.target.value) || 0, 1, 20))} style={{ width: 80, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }} />
-                </div>
-                {[
-                  { label: "Width", val: scaleWidth, set: setScaleWidth, min: 4, max: 30, step: 0.1 },
-                  { label: "Height", val: scaleHeight, set: setScaleHeight, min: 6, max: 45, step: 0.1 },
-                  { label: "Drop", val: scaleDrop, set: setScaleDrop, min: -10, max: 20, step: 0.05 },
-                ].map(({ label, val, set, min, max, step }) => (
-                  <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <div style={{ color: "#cbd5e1", fontWeight: 700 }}>{label}</div>
-                      <div style={{ color: "#93c5fd", fontWeight: 700 }}>{val.toFixed(step < 0.1 ? 2 : 1)} mm</div>
-                    </div>
-                    <input type="range" min={min} max={max} step={step} value={val} onChange={(e) => set(parseFloat(e.target.value))} style={{ width: "100%" }} />
-                  </div>
-                ))}
-                <Link to="/_calibration?from=tuner" style={{ background: "#1f2937", color: "#a7f3d0", padding: "6px 10px", borderRadius: 10, border: "1px solid #334155", textDecoration: "none", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11 }}>
-                  🎛️ Calibrate screen accuracy
-                </Link>
-              </>
-            )}
           </>
         )}
 
@@ -1581,7 +594,7 @@ if (scaleEnabled) {
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
               <div style={{ minWidth: 70, color: "#cbd5e1", fontWeight: 700 }}>Ring ID</div>
-              <select value={id} onChange={(e) => { const nextId = e.target.value; const prevMm = convertToMM(id); const nextMm = convertToMM(nextId); setId(nextId); setScaleHoleId((prev) => (Math.abs(prev - prevMm) < 0.01 ? nextMm : prev)); }} style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }}>
+              <select value={id} onChange={(e) => setId(e.target.value)} style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }}>
                 {ID_OPTIONS.map((v) => (<option key={v} value={v}>{v}"</option>))}
               </select>
             </div>
@@ -1608,8 +621,7 @@ if (scaleEnabled) {
             <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
               <div style={{ minWidth: 70, color: "#cbd5e1", fontWeight: 700 }}>Status</div>
               <select value={status} onChange={(e) => setStatus(e.target.value as "valid" | "rings_only" | "no_solution")} style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }}>
-                <option value="valid">✅ Rings + Scales</option>
-                <option value="rings_only">🟠 Rings only (no scales)</option>
+                <option value="valid">✅ Rings weave</option>
                 <option value="no_solution">❌ No Solution</option>
               </select>
             </div>
@@ -1624,110 +636,6 @@ if (scaleEnabled) {
           </>
         )}
 
-        {/* ── Tune Scales ── */}
-        {tunerMode === "tune_scales" && (
-          <>
-            {/* Sub-tab toggle */}
-            <div style={{ display: "flex", gap: 4 }}>
-              {(["angles", "depth"] as const).map((t) => (
-                <button key={t} onClick={() => setTuneScaleTab(t)} style={{ flex: 1, padding: "4px 0", borderRadius: 7, border: "none", background: tuneScaleTab === t ? "#1e40af" : "#1e293b", color: tuneScaleTab === t ? "#fff" : "#64748b", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
-                  {t === "angles" ? "Angles & View" : "Depth & Zoom"}
-                </button>
-              ))}
-            </div>
-
-            {tuneScaleTab === "angles" && (
-              <>
-                <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                  <span style={{ color: "#cbd5e1", fontWeight: 700 }}>Enable scales</span>
-                  <input type="checkbox" checked={scaleEnabled} onChange={(e) => setScaleEnabled(e.target.checked)} />
-                </label>
-                <button type="button" onClick={() => setScaleBehindRings((v) => !v)} style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1px solid #334155", background: scaleBehindRings ? "#1d4ed8" : "#0b1220", color: "#e5e7eb", cursor: "pointer", fontWeight: 700 }}>
-                  {scaleBehindRings ? "🔵 Alignment view" : "🟢 Weave view"}
-                </button>
-                {[
-                  { label: "Angle In", val: scaleAngleIn, set: setScaleAngleIn },
-                  { label: "Angle Out", val: scaleAngleOut, set: setScaleAngleOut },
-                ].map(({ label, val, set }) => (
-                  <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <div style={{ color: "#93c5fd", fontWeight: 700 }}>{label}</div>
-                      <div style={{ color: "#93c5fd", fontWeight: 700 }}>{val.toFixed(0)}°</div>
-                    </div>
-                    <input type="range" min="-85" max="85" step="1" value={val} onChange={(e) => set(parseFloat(e.target.value))} style={{ width: "100%" }} />
-                  </div>
-                ))}
-                <button type="button" onClick={() => { setScaleAngleIn(angleIn); setScaleAngleOut(angleOut); }} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #334155", background: "#0f172a", color: "#7dd3fc", cursor: "pointer", fontSize: 12 }}>
-                  ↺ Sync to ring angles ({angleIn}° / {angleOut}°)
-                </button>
-              </>
-            )}
-
-            {tuneScaleTab === "depth" && (
-              <>
-                {[
-                  { label: "Plane Z", val: scalePlaneZ, set: setScalePlaneZ, min: -30, max: 30, step: 0.1, unit: "mm" },
-                  { label: "Tip lift", val: scaleTipLiftDeg, set: setScaleTipLiftDeg, min: -10, max: 70, step: 1, unit: "°" },
-                  { label: "Row clearance Z", val: scaleRowClearanceZ, set: setScaleRowClearanceZ, min: -5, max: 5, step: 0.01, unit: "mm" },
-                  { label: "Zoom", val: cameraZoom, set: setCameraZoom, min: 0.45, max: 3.2, step: 0.01, unit: "×" },
-                ].map(({ label, val, set, min, max, step, unit }) => (
-                  <div key={label} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <div style={{ color: "#cbd5e1", fontWeight: 700 }}>{label}</div>
-                      <div style={{ color: "#93c5fd", fontWeight: 700 }}>{val.toFixed(step < 0.1 ? 2 : step < 1 ? 1 : 0)}{unit}</div>
-                    </div>
-                    <input type="range" min={min} max={max} step={step} value={val} onChange={(e) => set(parseFloat(e.target.value))} style={{ width: "100%" }} />
-                  </div>
-                ))}
-              </>
-            )}
-          </>
-        )}
-
-        {/* ── Tune Weave ── */}
-        {tunerMode === "tune_weave" && (
-          <>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between" }}>
-              <div style={{ minWidth: 70, color: "#cbd5e1", fontWeight: 700 }}>Weave mode</div>
-              <select value={scaleWeaveMode} onChange={(e) => setScaleWeaveMode(e.target.value as ScaleWeaveMode)} style={{ flex: 1, padding: "6px 8px", borderRadius: 10, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", outline: "none" }}>
-                <option value="interlocked">interlocked</option>
-                <option value="independent">independent</option>
-              </select>
-            </div>
-            <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-              <span style={{ color: "#cbd5e1", fontWeight: 700 }}>Lock hole to ring center</span>
-              <input type="checkbox" checked={lockScaleHolesToRingCenters} onChange={(e) => setLockScaleHolesToRingCenters(e.target.checked)} />
-            </label>
-            <label style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-              <span style={{ color: "#cbd5e1", fontWeight: 700 }}>Overlay every cell</span>
-              <input type="checkbox" checked={scaleOnEveryCell} onChange={(e) => setScaleOnEveryCell(e.target.checked)} />
-            </label>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, opacity: lockScaleHolesToRingCenters ? 0.45 : 1 }}>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <div style={{ color: "#cbd5e1", fontWeight: 700 }}>Scale center</div>
-                <div style={{ color: "#93c5fd", fontWeight: 700 }}>{scaleCenterSpacing.toFixed(1)} mm</div>
-              </div>
-              <input type="range" min="2" max="25" step="0.1" value={scaleCenterSpacing} disabled={lockScaleHolesToRingCenters} onChange={(e) => setScaleCenterSpacing(parseFloat(e.target.value))} style={{ width: "100%" }} />
-            </div>
-            {(["X", "Y"] as const).map((axis) => (
-              <div key={axis} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <div style={{ color: "#cbd5e1", fontWeight: 700 }}>Grid {axis}</div>
-                  <div style={{ color: "#93c5fd", fontWeight: 700 }}>{(axis === "X" ? scaleGridOffsetX : scaleGridOffsetY).toFixed(2)} mm</div>
-                </div>
-                <input type="range" min="-30" max="30" step="0.05" value={axis === "X" ? scaleGridOffsetX : scaleGridOffsetY} onChange={(e) => axis === "X" ? setScaleGridOffsetX(parseFloat(e.target.value)) : setScaleGridOffsetY(parseFloat(e.target.value))} style={{ width: "100%" }} />
-              </div>
-            ))}
-            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-              <button onClick={handleReloadLastSave} style={{ flex: 1, background: "#0f172a", color: "#94a3b8", padding: "8px 12px", borderRadius: 10, border: "1px solid #334155", cursor: "pointer", fontWeight: 700 }} title="Restore sliders from the most recently saved ring set">
-                Reload
-              </button>
-              <button onClick={handleSave} style={{ flex: 1, background: "#1e293b", color: "#93c5fd", padding: "8px 12px", borderRadius: 10, border: "1px solid #334155", cursor: "pointer", fontWeight: 800 }}>
-                Save
-              </button>
-            </div>
-          </>
-        )}
       </DraggablePill>}
 
       <DraggablePill id="tuner-compass" defaultPosition={{ x: 20, y: 70 }}>
@@ -1741,31 +649,6 @@ if (scaleEnabled) {
 
       {showCompass && <DraggableCompassNav onNavigate={() => setShowCompass(false)} />}
 
-      {shapeEditor && (
-        <CustomShapeEditor
-          initial={shapeEditor.mode === "edit" ? shapeEditor.initial : null}
-          onCancel={() => setShapeEditor(null)}
-          onSave={(saved, makeDefault) => {
-            const idx = customShapes.findIndex((c) => c.id === saved.id);
-            const next =
-              idx === -1
-                ? [...customShapes, saved]
-                : customShapes.map((c, i) => (i === idx ? saved : c));
-            setCustomShapes(next);
-            saveCustomShapes(next);
-            notifyCustomShapesChanged();
-            const newShapeValue =
-              saved.source === "base"
-                // baseShape went through migrateLegacyShape on load, so this
-                // can no longer be "teardrop". Fall back to leaf (Standard).
-                ? (saved.baseShape ?? "leaf")
-                : saved.id;
-            setScaleShape(newShapeValue);
-            if (makeDefault) saveDefaultScaleShape(newShapeValue);
-            setShapeEditor(null);
-          }}
-        />
-      )}
     </div>
   );
 }
