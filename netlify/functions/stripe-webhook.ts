@@ -34,6 +34,24 @@ function priceIdToTier(priceId: string): string {
   return PRICE_TO_TIER[priceId] ?? "free";
 }
 
+const TIER_RANK: Record<string, number> = { free: 0, maker: 1, crafter: 2, studio: 3 };
+
+// Resolve the tier the customer is still entitled to from their remaining
+// active subscriptions, ignoring `excludeSubId` (the one being canceled/lapsed).
+// Returns the highest-ranked active tier, or "free" if none remain.
+// Guards against blindly downgrading a user who has another active sub
+// (e.g. a duplicate signup).
+async function activeTierForCustomer(customerId: string, excludeSubId?: string): Promise<string> {
+  const subs = await stripe.subscriptions.list({ customer: customerId, status: "active", limit: 100 });
+  let best = "free";
+  for (const s of subs.data) {
+    if (s.id === excludeSubId) continue;
+    const t = priceIdToTier(s.items.data[0].price.id);
+    if ((TIER_RANK[t] ?? 0) > (TIER_RANK[best] ?? 0)) best = t;
+  }
+  return best;
+}
+
 async function supabaseUserIdFromCustomer(customerId: string): Promise<string | null> {
   const customer = await stripe.customers.retrieve(customerId);
   if (customer.deleted) return null;
@@ -112,7 +130,11 @@ export const handler = async (event: any) => {
         if (!userId) { console.warn("No supabaseUserId on subscription", sub.id); break; }
 
         const priceId = sub.items.data[0].price.id;
-        const tier = sub.status === "active" ? priceIdToTier(priceId) : "free";
+        // If this sub is no longer active, fall back to any other active sub
+        // on the customer rather than blindly downgrading to free.
+        const tier = sub.status === "active"
+          ? priceIdToTier(priceId)
+          : await activeTierForCustomer(sub.customer as string, sub.id);
         await setUserTier(userId, tier);
         break;
       }
@@ -124,7 +146,9 @@ export const handler = async (event: any) => {
           ?? await supabaseUserIdFromCustomer(sub.customer as string);
         if (!userId) { console.warn("No supabaseUserId on deleted subscription", sub.id); break; }
 
-        await setUserTier(userId, "free");
+        // Only downgrade to free if the customer has no other active sub.
+        const tier = await activeTierForCustomer(sub.customer as string, sub.id);
+        await setUserTier(userId, tier);
         break;
       }
 

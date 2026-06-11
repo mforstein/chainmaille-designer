@@ -4531,35 +4531,6 @@ const derived = useMemo(() => {
       // invalidation) so spline fill on scales feels identical to the
       // marquee/shape-fill path. Erase mode removes scales (or rings)
       // inside the polygon instead of painting them.
-      if (activeLayerRef.current === "scales") {
-        const nextScaleColors = new Map(scaleColorsRef.current);
-        const scaleColor = eraseModeRef.current
-          ? null
-          : normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex || paint);
-
-        if (eraseModeRef.current) {
-          for (const cell of cells) nextScaleColors.delete(`${cell.row},${cell.col}`);
-        } else if (scaleColor) {
-          for (const cell of cells) nextScaleColors.set(`${cell.row},${cell.col}`, scaleColor);
-        }
-
-        // Spline-fill on scales must also drop any image-overlay patches at
-        // those cells, otherwise a previously-transferred image would
-        // continue to show through the new paint color. Same invalidation
-        // pattern the marquee path uses.
-        const nextPatches = new Map(scaleImagePatchesRef.current);
-        let patchesChanged = false;
-        for (const cell of cells) {
-          const k = `${cell.row},${cell.col}`;
-          if (nextPatches.has(k)) {
-            nextPatches.delete(k);
-            patchesChanged = true;
-          }
-        }
-        setScaleColors(nextScaleColors);
-        if (patchesChanged) setScaleImagePatches(nextPatches);
-        return;
-      }
 
       // Apply like circle/rect (rings branch — original behavior).
       const mapCopy: RingMap = new Map(rings);
@@ -4690,31 +4661,6 @@ const derived = useMemo(() => {
       // Apply to scales (no cluster logic). Compute next state explicitly
       // so we can push the POST-action snapshot — undo will rewind by
       // exactly one Cmd+Z.
-      if (activeLayerRef.current === "scales") {
-        const nextScaleColors = new Map(scaleColorsRef.current);
-        if (eraseModeRef.current) {
-          for (const cell of paintCells) nextScaleColors.delete(`${cell.row},${cell.col}`);
-        } else {
-          const col = normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex);
-          for (const cell of paintCells) nextScaleColors.set(`${cell.row},${cell.col}`, col);
-        }
-        // Painting OR erasing must also drop any image-overlay patches at
-        // those keys: a new paint color must take visual precedence over a
-        // prior Image Fill transfer (overwrite), and erasing clears the patch
-        // so a freshly placed scale at the same row/col doesn't silently
-        // inherit the previous transfer.
-        const nextPatches = new Map(scaleImagePatchesRef.current);
-        let patchesChanged = false;
-        for (const cell of paintCells) {
-          if (nextPatches.delete(`${cell.row},${cell.col}`)) patchesChanged = true;
-        }
-        setScaleColors(nextScaleColors);
-        if (patchesChanged) setScaleImagePatches(nextPatches);
-        setLastSelectionCount(cells.length);
-        setSelectedKeys(new Set());
-        pushToHistory(rings, nextScaleColors);
-        return;
-      }
 
       // Apply to rings — same POST-state pattern.
       const mapCopy: RingMap = new Map(rings);
@@ -5385,52 +5331,6 @@ const derived = useMemo(() => {
         adjLy,
       );
 
-      if (activeLayer === "scales") {
-        // Compute next state explicitly and push POST-state so undo rewinds
-        // by exactly one user-perceptible step (consolidated by the 600 ms
-        // debounce for rapid sequential clicks). The Mirror tool adds the
-        // reflected cell so both sides paint/erase together.
-        const nextScaleColors = new Map(scaleColorsRef.current);
-        const nextPatches = new Map(scaleImagePatchesRef.current);
-        // V2: stamp the brush's current shape AND size (live slider geometry)
-        // onto each painted cell, so the scale keeps both even if the global
-        // settings change later. Erase clears the cell's meta.
-        const nextMeta: ScaleMetaMap = new Map(scaleMetaRef.current);
-        const brushShape = activeScaleSettings.shape;
-        const brushGeom: ScaleGeom = {
-          widthMm: activeScaleSettings.widthMm,
-          heightMm: activeScaleSettings.heightMm,
-          holeIdMm: activeScaleSettings.holeIdMm,
-          dropMm: activeScaleSettings.dropMm,
-        };
-        let metaChanged = false;
-        let patchesChanged = false;
-        const paintColor = normalizeColor6(activeColorRef.current || activeScaleSettings.colorHex);
-        for (const cell of mirrorCellsFor(approxRow, approxCol)) {
-          const key = `${cell.row},${cell.col}`;
-          if (eraseModeRef.current) {
-            nextScaleColors.delete(key);
-            if (nextMeta.delete(key)) metaChanged = true;
-          } else {
-            nextScaleColors.set(key, paintColor);
-            nextMeta.set(key, {
-              ...(nextMeta.get(key) ?? {}),
-              shapeId: brushShape,
-              geom: brushGeom,
-            });
-            metaChanged = true;
-          }
-          // Painting OR erasing must drop any prior image-overlay patch at
-          // this key (new solid color overwrites it; a freshly placed scale
-          // doesn't auto-inherit the previous Image Fill).
-          if (nextPatches.delete(key)) patchesChanged = true;
-        }
-        setScaleColors(nextScaleColors);
-        if (metaChanged) writeScaleMeta(nextMeta);
-        if (patchesChanged) setScaleImagePatches(nextPatches);
-        pushToHistoryDebounced(rings, nextScaleColors);
-        return;
-      }
 
       const effectiveInnerRadiusMm = getEffectiveInnerRadiusMm(approxRow);
       const baseCircleRmm = effectiveInnerRadiusMm;

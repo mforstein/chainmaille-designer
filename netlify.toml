@@ -6,6 +6,17 @@
   publish = "dist"
   functions = "netlify/functions"
 
+# ==========================
+# 🔒 Private-preview password gate (temporary)
+# Locks the whole site behind SITE_LOCK_PASSWORD. Serverless functions are
+# excluded so Stripe's webhook (no credentials) still works. Remove this block
+# (or unset SITE_LOCK_PASSWORD) + redeploy to make the site public again.
+# ==========================
+[[edge_functions]]
+  path = "/*"
+  function = "gate"
+  excludedPath = ["/.netlify/functions/*"]
+
 [build.environment]
   NODE_VERSION = "20"
   NPM_FLAGS = "--legacy-peer-deps"
