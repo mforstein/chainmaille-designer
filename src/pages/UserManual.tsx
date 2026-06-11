@@ -260,10 +260,10 @@ export default function UserManual() {
 
           <Sub title="Geometry" />
           <Bullets items={[
-            <>The canvas is a <strong>4-in-1 European hex grid</strong>. All renderers (Freeform, Designer, Basic) place rings on this grid. Other weaves (Box Chain, Byzantine, Persian, Scale Maille) are configured in the Atlas but the canvas engine for them is in progress.</>,
-            <>Ring positions use <code>"row-col"</code> keys (e.g. <code>"3-7"</code>); scale color/patch storage uses <code>"row,col"</code> keys (different separator, same coordinate). Saved-project files preserve both.</>,
+            <>The canvas is a <strong>4-in-1 European hex grid</strong>. All renderers (Freeform, Designer, Basic) place rings on this grid. Other weaves (Box Chain, Byzantine, Persian) are configured in the Atlas but the canvas engine for them is in progress.</>,
+            <>Ring positions use <code>"row-col"</code> keys (e.g. <code>"3-7"</code>). Saved-project files preserve them.</>,
             <>All distances are in mm. Inner Diameter (ID), Wire Diameter (WD), and Aspect Ratio (AR = ID ÷ WD) drive geometry. AR &lt; 3 is too tight; 3.5–5.5 is the workable range.</>,
-            <>The Tuner snapshot is the source of truth for ring/scale geometry. It writes to <code>localStorage["freeform.tunerSnapshot.v1"]</code> and pushes live to Freeform without a reload.</>,
+            <>The Tuner snapshot is the source of truth for ring geometry. It writes to <code>localStorage["freeform.tunerSnapshot.v1"]</code> and pushes live to Freeform without a reload.</>,
           ]} />
 
           <Sub title="Tiers & gating" />
@@ -277,16 +277,9 @@ export default function UserManual() {
             Subscribe via <a href="/pricing" style={{ color: "#a78bfa" }}>chainmaildesigner.com/pricing</a>. Mobile apps (iOS/Android) ship with Free tier features only — subscribe from the website to unlock paid tools.
           </p>
 
-          <Sub title="Default scale shape" />
-          <Bullets items={[
-            <>The "Standard" scale is internally named <code>"leaf"</code>. Its silhouette is an <strong>almond / lancet</strong> — gradual rounded shoulder, max belly around 45-55% of height, smooth taper to a pointed tip — matching a typical physical scale.</>,
-            <>The legacy <code>"teardrop"</code> (asymmetric round-top, point-bottom) shape is still selectable but is <em>not</em> the default. Older designs saved with teardrop continue to render correctly.</>,
-            <>"Round" and "Kite" remain available for stylized work.</>,
-          ]} />
-
           <Sub title="Persistence" />
           <Bullets items={[
-            <>Most preferences (color palette, last-used scale shape, panel positions, weave snapshot, Atlas matrix) live in <code>localStorage</code>. Clearing site data resets everything to defaults.</>,
+            <>Most preferences (color palette, panel positions, weave snapshot, Atlas matrix) live in <code>localStorage</code>. Clearing site data resets everything to defaults.</>,
             <>Project files (JSON) capture the canvas contents and overlay settings, but never the palette / Tuner snapshot — those follow the device, not the file.</>,
             <>Subscription tier (real Stripe-paid accounts) lives in your Supabase profile and persists indefinitely — clicking <strong>Sign out</strong> ends your local session but does not affect the underlying account.</>,
           ]} />
@@ -360,7 +353,7 @@ export default function UserManual() {
           <Sub title="Design tools" />
           <Feat title="🪡 Basic — Grid color planner">Free for all tiers. Quick row-and-column color-way sketching.</Feat>
           <Feat title="💎 Designer (3D Ring Grid)">Full 3D-rendered ring grid with paint, erase, flood fill, spline fill, and image overlay. Maker tier or higher.</Feat>
-          <Feat title="✨ Studio (Freeform Designer)">Free-form ring + scale placement, image overlay with color transfer, shape + spline fill, copy/paste, full export. Studio tier.</Feat>
+          <Feat title="✨ Studio (Freeform Designer)">Free-form ring placement, image overlay with color transfer, shape + spline fill, copy/paste, full export. Studio tier.</Feat>
 
           <Sub title="Utilities" />
           <Feat title="📊 Ring Size Chart">Interactive AR reference. Always free, no account.</Feat>
@@ -371,7 +364,7 @@ export default function UserManual() {
         {/* ── FREEFORM STUDIO ─────────────────────────────────────────────── */}
         <Sec id="studio" icon="✨" title="Freeform Studio · /freeform">
           <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
-            The primary production design environment. Place rings and scales on a free-form hex grid, apply colors, overlay reference images, fill shapes, copy + paste regions, and export finished patterns.
+            The primary production design environment. Place rings on a free-form hex grid, apply colors, overlay reference images, fill shapes, copy + paste regions, and export finished patterns.
           </p>
           <Shot src="/manual/freeform.jpg" alt="Freeform Studio overview" label="/freeform"
                 fallback={<StudioFallback />} />
@@ -385,38 +378,32 @@ export default function UserManual() {
           <Feat title="📦 Finalize & Export">Opens the export panel (PDF, CSV, GLB, STL, Physical Pattern).</Feat>
           <Feat title="▸ Collapse / ▾ Expand toolbar">Hides everything below it to maximize canvas. Tap again to restore.</Feat>
           <Feat title="⚙️ Utility Panel">Toggles the secondary floating pill (Studio Geometry, Save/Load, Design Library, canvas BG, reset, Studio Stats).</Feat>
-          <Feat title="🎨 Draw (Paint)">Primary placement tool. Click or drag to place rings at hex-grid positions in the active color. R/S toggle switches between ring and scale layer.</Feat>
-          <Feat title="⌫ Eraser">Click or drag to remove rings/scales. <strong>Painting now wipes any prior image-fill patch on a scale</strong> — the new solid color takes precedence over the image transfer at that cell.</Feat>
+          <Feat title="🎨 Draw (Paint)">Primary placement tool. Click or drag to place rings at hex-grid positions in the active color.</Feat>
+          <Feat title="⌫ Eraser">Click or drag to remove rings.</Feat>
           <Feat title="↩️ Undo / ↪️ Redo">Per-action history. <KS>Ctrl/Cmd+Z</KS> / <KS>Ctrl+Shift+Z</KS>.</Feat>
           <Feat title="◼ Shapes">Opens the Shape picker (Square, Circle, Hex, Octagon, Heart, Triangle). Drag on canvas to fill the shape. The current selection-tool also acts as a rubber-band selection — see Copy/Paste below.</Feat>
-          <Feat title="R/S — Ring/Scale Layer">Switches the active paint layer. In scale mode the icon is highlighted blue.</Feat>
           <Feat title="✋ Pan">Click-drag to scroll without placing rings. Two-finger touch always pans regardless of mode.</Feat>
-          <Feat title="✛ Scale-Plane drag">Drags the entire scale grid relative to rings, writing to <code>gridOffsetXmm/Ymm</code>. With the lock on, this still applies as a uniform shift — every scale moves the same vector, alignment to ring centers is preserved.</Feat>
           <Feat title="📋 Copy — NEW">
-            Copies the most recently selected region's rings AND scales (including image patches) onto an internal clipboard. The clipboard captures the <strong>pre-paint snapshot</strong> of each cell, so a heart with image-transferred colors copies as the image — not the active paint that the selection tool dropped on top. Cmd/Ctrl+C also works.
+            Copies the most recently selected region's rings onto an internal clipboard. The clipboard captures the <strong>pre-paint snapshot</strong> of each cell, so a heart with image-transferred colors copies as the image — not the active paint that the selection tool dropped on top. Cmd/Ctrl+C also works.
           </Feat>
           <Feat title="📌 Paste — NEW">
             Toggles paste mode. The cursor changes to <code>copy</code>; click anywhere on the canvas to drop the clipboard at that cell. Stays on after each click so you can place multiple copies. Cmd/Ctrl+V toggles; Esc exits.
           </Feat>
           <Feat title="🖼️ Image Overlay">Opens the Image Overlay panel (Studio tier). The panel is scrollable — the Transfer button at the bottom stays reachable even on short windows.</Feat>
-          <Feat title="🧹 Clear All">Removes all rings and scales. Confirmation required.</Feat>
+          <Feat title="🧹 Clear All">Removes all rings. Confirmation required.</Feat>
 
           <Sub title="Image overlay" />
           <Shot src="/manual/freeform-overlay-rings.jpg" alt="Freeform — image overlay transferred onto rings" label="Image overlay — rings"
                 fallback={SimpleHex("Image overlay (rings) — fallback")} />
-          <Shot src="/manual/freeform-overlay-scales.jpg" alt="Freeform — image overlay transferred onto scales" label="Image overlay — scales"
-                fallback={SimpleHex("Image overlay (scales) — fallback")} />
           <Feat title="Load / Replace image">Tap the drop zone, or drag a file in. Loading a new image replaces the previous one; the in-place "Replace image" button at the top of the panel does the same.</Feat>
           <Feat title="Scale / Opacity / Rotation / Pan X / Pan Y">Adjust how the image is registered against the design. The on-canvas preview reflects every slider in real time.</Feat>
           <Feat title="Tile (repeat)">Tile the image across the design. Pattern Scale (%) — <strong>new slider</strong> — controls tile size as a % of the design's bounding box. 100% = one tile fills the design (no visible tiling); ~15% gives a small dense pattern (matches the Designer's behavior).</Feat>
           <Feat title="Mask outline">A dashed rectangle on the canvas defines the world-space region the image is painted into. Drag corners to resize, drag the body to reposition. Reset snaps it back to the auto bounds of the current target.</Feat>
-          <Feat title="Transfer Scope">All rings (every placed cell of the chosen target), or Selection only (rings/scales the user previously rubber-banded).</Feat>
-          <Feat title="Transfer Target">Rings · Scales · Both. The on-canvas preview AND the transfer respect this selection — choose Rings to leave scales untouched.</Feat>
+          <Feat title="Transfer Scope">All rings (every placed cell of the chosen target), or Selection only (rings the user previously rubber-banded).</Feat>
           <Feat title="Preview mode — NEW">
-            <strong>Sampled Colors</strong> (default): each ring is drawn as an open colored ring (matches the actual torus geometry) showing the color it will become on Transfer. Scales appear in their sampled body color. <strong>Raw Image</strong>: the source image is clipped to ring/scale silhouettes — the legacy view.
+            <strong>Sampled Colors</strong> (default): each ring is drawn as an open colored ring (matches the actual torus geometry) showing the color it will become on Transfer. <strong>Raw Image</strong>: the source image is clipped to ring silhouettes — the legacy view.
           </Feat>
-          <Feat title="Image Fill on Scales">When on, scales receive a per-scale image patch (CanvasTexture) instead of a flat sampled color. Image Boundary (%) insets the image inside the scale outline, leaving a colored frame.</Feat>
-          <Feat title="Transfer button (green, bottom)">"Transfer to Rings" / "Transfer to Scales" / "Transfer to Rings + Scales". Closing the overlay panel removes the on-canvas preview — only the actual transfer leaves persistent state.</Feat>
+          <Feat title="Transfer button (green, bottom)">"Transfer to Rings". Closing the overlay panel removes the on-canvas preview — only the actual transfer leaves persistent state.</Feat>
 
           <HowTo
             title="Copy a heart with image colors and paste it elsewhere"
@@ -430,32 +417,16 @@ export default function UserManual() {
             ]}
             note="Each paste is a separate undo step." />
 
-          <HowTo
-            title="Place scales BEHIND the rings"
-            steps={[
-              <>Open Studio Geometry (⚙️ → 🧰) and switch to the 🐠 Scale Tuners tab.</>,
-              <>Drag the <strong>Scale Plane Z (mm)</strong> slider into negative values. Scales sink behind the ring plane.</>,
-              <>The instanced renderer (used above ~5000 rings) and the standard renderer both respect negative Z now — adjacent rows still avoid clipping.</>,
-            ]}
-            note="When any scale has planeZMm < 0, the renderer skips the protective floor-lift that previously pinned scales to positive Z." />
-
           <Sub title="Studio Geometry panel" />
           <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.7 }}>
-            Tabbed dialog: 📏 Ring Spacing · ⭕ Circle Tuning · 💍 Ring Sets · 👁 View · 🐠 Scale Tuners · 🔬 Diagnostics. Every parameter syncs with the Tuner snapshot.
+            Tabbed dialog: 📏 Ring Spacing · ⭕ Circle Tuning · 💍 Ring Sets · 👁 View · 🔬 Diagnostics. Every parameter syncs with the Tuner snapshot.
           </p>
 
           <Sub title="Design Library" />
           <Shot src="/manual/freeform-library.png" alt="Design Library" label="Design Library — My Designs + Starters"
                 fallback={<Mock label="Design Library (fallback)"><div style={{ padding: 20, color: "#94a3b8" }}>Saved designs grid + built-in starters.</div></Mock>} />
-          <Feat title="My Designs">Saved canvas JSONs. <em>Load</em> replaces the canvas; <em>Append</em> merges rings/scales next to the existing work.</Feat>
-          <Feat title="Starters">Built-in templates (Blank, Small Patch, Bracelet, Wide Fill, Diamond, Rainbow Rows, Chevron, ...). New starters default to the <code>"leaf"</code> scale shape.</Feat>
-
-          <Sub title="Custom scale shapes" />
-          <Feat title="Add custom shape">Opens the Custom Shape Editor. Trace an outline or paste polygon coordinates. The "Add custom shape" button is in the S-shape picker. Saved shapes appear in the picker with their custom emoji/label.</Feat>
-          <Feat title="Set as default">Pin any shape (built-in or custom) as the app's default. New designs and new sessions start with that shape selected.</Feat>
-          <Note>
-            Save-time cache invalidation: when you save a new custom shape, the renderer's internal lookup cache is refreshed immediately, so the new shape's polygon renders on the next frame — no reload needed. <em>(This was a recent fix; before, freshly-created customs fell back to teardrop until the page reloaded.)</em>
-          </Note>
+          <Feat title="My Designs">Saved canvas JSONs. <em>Load</em> replaces the canvas; <em>Append</em> merges rings next to the existing work.</Feat>
+          <Feat title="Starters">Built-in templates (Blank, Small Patch, Bracelet, Wide Fill, Diamond, Rainbow Rows, Chevron, ...).</Feat>
 
           <Sub title="Color palette" />
           <Feat title="Swatches">Tap to activate. Long-press to edit. Tap + to add. Drag the palette pill anywhere; position persists.</Feat>
@@ -480,7 +451,7 @@ export default function UserManual() {
 
           <Sub title="Image overlay" />
           <Feat title="🖼️ Image Overlay panel">
-            Ring-only on /designer. <strong>Scale-specific controls (Image Fill on Scales, Test Scale Shape, Image Boundary, test canvas) are hidden</strong> — Designer has no scale layer, so those controls would be noise. The panel shows: upload, preview, repeat, scale, rotation, opacity, and the green <strong>📤 Transfer to Rings</strong> button.
+            The panel shows: upload, preview, repeat, scale, rotation, opacity, and the green <strong>📤 Transfer to Rings</strong> button.
           </Feat>
           <Feat title="Tile mode — fixed">
             <strong>Pattern Scale (%) is now honored on Transfer.</strong> Previously the snapshot pipeline force-cleared <code>repeat="none"</code>, so even with Tile checked the result was a single stretched image. Now: pick a Pattern Scale (e.g. 15%), click Transfer, and the rings genuinely tile.
@@ -533,7 +504,7 @@ export default function UserManual() {
         {/* ── WEAVE TUNER ─────────────────────────────────────────────────── */}
         <Sec id="tuner" icon="⚙️" title="Weave Tuner · /tuner">
           <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
-            Live 3D geometry workbench. Set ring + scale parameters, see the result instantly, save the snapshot.
+            Live 3D geometry workbench. Set ring parameters, see the result instantly, save the snapshot.
           </p>
           <Shot src="/manual/tuner.jpg" alt="Weave Tuner" label="/tuner"
                 fallback={<Mock label="Tuner (fallback)"><div style={{ padding: 20, color: "#94a3b8" }}>Live 3D geometry workbench with mode strip.</div></Mock>} />
@@ -542,13 +513,10 @@ export default function UserManual() {
             Saving in the Tuner pushes geometry to Freeform via <code>localStorage["freeform.tunerSnapshot.v1"]</code>. No reload needed.
           </Note>
 
-          <Sub title="Mode strip — five panels" />
+          <Sub title="Mode strip — two panels" />
           {[
-            { icon: "📐", name: "Calibrate Rings", desc: "Enter ID + wire gauge to compute AR. Save with a 3-state status — see below." },
+            { icon: "📐", name: "Calibrate Rings", desc: "Enter ID + wire gauge to compute AR. Save with a 2-state status — see below." },
             { icon: "🔧", name: "Tune Rings", desc: "Center Spacing, Angle In (even rows), Angle Out (odd rows), zoom. Save / Reload Last Save." },
-            { icon: "⚖️", name: "Calibrate Scales", desc: "Hole Diameter, Width, Height, Drop, Shape (Standard / Teardrop / Round / Kite). Color swatch for preview." },
-            { icon: "✨", name: "Tune Scales", desc: "Enable scales, view toggle (Weave / Alignment), Angle In/Out, Plane Z, Tip Lift, Row Clearance Z (-5 to +5)." },
-            { icon: "🧩", name: "Tune Weave", desc: "Weave mode (Interlocked / Independent), Lock hole to ring center, Overlay every cell, Scale center spacing, Grid X / Grid Y." },
           ].map(m => (
             <div key={m.name} style={{ marginBottom: 10, background: "#0f172a", borderRadius: 8, padding: "10px 14px", border: "1px solid #1e293b", display: "flex", gap: 12, alignItems: "flex-start" }}>
               <span style={{ fontSize: 20, flexShrink: 0, marginTop: 2 }}>{m.icon}</span>
@@ -564,30 +532,15 @@ export default function UserManual() {
             When saving a tune entry, set one of three states:
           </Feat>
           <Bullets items={[
-            <><span style={{ color: "#19c37d" }}>✅ <strong>Rings + Scales</strong></span> — both ring and ring+scale weave succeed at this ID/wire pair. The Atlas shows the cell green.</>,
-            <><span style={{ color: "#f59e0b" }}>🟠 <strong>Rings only (no scales)</strong></span> — rings close cleanly but the scale hole won't admit the ring at this AR. Still usable as a ring-only section of a design. The Atlas shows the cell orange.</>,
-            <><span style={{ color: "#ef4444" }}>❌ <strong>No Solution</strong></span> — neither rings nor scales work. The Atlas shows the cell red.</>,
+            <><span style={{ color: "#19c37d" }}>✅ <strong>Rings weave</strong></span> — rings close cleanly at this ID/wire pair. The Atlas shows the cell green.</>,
+            <><span style={{ color: "#ef4444" }}>❌ <strong>No Solution</strong></span> — rings don't weave at this AR. The Atlas shows the cell red.</>,
           ]} />
-
-          <Sub title="Grid X / Y under the lock — NEW" />
-          <Feat title="Lock hole to ring center + Grid X / Y">
-            With "Lock hole to ring center" on, scales remain snapped to ring centers — but the Grid X and Grid Y sliders are now editable. They apply as a <strong>uniform offset of the whole scale plane</strong>: every scale shifts by the same vector, so registration to ring centers is preserved. Use them to dial in horizontal/vertical scale-vs-ring registration without unlocking. (Scale center spacing stays disabled with the lock — that one is genuinely determined by the ring grid.)
-          </Feat>
-
-          <HowTo title="Mark a tune entry as 'rings only'"
-            steps={[
-              <>Open the Tuner from the Atlas's "+" cell or directly via URL with <code>?id=...&wire=...&guided=1</code>.</>,
-              <>Configure the ring geometry until rings close on the AR you want.</>,
-              <>If scales fail to weave at this combination (e.g. hole too small for the wire), set <strong>Status</strong> to <strong>🟠 Rings only (no scales)</strong>.</>,
-              <>Click Save. The Atlas cell for this ID × wire pair will render orange on next refresh.</>,
-            ]}
-            note="An older entry with the legacy status='valid' or 'no_solution' is preserved unchanged — green or red as before. Only entries you save going forward can use the new 'rings_only' state." />
         </Sec>
 
         {/* ── WEAVE ATLAS ─────────────────────────────────────────────────── */}
         <Sec id="atlas" icon="🌐" title="Weave Atlas · /atlas">
           <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
-            Matrix of inner diameter (rows) × wire diameter (columns). Each saved tuning entry colors its cell by the Tuner's 3-state status.
+            Matrix of inner diameter (rows) × wire diameter (columns). Each saved tuning entry colors its cell by the Tuner's status.
           </p>
           <Shot src="/manual/atlas.jpg" alt="Weave Atlas matrix" label="/atlas"
                 fallback={<Mock label="Atlas (fallback)"><div style={{ padding: 20, color: "#94a3b8" }}>ID × wire matrix with status-colored cells.</div></Mock>} />
@@ -596,18 +549,13 @@ export default function UserManual() {
           <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "10px 0" }}>
             <div style={{ background: "#0f172a", borderRadius: 6, padding: "8px 12px", border: "1px solid #1e293b", display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ color: "#19c37d", fontSize: 18 }}>✅</span>
-              <span style={{ color: "#19c37d", fontWeight: 700 }}>Rings + Scales</span>
-              <span style={{ color: "#64748b", fontSize: 12 }}>— both weave at this combination</span>
-            </div>
-            <div style={{ background: "#0f172a", borderRadius: 6, padding: "8px 12px", border: "1px solid #1e293b", display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ color: "#f59e0b", fontSize: 18 }}>🟠</span>
-              <span style={{ color: "#f59e0b", fontWeight: 700 }}>Rings only</span>
-              <span style={{ color: "#64748b", fontSize: 12 }}>— rings close, scales don't at this AR</span>
+              <span style={{ color: "#19c37d", fontWeight: 700 }}>Rings weave</span>
+              <span style={{ color: "#64748b", fontSize: 12 }}>— rings close at this combination</span>
             </div>
             <div style={{ background: "#0f172a", borderRadius: 6, padding: "8px 12px", border: "1px solid #1e293b", display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ color: "#ef4444", fontSize: 18 }}>❌</span>
               <span style={{ color: "#ef4444", fontWeight: 700 }}>No solution</span>
-              <span style={{ color: "#64748b", fontSize: 12 }}>— neither rings nor scales weave</span>
+              <span style={{ color: "#64748b", fontSize: 12 }}>— rings don't weave at this AR</span>
             </div>
             <div style={{ background: "#0f172a", borderRadius: 6, padding: "8px 12px", border: "1px solid #1e293b", display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ color: "#4a7a9b", fontSize: 18 }}>+</span>
@@ -621,7 +569,7 @@ export default function UserManual() {
           </Warn>
 
           <Feat title="Click an active cell">Applies that weave's geometry to whatever design tool is currently selected.</Feat>
-          <Feat title={`Click a "+" cell`}>Opens the Tuner pre-loaded with that ring size + wire combination and a guided setup flow — tune rings first, then scales, then save with the 3-state status.</Feat>
+          <Feat title={`Click a "+" cell`}>Opens the Tuner pre-loaded with that ring size + wire combination and a guided setup flow — tune rings, then save with the status.</Feat>
 
           <Note>
             The Atlas's "Apply to Designer" path pushes geometry (ID, WD, center spacing, tilt) but does <em>not</em> change colors or layout. Apply, then paint freely on top.
@@ -668,9 +616,9 @@ export default function UserManual() {
               <tbody>
                 {[
                   ["PDF — BOM + Map", "BOM table + tiled overview map + color preview pages", "Sharing a finished design or filing as a record"],
-                  ["Physical Pattern PDF (1:1)", "Per-color A4 pages; rings at true size; 10 mm ruler ticks; new almond/lancet scale silhouette", "Print at 100% as a physical weaving template"],
+                  ["Physical Pattern PDF (1:1)", "Per-color A4 pages; rings at true size; 10 mm ruler ticks", "Print at 100% as a physical weaving template"],
                   ["CSV", "Row-per-ring spreadsheet: color, position, ID, WD", "Order entry / inventory"],
-                  ["GLB (binary GLTF)", "Full 3D model; each color = one named mesh group; scale meshes use the updated Standard silhouette", "VR/AR, Unity, WebXR, Bambu/Prusa slicers"],
+                  ["GLB (binary GLTF)", "Full 3D model; each color = one named mesh group", "VR/AR, Unity, WebXR, Bambu/Prusa slicers"],
                   ["Per-Color STLs", "One STL per unique color", "Multi-material 3D printing"],
                 ].map(([fmt, what, use]) => (
                   <tr key={fmt} style={{ borderBottom: "1px solid #0f172a" }}>
@@ -714,32 +662,6 @@ export default function UserManual() {
               <>Optional: close the Image Overlay panel. The on-canvas preview disappears — only the actual recolor remains.</>,
             ]} />
 
-          <HowTo title="Add a custom scale shape and make it the default"
-            steps={[
-              "In /freeform, click the S-shape picker icon (the emoji button in the toolbar).",
-              <>Click <strong>+ Add custom shape</strong>. The Custom Shape Editor opens.</>,
-              "Trace your outline by clicking points on the editor canvas (or paste polygon coordinates).",
-              <>Save the shape. <strong>It renders immediately on the design</strong> (no reload required — the renderer's lookup cache is invalidated on save).</>,
-              <>Back in the picker, click the brush icon next to your shape's row, check "Set as default", and apply. The next session will start with this shape.</>,
-            ]} />
-
-          <HowTo title="Mark a ring/wire pair as 'rings only' in the Atlas"
-            steps={[
-              "Open /atlas. Click a + (untested) cell at the ring ID × wire combo you want to tune.",
-              "The Tuner opens with the geometry pre-filled. Tune rings until they close cleanly on the AR.",
-              "Switch to ⚖️ Calibrate Scales / ✨ Tune Scales and observe whether scales weave at this geometry. If the scale hole won't pass over the ring, scales fail.",
-              <>In the Tune Rings panel, set <strong>Status → 🟠 Rings only (no scales)</strong>.</>,
-              <>Click Save. Return to /atlas — the cell now renders <span style={{ color: "#f59e0b" }}>orange</span>.</>,
-            ]} />
-
-          <HowTo title="Shift the whole scale plane relative to the rings (without unlocking)"
-            steps={[
-              "Open /tuner. Go to the 🧩 Tune Weave panel.",
-              <>Keep <strong>Lock hole to ring center</strong> checked. Grid X and Grid Y are now editable (Scale Center stays disabled — that one is determined by the ring grid).</>,
-              "Drag Grid X to nudge all scales left/right by the same amount; Grid Y nudges them up/down. Registration to ring centers is preserved.",
-              "Save. Freeform Studio picks up the offset on the next snapshot read.",
-            ]} />
-
           <HowTo title="Copy + paste a region with image colors"
             steps={[
               "Run an Image Overlay → Transfer to Rings so your target region has image colors.",
@@ -770,7 +692,7 @@ export default function UserManual() {
           <Sub title="Freeform Studio — Copy / Paste (NEW)" />
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {[
-              [<><KS>Cmd+C</KS> / <KS>Ctrl+C</KS></>, "Copy current (or most-recent) selection of rings+scales — captures pre-paint state"],
+              [<><KS>Cmd+C</KS> / <KS>Ctrl+C</KS></>, "Copy current (or most-recent) selection of rings — captures pre-paint state"],
               [<><KS>Cmd+V</KS> / <KS>Ctrl+V</KS></>, "Toggle paste mode (cursor → copy)"],
               ["Click on canvas (paste mode)", "Paste clipboard at clicked cell (stays in paste mode for repeats)"],
               [<KS>Esc</KS>, "Exit paste mode"],
