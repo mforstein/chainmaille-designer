@@ -1123,7 +1123,7 @@ const FreeformChainmail2D: React.FC = () => {
     eraseModeRef.current = eraseMode;
   }, [eraseMode]);
   const [showControls, setShowControls] = useState(false);
-  type ControlsTab = "spacing" | "circles" | "rings" | "view" | "scales" | "diag";
+  type ControlsTab = "spacing" | "circles" | "rings" | "view" | "diag";
   const [controlsTab, setControlsTab] = useState<ControlsTab>("spacing");
   const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
 
@@ -1687,35 +1687,12 @@ const FreeformChainmail2D: React.FC = () => {
             // V2: persist per-cell ring size so mixed-size designs reload intact.
             ...((r as any).sizeId ? { sizeId: (r as any).sizeId } : {}),
           })),
-          scaleColors: Array.from(scaleColors.entries()).map(([key, color]) => ({ key, color })),
           geometry: {
             innerDiameter: innerIDmm,
             wireDiameter: wireMm,
             centerSpacing,
             angleIn,
             angleOut,
-          },
-          scaleSettings: {
-            scaleEnabled: activeScaleSettings.enabled,
-            scaleBehindRings: activeScaleSettings.behindRings,
-            scaleHoleDiameter: activeScaleSettings.holeIdMm,
-            scaleWidth: activeScaleSettings.widthMm,
-            scaleHeight: activeScaleSettings.heightMm,
-            scaleShape: activeScaleSettings.shape,
-            scaleDrop: activeScaleSettings.dropMm,
-            scaleColor: activeScaleSettings.colorHex,
-            scaleOnEveryCell: activeScaleSettings.onEveryCell,
-            lockScaleHolesToRingCenters: activeScaleSettings.lockScaleHolesToRingCenters,
-            scaleCenterSpacing: activeScaleSettings.centerSpacingMm,
-            scaleGridOffsetX: activeScaleSettings.gridOffsetXmm,
-            scaleGridOffsetY: activeScaleSettings.gridOffsetYmm,
-            scaleHoleOffsetY: activeScaleSettings.holeOffsetYMm,
-            scaleWeaveMode: activeScaleSettings.weaveMode,
-            scaleAngleIn: activeScaleSettings.angleInDeg,
-            scaleAngleOut: activeScaleSettings.angleOutDeg,
-            scalePlaneZ: activeScaleSettings.scalePlaneZ,
-            scaleTipLiftDeg: activeScaleSettings.scaleTipLiftDeg,
-            scaleRowClearanceZ: activeScaleSettings.scaleRowClearanceZ,
           },
           // Save overlay position metadata but not the image data (too large for autosave)
           overlay: overlay ? {
@@ -5777,35 +5754,12 @@ const derived = useMemo(() => {
         // V2: persist per-cell ring size so mixed-size designs reload intact.
         ...((r as any).sizeId ? { sizeId: (r as any).sizeId } : {}),
       })),
-      scaleColors: Array.from(scaleColors.entries()).map(([key, color]) => ({ key, color })),
       geometry: {
         innerDiameter: innerIDmm,
         wireDiameter: wireMm,
         centerSpacing,
         angleIn,
         angleOut,
-      },
-      scaleSettings: {
-        scaleEnabled: activeScaleSettings.enabled,
-        scaleBehindRings: activeScaleSettings.behindRings,
-        scaleHoleDiameter: activeScaleSettings.holeIdMm,
-        scaleWidth: activeScaleSettings.widthMm,
-        scaleHeight: activeScaleSettings.heightMm,
-        scaleShape: activeScaleSettings.shape,
-        scaleDrop: activeScaleSettings.dropMm,
-        scaleColor: activeScaleSettings.colorHex,
-        scaleOnEveryCell: activeScaleSettings.onEveryCell,
-        lockScaleHolesToRingCenters: activeScaleSettings.lockScaleHolesToRingCenters,
-        scaleCenterSpacing: activeScaleSettings.centerSpacingMm,
-        scaleGridOffsetX: activeScaleSettings.gridOffsetXmm,
-        scaleGridOffsetY: activeScaleSettings.gridOffsetYmm,
-        scaleHoleOffsetY: activeScaleSettings.holeOffsetYMm,
-        scaleWeaveMode: activeScaleSettings.weaveMode,
-        scaleAngleIn: activeScaleSettings.angleInDeg,
-        scaleAngleOut: activeScaleSettings.angleOutDeg,
-        scalePlaneZ: activeScaleSettings.scalePlaneZ,
-        scaleTipLiftDeg: activeScaleSettings.scaleTipLiftDeg,
-        scaleRowClearanceZ: activeScaleSettings.scaleRowClearanceZ,
       },
       overlay: overlay
         ? {
@@ -6073,28 +6027,6 @@ const derived = useMemo(() => {
       centerSpacing,
       angleIn,
       angleOut,
-      scaleSettings: {
-        scaleEnabled: activeScaleSettings.enabled,
-        scaleBehindRings: activeScaleSettings.behindRings,
-        scaleHoleDiameter: activeScaleSettings.holeIdMm,
-        scaleWidth: activeScaleSettings.widthMm,
-        scaleHeight: activeScaleSettings.heightMm,
-        scaleShape: activeScaleSettings.shape,
-        scaleDrop: activeScaleSettings.dropMm,
-        scaleColor: activeScaleSettings.colorHex,
-        scaleOnEveryCell: activeScaleSettings.onEveryCell,
-        lockScaleHolesToRingCenters: activeScaleSettings.lockScaleHolesToRingCenters,
-        scaleCenterSpacing: activeScaleSettings.centerSpacingMm,
-        scaleGridOffsetX: activeScaleSettings.gridOffsetXmm,
-        scaleGridOffsetY: activeScaleSettings.gridOffsetYmm,
-        scaleHoleOffsetY: activeScaleSettings.holeOffsetYMm,
-        scaleWeaveMode: activeScaleSettings.weaveMode,
-        scaleAngleIn: activeScaleSettings.angleInDeg,
-        scaleAngleOut: activeScaleSettings.angleOutDeg,
-        scalePlaneZ: activeScaleSettings.scalePlaneZ,
-        scaleTipLiftDeg: activeScaleSettings.scaleTipLiftDeg,
-        scaleRowClearanceZ: activeScaleSettings.scaleRowClearanceZ,
-      },
     };
     const blob = new Blob([JSON.stringify(snap, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -7793,7 +7725,6 @@ const derived = useMemo(() => {
       {finalizeOpen && (
         <FinalizeAndExportPanel
           rings={exportRings}
-          scaleSettings={activeScaleSettings}
           initialAssignment={assignment}
           onAssignmentChange={(p) => setAssignment(p)}
           getRendererCanvas={getRendererCanvas}
@@ -8137,7 +8068,6 @@ const derived = useMemo(() => {
                   { id: "circles", icon: "⭕", title: "Circle Tuning" },
                   { id: "rings",   icon: "💍", title: "Ring Sets" },
                   { id: "view",    icon: "👁", title: "View Controls" },
-                  { id: "scales",  icon: "🐠", title: "Scale Tuners" },
                   ...(showDiagnostics ? [{ id: "diag", icon: "🔬", title: "Diagnostics" }] : []),
                 ] as { id: ControlsTab; icon: string; title: string }[]).map((tab) => (
                   <button
@@ -8344,58 +8274,6 @@ const derived = useMemo(() => {
             )}
 
             {/* ── SCALE TUNERS ── */}
-            {controlsTab === "scales" && (
-              <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ fontWeight: 800, fontSize: 12 }}>Scale Tuners (from Tuner)</div>
-                <div style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.35 }}>
-                  Local overrides — don't affect Tuner placement locking.
-                </div>
-                <SliderRow label="Scale Hole ID (mm)" value={activeScaleSettings.holeIdMm}
-                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, holeIdMm: Math.max(1, Math.min(20, v)) })); }}
-                  min={1} max={20} step={0.1} unit="mm" />
-                <SliderRow label="Scale Width (mm)" value={activeScaleSettings.widthMm}
-                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, widthMm: v })); }}
-                  min={4} max={30} step={0.1} unit="mm" />
-                <SliderRow label="Scale Height (mm)" value={activeScaleSettings.heightMm}
-                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, heightMm: v })); }}
-                  min={6} max={45} step={0.1} unit="mm" />
-                <SliderRow label="Scale Drop (mm)" value={activeScaleSettings.dropMm}
-                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, dropMm: v })); }}
-                  min={-10} max={20} step={0.05} unit="mm" />
-                <SliderRow label="Scale Angle In (°)" value={activeScaleSettings.angleInDeg}
-                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, angleInDeg: v })); }}
-                  min={-45} max={45} step={0.5} unit="°" />
-                <SliderRow label="Scale Angle Out (°)" value={activeScaleSettings.angleOutDeg}
-                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, angleOutDeg: v })); }}
-                  min={-45} max={45} step={0.5} unit="°" />
-                <SliderRow label="Scale Plane Z (mm)" value={activeScaleSettings.scalePlaneZ}
-                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, scalePlaneZ: v })); }}
-                  min={-30} max={30} step={0.1} unit="mm" />
-                <SliderRow label="Scale Tip Lift (°)" value={activeScaleSettings.scaleTipLiftDeg}
-                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, scaleTipLiftDeg: v })); }}
-                  min={-10} max={70} step={1} unit="°" />
-                <SliderRow label="Scale Row Clearance Z (mm)" value={activeScaleSettings.scaleRowClearanceZ}
-                  setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, scaleRowClearanceZ: v })); }}
-                  min={-5} max={5} step={0.01} unit="mm" />
-                <div style={{ borderTop: "1px solid rgba(148,163,184,0.2)", paddingTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={{ fontSize: 11, color: "#94a3b8", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span>Scale Plane Offset (drag tool)</span>
-                    <button
-                      type="button"
-                      style={{ ...smallBtn, padding: "2px 8px", fontSize: 10 }}
-                      onClick={() => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, gridOffsetXmm: 0, gridOffsetYmm: 0 })); }}
-                      title="Reset scale plane offset to zero"
-                    >Reset</button>
-                  </div>
-                  <SliderRow label="Offset X (mm)" value={activeScaleSettings.gridOffsetXmm}
-                    setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, gridOffsetXmm: v })); }}
-                    min={-50} max={50} step={0.1} unit="mm" />
-                  <SliderRow label="Offset Y (mm)" value={activeScaleSettings.gridOffsetYmm}
-                    setValue={(v) => { setAutoFollowTuner(false); setScaleSettingsOverride((p) => ({ ...p, gridOffsetYmm: v })); }}
-                    min={-50} max={50} step={0.1} unit="mm" />
-                </div>
-              </div>
-            )}
 
             {/* ── DIAGNOSTICS ── */}
             {controlsTab === "diag" && showDiagnostics && (
