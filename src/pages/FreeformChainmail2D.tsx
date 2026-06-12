@@ -663,6 +663,16 @@ const FREEFORM_TUNER_SNAPSHOT_KEY = "freeform.tunerSnapshot.v1";
 const SCALE_SETTINGS_OVERRIDE_KEY = "freeform.scaleSettingsOverride.v1";
 const DEG = Math.PI / 180;
 
+// ── Overlap (won't-weave) detection ─────────────────────────────────────────
+// A placed ring physically piles up on a neighbor — overlapping instead of
+// weaving flat — when the center-to-center distance between the two rings drops
+// below ~0.6× the average of their outer diameters. Calibrated against a known
+// good weave (OD 10.34 mm @ 6.7 mm spacing → 0.65) vs. an observed overlap
+// (OD 7.96 mm @ 4.5 mm spacing → 0.57). Checked per pair so a too-tight ring is
+// only flagged where it actually clashes with a present neighbor. Tunable.
+const OVERLAP_SPACING_FACTOR = 0.6;
+const OVERLAP_TINT = "#ff3b30";
+
 // Includes "custom:<uuid>" entries that resolve to user-defined polygons.
 // The (string & {}) widening also covers legacy "teardrop" strings from
 // pre-2026-06-01 saves — those are coerced to "leaf" at the rendering layer.
@@ -2860,7 +2870,8 @@ const FreeformChainmail2D: React.FC = () => {
     checksum: number;
     geomKey: string;
     rings3D: any[];
-  }>({ size: -1, checksum: 0, geomKey: "", rings3D: [] });
+    overlapKeys: Set<string>;
+  }>({ size: -1, checksum: 0, geomKey: "", rings3D: [], overlapKeys: new Set() });
 
 const derived = useMemo(() => {
   const outerRadiusMm = (innerIDmm + 2 * wireMm) / 2;
@@ -2945,7 +2956,47 @@ const derived = useMemo(() => {
       }
     });
 
-    prevDerivedStructRef.current = { size: newSize, checksum, geomKey, rings3D };
+    // ── Per-ring overlap detection ───────────────────────────────────────
+    // Reactive: this whole branch reruns on any structural change (a ring
+    // placed/erased, a cell's size changed, or the spacing/angles moved), so
+    // a ring's overlap flag updates "on the fly" as the design changes. Two
+    // adjacent placed rings clash when the distance between their centers is
+    // under OVERLAP_SPACING_FACTOR × their average outer diameter. A ring is
+    // flagged only if a PRESENT neighbor actually clashes — a too-tight ring
+    // next to a small ring or an empty cell stays clean.
+    const overlapKeys = new Set<string>();
+    if (rings3D.length > 1) {
+      const byKey = new Map<string, any>();
+      for (const e of rings3D) byKey.set(e.id, e);
+      const cand: ReadonlyArray<readonly [number, number]> = [
+        [0, -1], [0, 1], [-1, -1], [-1, 0], [-1, 1], [1, -1], [1, 0], [1, 1],
+      ];
+      const maxNeighborDist = centerSpacing * 1.3;
+      for (const a of rings3D) {
+        for (const [dr, dc] of cand) {
+          const b = byKey.get(`${a.row + dr},${a.col + dc}`);
+          if (!b) continue;
+          const dist = Math.hypot(a.x - b.x, a.y - b.y);
+          if (dist > maxNeighborDist) continue; // not an adjacent ring
+          // a.radius + b.radius == (OD_a + OD_b) / 2
+          if (dist < OVERLAP_SPACING_FACTOR * (a.radius + b.radius)) {
+            overlapKeys.add(a.id);
+            break;
+          }
+        }
+      }
+      // Tint flagged rings red. paintMap WINS over per-ring color in the
+      // renderer (applyPaintToMeshes: paint ?? directColor ?? default), so the
+      // tint must be written to BOTH the per-ring color and the paint map.
+      for (const a of rings3D) {
+        if (overlapKeys.has(a.id)) {
+          a.color = OVERLAP_TINT;
+          paintMap.set(a.id, OVERLAP_TINT);
+        }
+      }
+    }
+
+    prevDerivedStructRef.current = { size: newSize, checksum, geomKey, rings3D, overlapKeys };
   } else {
     // Color-only change: reuse the previous rings3D array reference unchanged.
     // This avoids allocating ~N new JS objects and keeps the same array identity,
@@ -2959,6 +3010,9 @@ const derived = useMemo(() => {
       colorCountsStored.set(storedColor, (colorCountsStored.get(storedColor) ?? 0) + 1);
       // wantExport is always false here (wantExport forces isStructural above)
     });
+    // Geometry (and thus overlap) is unchanged on a color-only edit, so keep
+    // the previously-flagged rings tinted red over the freshly-rebuilt paint.
+    for (const key of prev.overlapKeys) paintMap.set(key, OVERLAP_TINT);
   }
 
   const byColor = Array.from(colorCountsStored.entries()).sort((a, b) => b[1] - a[1]);
@@ -2968,7 +3022,7 @@ const derived = useMemo(() => {
     uniqueColors: byColor.length,
   };
 
-  return { rings3D, paintMap, ringStats, exportRings };
+  return { rings3D, paintMap, ringStats, exportRings, overlapCount: prevDerivedStructRef.current.overlapKeys.size };
   }, [
     rings,
     ringSizeMap,
@@ -2989,6 +3043,7 @@ const derived = useMemo(() => {
   const paintMap = derived.paintMap;
   const ringStats = derived.ringStats;
   const exportRings = derived.exportRings;
+  const overlapCount = derived.overlapCount;
 
   const scaleStats = useMemo(() => {
     if (scaleColors.size === 0) return null;
@@ -7088,6 +7143,38 @@ const derived = useMemo(() => {
         </button>
       )}
 
+      {/* Overlap (won't-weave) warning — non-blocking; offending rings are
+          tinted red on the canvas. */}
+      {overlapCount > 0 && (
+        <div
+          style={{
+            position: "fixed",
+            top: isPreviewOnly ? 48 : 12,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 9998,
+            background: "rgba(127,29,29,0.96)",
+            border: "1px solid #ef4444",
+            color: "#fee2e2",
+            padding: "8px 14px",
+            borderRadius: 10,
+            fontSize: 13,
+            fontWeight: 700,
+            boxShadow: "0 8px 24px rgba(0,0,0,.4)",
+            pointerEvents: "none",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            maxWidth: "90vw",
+          }}
+        >
+          <span>⚠️</span>
+          <span>
+            {overlapCount} ring{overlapCount === 1 ? "" : "s"} overlapping — spacing too tight to weave (shown in red)
+          </span>
+        </div>
+      )}
+
       {showFreeformStats && (
         <DraggablePill
           id="freeform-stats"
@@ -7140,6 +7227,28 @@ const derived = useMemo(() => {
                 ✕
               </button>
             </div>
+
+            {/* Overlap warning line */}
+            {overlapCount > 0 && (
+              <div
+                style={{
+                  marginBottom: 10,
+                  padding: "6px 8px",
+                  borderRadius: 8,
+                  background: "rgba(127,29,29,0.5)",
+                  border: "1px solid #ef4444",
+                  color: "#fecaca",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  fontWeight: 700,
+                }}
+                title="Rings whose spacing is too tight to weave (piling up instead of interlinking). Shown in red on the canvas."
+              >
+                <span>⚠️ Overlapping</span>
+                <span>{overlapCount}</span>
+              </div>
+            )}
 
             {/* Cursor */}
             <div style={{ marginBottom: 10 }}>
