@@ -1137,6 +1137,10 @@ const FreeformChainmail2D: React.FC = () => {
   const [showControls, setShowControls] = useState(false);
   type ControlsTab = "spacing" | "circles" | "rings" | "view" | "diag";
   const [controlsTab, setControlsTab] = useState<ControlsTab>("spacing");
+
+  // On-demand interference (mixed-size overlap) check. Off by default; the
+  // gear-strip button turns it on to scan + flag, off to clear.
+  const [interferenceCheckOn, setInterferenceCheckOn] = useState(false);
   const [toolbarCollapsed, setToolbarCollapsed] = useState(false);
 
   // ✅ Floating submenu (Designer pattern) — show/hide compass nav
@@ -2881,7 +2885,7 @@ const derived = useMemo(() => {
 
   // Structural signature: ring count + fast XOR checksum of ring positions +
   // geometry/origin params. Changing any of these requires a full rings3D rebuild.
-  const geomKey = `${innerIDmm.toFixed(3)}|${wireMm.toFixed(3)}|${centerSpacing.toFixed(3)}|${angleIn}|${angleOut}|${logicalOrigin.ox.toFixed(3)}|${logicalOrigin.oy.toFixed(3)}`;
+  const geomKey = `${innerIDmm.toFixed(3)}|${wireMm.toFixed(3)}|${centerSpacing.toFixed(3)}|${angleIn}|${angleOut}|${logicalOrigin.ox.toFixed(3)}|${logicalOrigin.oy.toFixed(3)}|ic${interferenceCheckOn ? 1 : 0}`;
   const newSize = rings.size;
   let checksum = 0;
   rings.forEach((r) => {
@@ -2968,7 +2972,7 @@ const derived = useMemo(() => {
     // neighbor triggers this — a mismatched ring next to an empty cell stays
     // clean.
     const overlapKeys = new Set<string>();
-    if (rings3D.length > 1) {
+    if (interferenceCheckOn && rings3D.length > 1) {
       const byKey = new Map<string, any>();
       for (const e of rings3D) byKey.set(e.id, e);
       const cand: ReadonlyArray<readonly [number, number]> = [
@@ -3043,6 +3047,8 @@ const derived = useMemo(() => {
     finalizeOpen,
     // ✅ Recompute render colors when calibration changes
     calibrationVersion,
+    // Re-run (or clear) the overlap scan when the check is toggled.
+    interferenceCheckOn,
   ]);
 
   const rings3D = derived.rings3D;
@@ -7156,9 +7162,10 @@ const derived = useMemo(() => {
         </button>
       )}
 
-      {/* Overlap (won't-weave) warning — non-blocking; offending rings are
-          tinted red on the canvas. */}
-      {overlapCount > 0 && (
+      {/* Interference-check result banner — only while the on-demand check is
+          on. Red when overlaps are found (offending rings tinted on canvas),
+          green confirmation when the design is clean. Non-blocking. */}
+      {interferenceCheckOn && (
         <div
           style={{
             position: "fixed",
@@ -7166,9 +7173,9 @@ const derived = useMemo(() => {
             left: "50%",
             transform: "translateX(-50%)",
             zIndex: 9998,
-            background: "rgba(127,29,29,0.96)",
-            border: "1px solid #ef4444",
-            color: "#fee2e2",
+            background: overlapCount > 0 ? "rgba(127,29,29,0.96)" : "rgba(6,78,59,0.96)",
+            border: `1px solid ${overlapCount > 0 ? "#ef4444" : "#10b981"}`,
+            color: overlapCount > 0 ? "#fee2e2" : "#d1fae5",
             padding: "8px 14px",
             borderRadius: 10,
             fontSize: 13,
@@ -7181,10 +7188,19 @@ const derived = useMemo(() => {
             maxWidth: "90vw",
           }}
         >
-          <span>⚠️</span>
-          <span>
-            {overlapCount} ring{overlapCount === 1 ? "" : "s"} overlapping — mismatched ring sizes intersecting (shown in red)
-          </span>
+          {overlapCount > 0 ? (
+            <>
+              <span>⚠️</span>
+              <span>
+                {overlapCount} ring{overlapCount === 1 ? "" : "s"} overlapping — mismatched ring sizes intersecting (shown in red)
+              </span>
+            </>
+          ) : (
+            <>
+              <span>✅</span>
+              <span>Interference check: no mismatched-size overlaps found</span>
+            </>
+          )}
         </div>
       )}
 
@@ -8431,6 +8447,45 @@ const derived = useMemo(() => {
                 >Clear log</button>
               </div>
             )}
+
+            {/* ── INTERFERENCE CHECK (red box, all tabs) ───────────────── */}
+            <div
+              style={{
+                marginTop: 4,
+                padding: 10,
+                borderRadius: 10,
+                border: `1px solid ${interferenceCheckOn ? "#ef4444" : "rgba(239,68,68,0.55)"}`,
+                background: interferenceCheckOn ? "rgba(127,29,29,0.35)" : "rgba(127,29,29,0.14)",
+                display: "grid",
+                gap: 8,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 800, fontSize: 12, color: "#fca5a5" }}>
+                <span>🔍</span><span>Interference Check</span>
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.35, color: "#fecaca" }}>
+                Scans for mixed-size rings whose bodies overlap (one ring sitting in another's space). Offending rings turn red on the canvas.
+              </div>
+              <button
+                type="button"
+                onClick={() => setInterferenceCheckOn((v) => !v)}
+                title="Run / clear the mixed-size interference check"
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  border: "1px solid #ef4444",
+                  background: interferenceCheckOn ? "#7f1d1d" : "#ef4444",
+                  color: "#fff",
+                  fontWeight: 800,
+                  fontSize: 12,
+                  cursor: "pointer",
+                }}
+              >
+                {interferenceCheckOn
+                  ? (overlapCount > 0 ? `⚠️ ${overlapCount} interference${overlapCount === 1 ? "" : "s"} — tap to clear` : "✅ No interference — tap to clear")
+                  : "Run interference check"}
+              </button>
+            </div>
           </DraggablePill>
         )}
 
