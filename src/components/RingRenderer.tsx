@@ -611,7 +611,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
 
         const colorHex = normalizeColor6(
           (paintRef.current.get(key) as any) ??
-            (mesh.userData?.color as any) ??
+            (mesh.userData?.directColor as any) ??
             defaultHex,
         );
 
@@ -1319,7 +1319,11 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         const colorHex = normalizeColor6(
           (painted as any) ?? (direct as any) ?? defaultHex,
         );
-        mesh.userData.color = colorHex;
+        // Store ONLY the explicit per-ring color (null when the ring has none).
+        // Unpainted rings with no explicit color must follow the LIVE base
+        // material — baking defaultHex here made base-material changes show only
+        // after a full rebuild (refresh).
+        mesh.userData.directColor = direct ? normalizeColor6(direct) : null;
         mat.color.set(colorHex);
 
         group.add(mesh);
