@@ -6215,16 +6215,23 @@ const derived = useMemo(() => {
                       type="button"
                       onClick={() => {
                         // Selecting a ring sets the BRUSH for new rings (like the
-                        // scale-shape picker) — it does NOT resize existing rings or
-                        // change the lattice. Painting stamps this ring's size per
-                        // cell, so a design can mix multiple ring sizes. A manual
-                        // pick also stops auto-following the Tuner.
+                        // scale-shape picker). A manual pick stops auto-following
+                        // the Tuner.
                         setAutoFollowTuner(false);
                         try {
                           localStorage.setItem(AUTO_FOLLOW_KEY, "false");
                           localStorage.setItem(ACTIVE_SET_KEY, rs.id);
                         } catch {}
-                        setActiveRingSetId(rs.id);
+                        if (rings.size === 0) {
+                          // First ring chosen in an empty project: adopt this
+                          // ring's spacing/geometry so the lattice AND the guide
+                          // dots match the ring, not the default.
+                          applyRingSet(rs);
+                        } else {
+                          // Rings already placed: only set the brush so we don't
+                          // resize existing rings or shift a mixed-size lattice.
+                          setActiveRingSetId(rs.id);
+                        }
                       }}
                       title={`${rs.id} — ID ${rs.innerDiameter.toFixed(2)} · WD ${rs.wireDiameter.toFixed(2)} mm${rs.aspectRatio ? ` · AR ${rs.aspectRatio}` : ""}`}
                       style={{
