@@ -548,6 +548,40 @@ useEffect(() => {
     >
       <div ref={sceneHostRef} style={{ position: "absolute", inset: 0, zIndex: 1 }} />
 
+      {/* Weave-fit warning — its own floating banner so it never reflows the
+          slider panel. Non-blocking; rings are also tinted on the canvas. */}
+      {weaveProblem && (
+        <div
+          style={{
+            position: "absolute",
+            top: 16,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 50,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "9px 14px",
+            borderRadius: 12,
+            fontSize: 13,
+            fontWeight: 700,
+            pointerEvents: "none",
+            maxWidth: "90vw",
+            boxShadow: "0 10px 30px rgba(0,0,0,.35)",
+            border: `1px solid ${weaveFit === "tight" ? "#ef4444" : "#f59e0b"}`,
+            background: weaveFit === "tight" ? "rgba(127,29,29,0.96)" : "rgba(120,53,15,0.96)",
+            color: weaveFit === "tight" ? "#fecaca" : "#fde68a",
+          }}
+        >
+          <span>⚠️</span>
+          <span>
+            {weaveFit === "tight"
+              ? "Too tight to weave — rings overlap. Widen Center, or save as “No Solution”."
+              : "Too far apart to weave — rings gap. Tighten Center, or save as “No Solution”."}
+          </span>
+        </div>
+      )}
+
       {/* ── Mode selector strip (vertical) ── */}
       <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 52, zIndex: 20, background: "rgba(13,18,28,0.97)", borderRight: "1px solid #1e293b", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "60px 6px 10px" }}>
         {TUNER_MODES.map((m) => {
@@ -681,24 +715,6 @@ useEffect(() => {
             >
               {lockScale ? "🔒 Scale locked" : "🔓 Lock ring scale"}
             </button>
-            {weaveProblem && (
-              <div
-                style={{
-                  padding: "7px 10px", borderRadius: 10, fontSize: 12, fontWeight: 700,
-                  border: `1px solid ${weaveFit === "tight" ? "#ef4444" : "#f59e0b"}`,
-                  background: weaveFit === "tight" ? "rgba(127,29,29,0.45)" : "rgba(120,53,15,0.45)",
-                  color: weaveFit === "tight" ? "#fecaca" : "#fde68a",
-                  display: "flex", alignItems: "center", gap: 8,
-                }}
-              >
-                <span>⚠️</span>
-                <span>
-                  {weaveFit === "tight"
-                    ? "Too tight to weave — rings overlap. Widen Center, or save as “No Solution”."
-                    : "Too far apart to weave — rings gap. Tighten Center, or save as “No Solution”."}
-                </span>
-              </div>
-            )}
             {[
               { label: "Center", val: centerSpacing, set: setCenterSpacing, min: 2, max: 25, step: 0.1, unit: "mm" },
               { label: "Angle In", val: angleIn, set: setAngleIn, min: -75, max: 75, step: 1, unit: "°" },
