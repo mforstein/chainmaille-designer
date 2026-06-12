@@ -31,12 +31,15 @@ const TUNER_MODES: { id: TunerMode; icon: string; label: string }[] = [
 const FOV = 40;
 const DEG = Math.PI / 180;
 
-// A single ring size is "too tight to weave" when the center-to-center spacing
-// drops below this fraction of its outer diameter — the rings pile up instead
-// of interlinking. Calibrated against a good weave (OD 10.34 mm @ 6.7 mm → 0.65)
-// vs. an observed overlap (OD 7.96 mm @ 4.5 mm → 0.57). Tunable.
-const TIGHT_WEAVE_FACTOR = 0.6;
-const TIGHT_RING_COLOR = 0xff3b30;
+// A ring size only weaves inside a window of center-to-center spacing, measured
+// as a fraction of its outer diameter. Below TIGHT it overlaps (rings pile up);
+// above LOOSE it gaps (rings no longer reach to interlink). Calibrated against a
+// good weave (OD 10.34 mm @ 6.7 mm → 0.65) vs. an observed overlap (OD 7.96 mm @
+// 4.5 mm → 0.57). Both factors are tunable.
+const TIGHT_WEAVE_FACTOR = 0.6; // below this → too tight (overlap)
+const LOOSE_WEAVE_FACTOR = 0.9; // above this → too loose (gaps, no link)
+const TIGHT_RING_COLOR = 0xff3b30; // red — overlapping
+const LOOSE_RING_COLOR = 0xf59e0b; // amber — gapping
 const NORMAL_RING_COLOR = 0x353535;
 
 const TUNER_STORAGE_KEY = "chainmailMatrix";
@@ -193,16 +196,16 @@ export default function ChainmailWeaveTuner() {
     [ringVars],
   );
 
-  // Live "too tight to weave" flag: the rings overlap instead of interlinking
-  // when the center spacing is below TIGHT_WEAVE_FACTOR × outer diameter. Used
-  // to tint the rings red and to confirm-on-save. The slider is NOT blocked.
-  const tooTight = useMemo(
-    () =>
-      Number.isFinite(ringVars.OD_mm) &&
-      ringVars.OD_mm > 0 &&
-      centerSpacing < TIGHT_WEAVE_FACTOR * ringVars.OD_mm,
-    [centerSpacing, ringVars.OD_mm],
-  );
+  // Live weave-fit check: the rings only interlink inside a spacing window.
+  // "tight" = overlapping (too close), "loose" = gapping (too far), "ok" = weaves.
+  // Used to tint the rings and to confirm-on-save. The slider is NOT blocked.
+  const weaveFit = useMemo<"tight" | "loose" | "ok">(() => {
+    if (!Number.isFinite(ringVars.OD_mm) || ringVars.OD_mm <= 0) return "ok";
+    if (centerSpacing < TIGHT_WEAVE_FACTOR * ringVars.OD_mm) return "tight";
+    if (centerSpacing > LOOSE_WEAVE_FACTOR * ringVars.OD_mm) return "loose";
+    return "ok";
+  }, [centerSpacing, ringVars.OD_mm]);
+  const weaveProblem = weaveFit !== "ok";
 
   const rings = useMemo<LogicalRing[]>(() => {
     const items: LogicalRing[] = [];
@@ -420,7 +423,10 @@ useEffect(() => {
     clearGroup(ringGroup);
 
     const ringMaterial = new THREE.MeshStandardMaterial({
-      color: tooTight ? TIGHT_RING_COLOR : NORMAL_RING_COLOR,
+      color:
+        weaveFit === "tight" ? TIGHT_RING_COLOR
+        : weaveFit === "loose" ? LOOSE_RING_COLOR
+        : NORMAL_RING_COLOR,
       metalness: 0.45,
       roughness: 0.4,
       side: THREE.DoubleSide,
@@ -477,15 +483,19 @@ useEffect(() => {
       cameraZoom,
     );
     resizeScene();
-  }, [rings, cameraZoom, resizeScene, lockScale, tooTight]);
+  }, [rings, cameraZoom, resizeScene, lockScale, weaveFit]);
 
   const handleSave = useCallback(() => {
-    // Too-tight weave: don't block, but confirm. If they save anyway, record it
-    // as "No Solution" so the Atlas reflects that it doesn't actually weave.
+    // Out-of-range spacing: don't block, but confirm. If they save anyway,
+    // record it as "No Solution" so the Atlas reflects it doesn't weave.
     let effectiveStatus = status;
-    if (tooTight) {
+    if (weaveProblem) {
+      const why =
+        weaveFit === "tight"
+          ? "too tight to weave — the rings overlap instead of interlinking"
+          : "too far apart to weave — the rings gap instead of interlinking";
       const ok = window.confirm(
-        "⚠️ This center-to-center spacing is too tight to weave — the rings overlap instead of interlinking.\n\nSave anyway? It will be recorded as “No Solution”.",
+        `⚠️ This center-to-center spacing is ${why}.\n\nSave anyway? It will be recorded as “No Solution”.`,
       );
       if (!ok) return;
       effectiveStatus = "no_solution";
@@ -516,7 +526,7 @@ useEffect(() => {
     alert(`✅ Saved ${entry.id} (${effectiveStatus})`);
   }, [
     id, wire, ringVars, centerSpacing, angleIn, angleOut, status,
-    tooTight, saveFreeformTunerSnapshot,
+    weaveProblem, weaveFit, saveFreeformTunerSnapshot,
   ]);
 
   return (
@@ -665,16 +675,22 @@ useEffect(() => {
             >
               {lockScale ? "🔒 Scale locked" : "🔓 Lock ring scale"}
             </button>
-            {tooTight && (
+            {weaveProblem && (
               <div
                 style={{
                   padding: "7px 10px", borderRadius: 10, fontSize: 12, fontWeight: 700,
-                  border: "1px solid #ef4444", background: "rgba(127,29,29,0.45)", color: "#fecaca",
+                  border: `1px solid ${weaveFit === "tight" ? "#ef4444" : "#f59e0b"}`,
+                  background: weaveFit === "tight" ? "rgba(127,29,29,0.45)" : "rgba(120,53,15,0.45)",
+                  color: weaveFit === "tight" ? "#fecaca" : "#fde68a",
                   display: "flex", alignItems: "center", gap: 8,
                 }}
               >
                 <span>⚠️</span>
-                <span>Too tight to weave — rings overlap. Widen Center, or save as “No Solution”.</span>
+                <span>
+                  {weaveFit === "tight"
+                    ? "Too tight to weave — rings overlap. Widen Center, or save as “No Solution”."
+                    : "Too far apart to weave — rings gap. Tighten Center, or save as “No Solution”."}
+                </span>
               </div>
             )}
             {[
