@@ -663,14 +663,16 @@ const FREEFORM_TUNER_SNAPSHOT_KEY = "freeform.tunerSnapshot.v1";
 const SCALE_SETTINGS_OVERRIDE_KEY = "freeform.scaleSettingsOverride.v1";
 const DEG = Math.PI / 180;
 
-// ── Overlap (won't-weave) detection ─────────────────────────────────────────
-// A placed ring physically piles up on a neighbor — overlapping instead of
-// weaving flat — when the center-to-center distance between the two rings drops
-// below ~0.6× the average of their outer diameters. Calibrated against a known
-// good weave (OD 10.34 mm @ 6.7 mm spacing → 0.65) vs. an observed overlap
-// (OD 7.96 mm @ 4.5 mm spacing → 0.57). Checked per pair so a too-tight ring is
-// only flagged where it actually clashes with a present neighbor. Tunable.
-const OVERLAP_SPACING_FACTOR = 0.6;
+// ── Mixed-size overlap detection ────────────────────────────────────────────
+// Same-size rings always weave on their shared lattice (whether a single size
+// is too tight is judged in the Tuner, not here), so we never flag a same-size
+// pair. The warning is for MIXED sizes: when two adjacent rings differ in size
+// and the LARGER ring's outer radius reaches past the center-to-center distance,
+// the big ring's body intrudes into the smaller ring's space — one ring sitting
+// in the volume of the other. REACH_FACTOR scales how far the big ring must
+// reach before it counts (1.0 = outer edge passes the neighbor's center).
+const OVERLAP_REACH_FACTOR = 1.0;
+const SAME_SIZE_EPS_MM = 0.05; // outer radii within this are "the same size"
 const OVERLAP_TINT = "#ff3b30";
 
 // Includes "custom:<uuid>" entries that resolve to user-defined polygons.
@@ -2956,14 +2958,15 @@ const derived = useMemo(() => {
       }
     });
 
-    // ── Per-ring overlap detection ───────────────────────────────────────
+    // ── Mixed-size overlap detection ─────────────────────────────────────
     // Reactive: this whole branch reruns on any structural change (a ring
-    // placed/erased, a cell's size changed, or the spacing/angles moved), so
-    // a ring's overlap flag updates "on the fly" as the design changes. Two
-    // adjacent placed rings clash when the distance between their centers is
-    // under OVERLAP_SPACING_FACTOR × their average outer diameter. A ring is
-    // flagged only if a PRESENT neighbor actually clashes — a too-tight ring
-    // next to a small ring or an empty cell stays clean.
+    // placed/erased, a cell's size changed, or the spacing/angles moved), so a
+    // ring's overlap flag updates "on the fly" as the design changes. A pair is
+    // only flagged when the two rings are DIFFERENT sizes (same-size rings weave)
+    // AND the larger ring's outer radius reaches past the center distance,
+    // putting one ring inside the other's volume. Flag a ring if a PRESENT
+    // neighbor triggers this — a mismatched ring next to an empty cell stays
+    // clean.
     const overlapKeys = new Set<string>();
     if (rings3D.length > 1) {
       const byKey = new Map<string, any>();
@@ -2976,10 +2979,13 @@ const derived = useMemo(() => {
         for (const [dr, dc] of cand) {
           const b = byKey.get(`${a.row + dr},${a.col + dc}`);
           if (!b) continue;
+          // Same-size neighbours weave — tightness is the Tuner's call.
+          if (Math.abs(a.radius - b.radius) < SAME_SIZE_EPS_MM) continue;
           const dist = Math.hypot(a.x - b.x, a.y - b.y);
           if (dist > maxNeighborDist) continue; // not an adjacent ring
-          // a.radius + b.radius == (OD_a + OD_b) / 2
-          if (dist < OVERLAP_SPACING_FACTOR * (a.radius + b.radius)) {
+          // Different sizes: flag when the larger ring's outer radius reaches
+          // past the gap between centers, intruding on the smaller neighbour.
+          if (dist < OVERLAP_REACH_FACTOR * Math.max(a.radius, b.radius)) {
             overlapKeys.add(a.id);
             break;
           }
@@ -7170,7 +7176,7 @@ const derived = useMemo(() => {
         >
           <span>⚠️</span>
           <span>
-            {overlapCount} ring{overlapCount === 1 ? "" : "s"} overlapping — spacing too tight to weave (shown in red)
+            {overlapCount} ring{overlapCount === 1 ? "" : "s"} overlapping — mismatched ring sizes intersecting (shown in red)
           </span>
         </div>
       )}
@@ -7243,7 +7249,7 @@ const derived = useMemo(() => {
                   alignItems: "center",
                   fontWeight: 700,
                 }}
-                title="Rings whose spacing is too tight to weave (piling up instead of interlinking). Shown in red on the canvas."
+                title="Rings where a different-size neighbor intrudes into their space, so they can't weave together. Same-size tightness is judged in the Tuner. Shown in red on the canvas."
               >
                 <span>⚠️ Overlapping</span>
                 <span>{overlapCount}</span>
