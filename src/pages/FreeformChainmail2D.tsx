@@ -1288,7 +1288,15 @@ const FreeformChainmail2D: React.FC = () => {
   // ==============================
   // 📏 Studio Stats (dims + counts)
   // ==============================
-  const [showFreeformStats, setShowFreeformStats] = useState(true);
+  // Default OPEN on desktop (fine pointer); default CLOSED on touch devices
+  // (iPhone / iPad) where the floating panel crowds a small screen.
+  const [showFreeformStats, setShowFreeformStats] = useState(() => {
+    try {
+      return !window.matchMedia("(pointer: coarse)").matches;
+    } catch {
+      return true;
+    }
+  });
   const [cursorPx, setCursorPx] = useState<{ x: number; y: number } | null>(
     null,
   );
@@ -7083,9 +7091,11 @@ const derived = useMemo(() => {
       {showFreeformStats && (
         <DraggablePill
           id="freeform-stats"
+          // Bottom-right corner: large x/y let DraggablePill's viewport clamp
+          // snap the panel flush to the bottom-right once its size is measured.
           defaultPosition={{
-            x: Math.max(8, (typeof window !== "undefined" ? window.innerWidth : 1200) - 360),
-            y: Math.max(80, (typeof window !== "undefined" ? window.innerHeight : 900) - 320),
+            x: typeof window !== "undefined" ? window.innerWidth : 1200,
+            y: typeof window !== "undefined" ? window.innerHeight : 900,
           }}
         >
           <div
