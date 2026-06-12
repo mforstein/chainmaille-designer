@@ -663,16 +663,18 @@ const FREEFORM_TUNER_SNAPSHOT_KEY = "freeform.tunerSnapshot.v1";
 const SCALE_SETTINGS_OVERRIDE_KEY = "freeform.scaleSettingsOverride.v1";
 const DEG = Math.PI / 180;
 
-// ── Mixed-size overlap detection ────────────────────────────────────────────
-// Same-size rings always weave on their shared lattice (whether a single size
-// is too tight is judged in the Tuner, not here), so we never flag a same-size
-// pair. The warning is for MIXED sizes: when two adjacent rings differ in size
-// and the LARGER ring's outer radius reaches past the center-to-center distance,
-// the big ring's body intrudes into the smaller ring's space — one ring sitting
-// in the volume of the other. REACH_FACTOR scales how far the big ring must
-// reach before it counts (1.0 = outer edge passes the neighbor's center).
-const OVERLAP_REACH_FACTOR = 1.0;
-const SAME_SIZE_EPS_MM = 0.05; // outer radii within this are "the same size"
+// ── Mixed-size interference detection ───────────────────────────────────────
+// Every ring only weaves inside its own spacing window (same bounds the Tuner
+// uses): below TIGHT × OD it overlaps (too big for the gap), above LOOSE × ID it
+// can't reach its neighbours (too small for the gap). In a mixed design all rings
+// share ONE lattice spacing, so a ring whose size puts that shared spacing
+// outside its window interferes — e.g. a small ring dropped into a lattice spaced
+// for a larger ring (spacing > its LOOSE × ID). We only flag such a ring when it
+// actually sits next to a DIFFERENT-size neighbour, so a uniform same-size design
+// is never flagged here (single-size tightness is the Tuner's job).
+const OVERLAP_TIGHT_FACTOR = 0.6;      // spacing < × OD → ring too big (overlap)
+const OVERLAP_LOOSE_ID_FACTOR = 0.93;  // spacing > × ID → ring too small (no reach)
+const SAME_SIZE_EPS_MM = 0.05;         // outer radii within this are "the same size"
 const OVERLAP_TINT = "#ff3b30";
 
 // Includes "custom:<uuid>" entries that resolve to user-defined polygons.
@@ -2962,15 +2964,13 @@ const derived = useMemo(() => {
       }
     });
 
-    // ── Mixed-size overlap detection ─────────────────────────────────────
+    // ── Mixed-size interference detection ────────────────────────────────
     // Reactive: this whole branch reruns on any structural change (a ring
     // placed/erased, a cell's size changed, or the spacing/angles moved), so a
-    // ring's overlap flag updates "on the fly" as the design changes. A pair is
-    // only flagged when the two rings are DIFFERENT sizes (same-size rings weave)
-    // AND the larger ring's outer radius reaches past the center distance,
-    // putting one ring inside the other's volume. Flag a ring if a PRESENT
-    // neighbor triggers this — a mismatched ring next to an empty cell stays
-    // clean.
+    // ring's flag updates "on the fly". A ring is flagged when the shared
+    // lattice spacing falls OUTSIDE its own weave window (too big → overlap, or
+    // too small → can't reach) AND it sits next to a present DIFFERENT-size
+    // neighbour. Uniform same-size regions are never flagged here.
     const overlapKeys = new Set<string>();
     if (interferenceCheckOn && rings3D.length > 1) {
       const byKey = new Map<string, any>();
@@ -2980,16 +2980,20 @@ const derived = useMemo(() => {
       ];
       const maxNeighborDist = centerSpacing * 1.3;
       for (const a of rings3D) {
+        const odA = a.radius * 2;          // outer diameter
+        const idA = a.innerDiameter;       // inner diameter
+        // Does the shared spacing fall outside THIS ring's weave window?
+        const outOfWindow =
+          centerSpacing < OVERLAP_TIGHT_FACTOR * odA ||
+          centerSpacing > OVERLAP_LOOSE_ID_FACTOR * idA;
+        if (!outOfWindow) continue;
+        // Only an issue when it's actually mixed with a different-size neighbour.
         for (const [dr, dc] of cand) {
           const b = byKey.get(`${a.row + dr},${a.col + dc}`);
           if (!b) continue;
-          // Same-size neighbours weave — tightness is the Tuner's call.
-          if (Math.abs(a.radius - b.radius) < SAME_SIZE_EPS_MM) continue;
           const dist = Math.hypot(a.x - b.x, a.y - b.y);
           if (dist > maxNeighborDist) continue; // not an adjacent ring
-          // Different sizes: flag when the larger ring's outer radius reaches
-          // past the gap between centers, intruding on the smaller neighbour.
-          if (dist < OVERLAP_REACH_FACTOR * Math.max(a.radius, b.radius)) {
+          if (Math.abs(a.radius - b.radius) >= SAME_SIZE_EPS_MM) {
             overlapKeys.add(a.id);
             break;
           }
@@ -7192,7 +7196,7 @@ const derived = useMemo(() => {
             <>
               <span>⚠️</span>
               <span>
-                {overlapCount} ring{overlapCount === 1 ? "" : "s"} overlapping — mismatched ring sizes intersecting (shown in red)
+                {overlapCount} ring{overlapCount === 1 ? "" : "s"} won’t weave at this spacing — size mismatch with neighbors (shown in red)
               </span>
             </>
           ) : (
@@ -8464,7 +8468,7 @@ const derived = useMemo(() => {
                 <span>🔍</span><span>Interference Check</span>
               </div>
               <div style={{ fontSize: 11, opacity: 0.85, lineHeight: 1.35, color: "#fecaca" }}>
-                Scans for mixed-size rings whose bodies overlap (one ring sitting in another's space). Offending rings turn red on the canvas.
+                Flags rings that can’t weave at the design’s shared spacing because their size differs from their neighbors (e.g. a small ring in a lattice spaced for a larger one). Offending rings turn red on the canvas.
               </div>
               <button
                 type="button"
