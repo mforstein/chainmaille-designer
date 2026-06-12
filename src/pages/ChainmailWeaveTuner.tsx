@@ -31,13 +31,19 @@ const TUNER_MODES: { id: TunerMode; icon: string; label: string }[] = [
 const FOV = 40;
 const DEG = Math.PI / 180;
 
-// A ring size only weaves inside a window of center-to-center spacing, measured
-// as a fraction of its outer diameter. Below TIGHT it overlaps (rings pile up);
-// above LOOSE it gaps (rings no longer reach to interlink). Calibrated against a
-// good weave (OD 10.34 mm @ 6.7 mm → 0.65) vs. an observed overlap (OD 7.96 mm @
-// 4.5 mm → 0.57). Both factors are tunable.
-const TIGHT_WEAVE_FACTOR = 0.6; // below this → too tight (overlap)
-const LOOSE_WEAVE_FACTOR = 0.9; // above this → too loose (gaps, no link)
+// A ring size only weaves inside a window of center-to-center spacing.
+//  • Too TIGHT (rings overlap / pile up) is governed by the OUTER diameter —
+//    the wire bodies collide. Flagged below TIGHT_WEAVE_FACTOR × OD. Calibrated
+//    from a good weave (OD 10.34 @ 6.7 → 0.65) vs. an overlap (OD 7.96 @ 4.5 →
+//    0.57).
+//  • Too LOOSE (rings gap, no longer interlink) is governed by the INNER
+//    diameter — once the centers separate toward the hole size, neighbors slip
+//    out of each other's holes. Flagged above LOOSE_WEAVE_ID_FACTOR × ID.
+//    Calibrated from ID 7.94 mm going slack at ~7.6 mm spacing (≈ 0.96 × ID),
+//    set just under so the known-good 6.7 mm weave (0.84 × ID) stays clean.
+// Both factors are tunable.
+const TIGHT_WEAVE_FACTOR = 0.6;       // below × OD → too tight (overlap)
+const LOOSE_WEAVE_ID_FACTOR = 0.93;   // above × ID → too loose (gaps, no link)
 const TIGHT_RING_COLOR = 0xff3b30; // red — overlapping
 const LOOSE_RING_COLOR = 0xf59e0b; // amber — gapping
 const NORMAL_RING_COLOR = 0x353535;
@@ -202,9 +208,9 @@ export default function ChainmailWeaveTuner() {
   const weaveFit = useMemo<"tight" | "loose" | "ok">(() => {
     if (!Number.isFinite(ringVars.OD_mm) || ringVars.OD_mm <= 0) return "ok";
     if (centerSpacing < TIGHT_WEAVE_FACTOR * ringVars.OD_mm) return "tight";
-    if (centerSpacing > LOOSE_WEAVE_FACTOR * ringVars.OD_mm) return "loose";
+    if (centerSpacing > LOOSE_WEAVE_ID_FACTOR * ringVars.ID_mm) return "loose";
     return "ok";
-  }, [centerSpacing, ringVars.OD_mm]);
+  }, [centerSpacing, ringVars.OD_mm, ringVars.ID_mm]);
   const weaveProblem = weaveFit !== "ok";
 
   const rings = useMemo<LogicalRing[]>(() => {
