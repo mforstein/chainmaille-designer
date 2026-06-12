@@ -31,6 +31,14 @@ const TUNER_MODES: { id: TunerMode; icon: string; label: string }[] = [
 const FOV = 40;
 const DEG = Math.PI / 180;
 
+// A single ring size is "too tight to weave" when the center-to-center spacing
+// drops below this fraction of its outer diameter — the rings pile up instead
+// of interlinking. Calibrated against a good weave (OD 10.34 mm @ 6.7 mm → 0.65)
+// vs. an observed overlap (OD 7.96 mm @ 4.5 mm → 0.57). Tunable.
+const TIGHT_WEAVE_FACTOR = 0.6;
+const TIGHT_RING_COLOR = 0xff3b30;
+const NORMAL_RING_COLOR = 0x353535;
+
 const TUNER_STORAGE_KEY = "chainmailMatrix";
 const FREEFORM_TUNER_SNAPSHOT_KEY = "freeform.tunerSnapshot.v1";
 
@@ -183,6 +191,17 @@ export default function ChainmailWeaveTuner() {
   const arDisplay = useMemo(
     () => (ringVars.WD_mm > 0 ? ringVars.ID_mm / ringVars.WD_mm : 0).toFixed(2),
     [ringVars],
+  );
+
+  // Live "too tight to weave" flag: the rings overlap instead of interlinking
+  // when the center spacing is below TIGHT_WEAVE_FACTOR × outer diameter. Used
+  // to tint the rings red and to confirm-on-save. The slider is NOT blocked.
+  const tooTight = useMemo(
+    () =>
+      Number.isFinite(ringVars.OD_mm) &&
+      ringVars.OD_mm > 0 &&
+      centerSpacing < TIGHT_WEAVE_FACTOR * ringVars.OD_mm,
+    [centerSpacing, ringVars.OD_mm],
   );
 
   const rings = useMemo<LogicalRing[]>(() => {
@@ -401,7 +420,7 @@ useEffect(() => {
     clearGroup(ringGroup);
 
     const ringMaterial = new THREE.MeshStandardMaterial({
-      color: 0x353535,
+      color: tooTight ? TIGHT_RING_COLOR : NORMAL_RING_COLOR,
       metalness: 0.45,
       roughness: 0.4,
       side: THREE.DoubleSide,
@@ -458,9 +477,21 @@ useEffect(() => {
       cameraZoom,
     );
     resizeScene();
-  }, [rings, cameraZoom, resizeScene, lockScale]);
+  }, [rings, cameraZoom, resizeScene, lockScale, tooTight]);
 
   const handleSave = useCallback(() => {
+    // Too-tight weave: don't block, but confirm. If they save anyway, record it
+    // as "No Solution" so the Atlas reflects that it doesn't actually weave.
+    let effectiveStatus = status;
+    if (tooTight) {
+      const ok = window.confirm(
+        "⚠️ This center-to-center spacing is too tight to weave — the rings overlap instead of interlinking.\n\nSave anyway? It will be recorded as “No Solution”.",
+      );
+      if (!ok) return;
+      effectiveStatus = "no_solution";
+      if (status !== "no_solution") setStatus("no_solution");
+    }
+
     const entry = {
       id: `${id}_${wire}mm`,
       innerDiameter: ringVars.ID_mm,
@@ -468,7 +499,7 @@ useEffect(() => {
       centerSpacing,
       angleIn,
       angleOut,
-      status,
+      status: effectiveStatus,
       aspectRatio: (ringVars.ID_mm / ringVars.WD_mm).toFixed(2),
       savedAt: new Date().toISOString(),
     };
@@ -482,10 +513,10 @@ useEffect(() => {
     // per-scale geometry like shape and tilt.
     saveFreeformTunerSnapshot();
 
-    alert(`✅ Saved ${entry.id} (${status})`);
+    alert(`✅ Saved ${entry.id} (${effectiveStatus})`);
   }, [
     id, wire, ringVars, centerSpacing, angleIn, angleOut, status,
-    saveFreeformTunerSnapshot,
+    tooTight, saveFreeformTunerSnapshot,
   ]);
 
   return (
@@ -634,6 +665,18 @@ useEffect(() => {
             >
               {lockScale ? "🔒 Scale locked" : "🔓 Lock ring scale"}
             </button>
+            {tooTight && (
+              <div
+                style={{
+                  padding: "7px 10px", borderRadius: 10, fontSize: 12, fontWeight: 700,
+                  border: "1px solid #ef4444", background: "rgba(127,29,29,0.45)", color: "#fecaca",
+                  display: "flex", alignItems: "center", gap: 8,
+                }}
+              >
+                <span>⚠️</span>
+                <span>Too tight to weave — rings overlap. Widen Center, or save as “No Solution”.</span>
+              </div>
+            )}
             {[
               { label: "Center", val: centerSpacing, set: setCenterSpacing, min: 2, max: 25, step: 0.1, unit: "mm" },
               { label: "Angle In", val: angleIn, set: setAngleIn, min: -75, max: 75, step: 1, unit: "°" },
