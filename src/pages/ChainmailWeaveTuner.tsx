@@ -136,6 +136,13 @@ export default function ChainmailWeaveTuner() {
 
   const [cameraZoom, setCameraZoom] = useState(1);
 
+  // Lock scale: when on, the camera holds a constant on-screen mm-per-pixel so
+  // changing Center spacing repositions the rings without the auto-fit camera
+  // making them appear to grow or shrink. The span is captured the moment the
+  // lock turns on, then held across spacing changes.
+  const [lockScale, setLockScale] = useState(false);
+  const lockedSpanRef = useRef<{ w: number; h: number } | null>(null);
+
   // 3-state weave status, surfaced in the Atlas with green / orange / red.
   // "valid"       — both ring and ring+scale weave work for this ID/wire pair
   // "rings_only"  — rings weave but scale weave fails (still usable as rings)
@@ -427,15 +434,31 @@ useEffect(() => {
     const maxX = Math.max(...rings.map((r) => r.x + r.radius));
     const minY = Math.min(...rings.map((r) => -r.y - r.radius));
     const maxY = Math.max(...rings.map((r) => -r.y + r.radius));
+
+    const spanW = maxX - minX;
+    const spanH = maxY - minY;
+
+    // In lock-scale mode hold the framing span constant so the on-screen ring
+    // size never changes when Center spacing moves the rings closer/apart.
+    let fitW = spanW;
+    let fitH = spanH;
+    if (lockScale) {
+      if (!lockedSpanRef.current) lockedSpanRef.current = { w: spanW, h: spanH };
+      fitW = lockedSpanRef.current.w;
+      fitH = lockedSpanRef.current.h;
+    } else {
+      lockedSpanRef.current = null;
+    }
+
     fitCameraToBounds(
       camera,
-      maxX - minX,
-      maxY - minY,
+      fitW,
+      fitH,
       new THREE.Vector3((minX + maxX) / 2, (minY + maxY) / 2, 0),
       cameraZoom,
     );
     resizeScene();
-  }, [rings, cameraZoom, resizeScene]);
+  }, [rings, cameraZoom, resizeScene, lockScale]);
 
   const handleSave = useCallback(() => {
     const entry = {
@@ -598,6 +621,19 @@ useEffect(() => {
                 {ID_OPTIONS.map((v) => (<option key={v} value={v}>{v}"</option>))}
               </select>
             </div>
+            <button
+              onClick={() => setLockScale((v) => !v)}
+              title="Hold the on-screen ring size constant so changing Center spacing doesn't make the rings appear to resize. Ring ID and wire are always constant — only the view zoom changes."
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                padding: "7px 12px", borderRadius: 10, cursor: "pointer", fontWeight: 700, fontSize: 12,
+                border: lockScale ? "1px solid #2563eb" : "1px solid #334155",
+                background: lockScale ? "#1e3a8a" : "#0f172a",
+                color: lockScale ? "#bfdbfe" : "#94a3b8",
+              }}
+            >
+              {lockScale ? "🔒 Scale locked" : "🔓 Lock ring scale"}
+            </button>
             {[
               { label: "Center", val: centerSpacing, set: setCenterSpacing, min: 2, max: 25, step: 0.1, unit: "mm" },
               { label: "Angle In", val: angleIn, set: setAngleIn, min: -75, max: 75, step: 1, unit: "°" },
