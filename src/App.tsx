@@ -123,6 +123,8 @@ import { ToolBtn } from "./components/ui/ToolBtn";
 import RequiresTier from "./auth/RequiresTier";
 import { useAuth, tierAtLeast } from "./auth/AuthContext";
 import SupplierColorPalette from "./components/SupplierColorPalette";
+import AutoCalibrateButton from "./components/AutoCalibrateButton";
+import { calibrationUpdatedEventName } from "./utils/colorCalibration";
 
 // ==============================
 // BOM-RELATED SHARED TYPES
@@ -205,12 +207,24 @@ function clampToViewport(
   pos: { x: number; y: number },
   size: { w: number; h: number },
 ) {
-  const maxX = Math.max(UI_MARGIN, window.innerWidth - size.w - UI_MARGIN);
-  const maxY = Math.max(UI_MARGIN, window.innerHeight - size.h - UI_MARGIN);
+  // Position that keeps the far (right/bottom) edge inside the margin. When the
+  // panel is LARGER than the viewport (e.g. a tall toolbar after rotating to a
+  // short landscape screen), this goes negative.
+  const fitX = window.innerWidth - size.w - UI_MARGIN;
+  const fitY = window.innerHeight - size.h - UI_MARGIN;
+
+  // Normal case (panel fits): clamp between UI_MARGIN and fit.
+  // Oversized case (fit < UI_MARGIN): allow the panel to overhang either edge —
+  // range becomes [fit, UI_MARGIN] — so it can still be dragged to reveal the
+  // top/left OR bottom/right edge instead of being locked half off-screen.
+  const minX = Math.min(UI_MARGIN, fitX);
+  const maxX = Math.max(UI_MARGIN, fitX);
+  const minY = Math.min(UI_MARGIN, fitY);
+  const maxY = Math.max(UI_MARGIN, fitY);
 
   return {
-    x: clamp(pos.x, UI_MARGIN, maxX), // ✅ uses your existing clamp()
-    y: clamp(pos.y, UI_MARGIN, maxY), // ✅ uses your existing clamp()
+    x: clamp(pos.x, minX, maxX),
+    y: clamp(pos.y, minY, maxY),
   };
 }
 
@@ -542,6 +556,38 @@ function DraggablePill({
           >
             +
           </button>
+        </div>
+      )}
+      {/* Drag handle — a panel can be wall-to-wall buttons/swatches (e.g. the
+          color palette), leaving almost no empty area to grab (a press on any
+          button is a tap, not a drag). This always-empty grip bar gives a
+          reliable, obvious place to drag from on BOTH desktop and touch. It's a
+          plain non-interactive div, so pressing it starts the drag via the
+          root's pointer handlers. */}
+      {(
+        <div
+          aria-label="Drag to move panel"
+          title="Drag to move"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            height: 26,
+            marginBottom: 6,
+            borderRadius: 999,
+            background: dragging ? "rgba(59,130,246,.30)" : "rgba(255,255,255,.07)",
+            cursor: dragging ? "grabbing" : "grab",
+            touchAction: "none",
+          }}
+        >
+          <span
+            style={{
+              width: 34,
+              height: 5,
+              borderRadius: 999,
+              background: "rgba(255,255,255,.45)",
+            }}
+          />
         </div>
       )}
       {children}
@@ -885,6 +931,15 @@ function pointInPoly(x: number, y: number, poly: ScreenPt[]): boolean {
     setActiveMenu((prev) => (prev === menu ? null : menu));
 
   const [rendererKey, setRendererKey] = useState(0);
+
+  // When the auto-calibrate ("C") button saves a new calibration, remount the
+  // 3D renderer so every ring re-colors through the saved gain/gamma table.
+  // (Remount is the Designer's existing refresh mechanism — see setRendererKey.)
+  useEffect(() => {
+    const onCalib = () => setRendererKey((k) => k + 1);
+    window.addEventListener(calibrationUpdatedEventName(), onCalib);
+    return () => window.removeEventListener(calibrationUpdatedEventName(), onCalib);
+  }, []);
 
   // ============================================================
   // 🧾 BOM ADAPTER — Designer → BOMRing[]
@@ -1384,6 +1439,54 @@ const doClearPaint = () => {
           >
             <IconSpline size={16} />
           </ToolBtn>
+
+          {/* Draw toggle (Paint ⇄ Erase, icon swaps) + Pan hand live in the
+              always-visible top half of the toolbar, so they stay reachable even
+              when the Camera tools menu below is collapsed. */}
+          <ToolBtn
+            title={eraseMode ? "Erase (click to paint)" : "Paint (click to erase)"}
+            active={paintMode}
+            onClick={(e) => {
+              e.stopPropagation();
+              // Coming from Pan: resume drawing in the same mode (no flip).
+              // Already drawing: flip paint ⇄ erase.
+              const nextErase = paintMode ? !eraseMode : eraseMode;
+              setEraseMode(nextErase);
+              setPaintMode(true);
+              setTimeout(() => {
+                rendererRef.current?.setPaintMode?.(true);
+                rendererRef.current?.setEraseMode?.(nextErase);
+                rendererRef.current?.setPanEnabled?.(false);
+              }, 0);
+            }}
+          >
+            {eraseMode ? <IconEraser size={18} /> : "🎨"}
+          </ToolBtn>
+
+          <ToolBtn
+            title={paintMode ? "Pan / Navigate (drag to move the view)" : "Pan is on — click to draw"}
+            active={!paintMode}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (paintMode) {
+                setPaintMode(false);
+                setTimeout(() => {
+                  rendererRef.current?.setPaintMode?.(false);
+                  rendererRef.current?.setEraseMode?.(false);
+                  rendererRef.current?.setPanEnabled?.(true);
+                }, 0);
+              } else {
+                setPaintMode(true);
+                setTimeout(() => {
+                  rendererRef.current?.setPaintMode?.(true);
+                  rendererRef.current?.setEraseMode?.(eraseMode);
+                  rendererRef.current?.setPanEnabled?.(false);
+                }, 0);
+              }
+            }}
+          >
+            ✋
+          </ToolBtn>
         </div>
 
         {/* --- Controls (▶) Menu — rows/cols dialog --- */}
@@ -1541,38 +1644,7 @@ onChange={(e) => {
       🖼️{!canUseOverlay && <span style={{ position: "absolute", top: 2, right: 2, fontSize: 8, lineHeight: 1 }}>🔒</span>}
     </ToolBtn>
 
-    <ToolBtn
-      title="Paint Mode"
-      active={paintMode}
-      onClick={(e) => {
-        e.stopPropagation();
-        const next = !paintMode;
-        setPaintMode(next);
-
-        setTimeout(() => {
-          rendererRef.current?.setPaintMode?.(next);
-          rendererRef.current?.setEraseMode?.(false);
-          rendererRef.current?.setPanEnabled?.(!next);
-        }, 0);
-      }}
-    >
-      🎨
-    </ToolBtn>
-
-    {paintMode && (
-      <ToolBtn
-        title="Erase Mode"
-        active={eraseMode}
-        onClick={(e) => {
-          e.stopPropagation();
-          const next = !eraseMode;
-          setEraseMode(next);
-          rendererRef.current?.setEraseMode?.(next);
-        }}
-      >
-        <IconEraser size={18} />
-      </ToolBtn>
-    )}
+    {/* Draw toggle + Pan hand moved to the always-visible top of the toolbar. */}
 
     <ToolBtn
       title="Reset View"
@@ -1641,17 +1713,10 @@ onChange={(e) => {
       onTouchStart={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
-      {/* 🧰 toolbox toggles the existing magnet dialog (leave magnet dialog unchanged) */}
-      <ToolBtn
-        title="Supplier & Atlas"
-        active={showMagnet}
-        onClick={(e) => {
-          e.stopPropagation();
-          setShowMagnet((v) => !v);
-        }}
-      >
-        🧰
-      </ToolBtn>
+      {/* 🧰 "Supplier & Atlas" toolbox removed for the first release (per Erin)
+          — it toggled the Atlas/supplier-driven rings strip, and the Atlas is
+          hidden until scales return. The strip + showMagnet state remain in the
+          code (just unreachable) for an easy re-add. */}
 
       {/* Save / Open */}
       <ProjectSaveLoadButtons
@@ -1783,6 +1848,11 @@ onChange={(e) => {
                 />
               ))}
             </div>
+
+            {/* Auto color-calibration — small "C" button. Runs a headless
+                calibration in place (progress bar only), then auto-saves +
+                applies. No page or dialog. */}
+            <AutoCalibrateButton from="designer" />
           </div>
         </DraggablePill>
       )}
@@ -2137,13 +2207,8 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
           📊
         </button>
 
-        <button onClick={() => go("/tuner")} title="Weave Tuner" style={btnStyle}>
-          ⚙️
-        </button>
-
-        <button onClick={() => go("/atlas")} title="Weave Atlas" style={btnStyle}>
-          🌐
-        </button>
+        {/* Weave Tuner (⚙️) and Weave Atlas (🌐) hidden for the first release
+            (per Erin) — they'll return alongside scales. Routes still exist. */}
 
       </div>
     </DraggablePill>
@@ -2296,12 +2361,8 @@ function WorkspaceHome() {
           <Link to="/chart" style={homeLinkStyle}>
             📊 Ring Size Chart
           </Link>
-          <Link to="/tuner" style={homeLinkStyle}>
-            ⚙️ Weave Tuner
-          </Link>
-          <Link to="/atlas" style={homeLinkStyle}>
-            🌐 Weave Atlas
-          </Link>
+          {/* Weave Tuner + Weave Atlas hidden for first release (per Erin);
+              they return with scales. Routes remain for deep-linking. */}
         </div>
 
         <div

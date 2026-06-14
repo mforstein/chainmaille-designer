@@ -412,26 +412,10 @@ export const ProjectLibraryPanel: React.FC<Props> = ({ onLoad, onClose }) => {
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button
-              onClick={() => setImgConverterOpen(true)}
-              style={{
-                background: "linear-gradient(135deg, #0d9488, #0369a1)",
-                border: "none",
-                borderRadius: 10,
-                color: "#fff",
-                cursor: "pointer",
-                fontSize: 13,
-                fontWeight: 700,
-                padding: "8px 14px",
-                whiteSpace: "nowrap",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                boxShadow: "0 2px 8px rgba(13,148,136,0.35)",
-              }}
-            >
-              🖼️ Analyze design from image
-            </button>
+            {/* "🖼️ Analyze design from image" button hidden for the first
+                release (per Erin) — the Image → Design converter still surfaces
+                scale options. The converter + its state remain in the code, just
+                with no button to open it; restore this when scales return. */}
             <button
               onClick={onClose}
               style={{

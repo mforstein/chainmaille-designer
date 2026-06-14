@@ -14,8 +14,7 @@ const SECTIONS = [
   { id: "studio",        icon: "✨", title: "Freeform Studio" },
   { id: "designer",      icon: "💎", title: "3D Designer" },
   { id: "chart",         icon: "📊", title: "Ring Chart" },
-  { id: "tuner",         icon: "⚙️", title: "Weave Tuner" },
-  { id: "atlas",         icon: "🌐", title: "Weave Atlas" },
+  // Weave Tuner + Weave Atlas hidden for first release (per Erin).
   { id: "pattern",       icon: "🪡", title: "Basic" },
   { id: "export",        icon: "📦", title: "Export" },
   { id: "examples",      icon: "🧪", title: "How-To" },
@@ -357,8 +356,7 @@ export default function UserManual() {
 
           <Sub title="Utilities" />
           <Feat title="📊 Ring Size Chart">Interactive AR reference. Always free, no account.</Feat>
-          <Feat title="⚙️ Weave Tuner">Live 3D geometry workbench. Preview free; saving requires a free account.</Feat>
-          <Feat title="🌐 Weave Atlas">Curated preset matrix. Browsing free; applying requires Maker.</Feat>
+          {/* Weave Tuner + Weave Atlas hidden for first release (per Erin). */}
         </Sec>
 
         {/* ── FREEFORM STUDIO ─────────────────────────────────────────────── */}
@@ -501,80 +499,9 @@ export default function UserManual() {
           </Feat>
         </Sec>
 
-        {/* ── WEAVE TUNER ─────────────────────────────────────────────────── */}
-        <Sec id="tuner" icon="⚙️" title="Weave Tuner · /tuner">
-          <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
-            Live 3D geometry workbench. Set ring parameters, see the result instantly, save the snapshot.
-          </p>
-          <Shot src="/manual/tuner.jpg" alt="Weave Tuner" label="/tuner"
-                fallback={<Mock label="Tuner (fallback)"><div style={{ padding: 20, color: "#94a3b8" }}>Live 3D geometry workbench with mode strip.</div></Mock>} />
-
-          <Note>
-            Saving in the Tuner pushes geometry to Freeform via <code>localStorage["freeform.tunerSnapshot.v1"]</code>. No reload needed.
-          </Note>
-
-          <Sub title="Mode strip — two panels" />
-          {[
-            { icon: "📐", name: "Calibrate Rings", desc: "Enter ID + wire gauge to compute AR. Save with a 2-state status — see below." },
-            { icon: "🔧", name: "Tune Rings", desc: "Center Spacing, Angle In (even rows), Angle Out (odd rows), zoom. Save / Reload Last Save." },
-          ].map(m => (
-            <div key={m.name} style={{ marginBottom: 10, background: "#0f172a", borderRadius: 8, padding: "10px 14px", border: "1px solid #1e293b", display: "flex", gap: 12, alignItems: "flex-start" }}>
-              <span style={{ fontSize: 20, flexShrink: 0, marginTop: 2 }}>{m.icon}</span>
-              <div>
-                <div style={{ fontWeight: 700, color: "#93c5fd", marginBottom: 4, fontSize: 13 }}>{m.name}</div>
-                <div style={{ color: "#94a3b8", fontSize: 13, lineHeight: 1.65 }}>{m.desc}</div>
-              </div>
-            </div>
-          ))}
-
-          <Sub title="3-state weave status — NEW" />
-          <Feat title="Status dropdown">
-            When saving a tune entry, set one of three states:
-          </Feat>
-          <Bullets items={[
-            <><span style={{ color: "#19c37d" }}>✅ <strong>Rings weave</strong></span> — rings close cleanly at this ID/wire pair. The Atlas shows the cell green.</>,
-            <><span style={{ color: "#ef4444" }}>❌ <strong>No Solution</strong></span> — rings don't weave at this AR. The Atlas shows the cell red.</>,
-          ]} />
-        </Sec>
-
-        {/* ── WEAVE ATLAS ─────────────────────────────────────────────────── */}
-        <Sec id="atlas" icon="🌐" title="Weave Atlas · /atlas">
-          <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
-            Matrix of inner diameter (rows) × wire diameter (columns). Each saved tuning entry colors its cell by the Tuner's status.
-          </p>
-          <Shot src="/manual/atlas.jpg" alt="Weave Atlas matrix" label="/atlas"
-                fallback={<Mock label="Atlas (fallback)"><div style={{ padding: 20, color: "#94a3b8" }}>ID × wire matrix with status-colored cells.</div></Mock>} />
-
-          <Sub title="Cell colors" />
-          <div style={{ display: "flex", flexDirection: "column", gap: 6, margin: "10px 0" }}>
-            <div style={{ background: "#0f172a", borderRadius: 6, padding: "8px 12px", border: "1px solid #1e293b", display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ color: "#19c37d", fontSize: 18 }}>✅</span>
-              <span style={{ color: "#19c37d", fontWeight: 700 }}>Rings weave</span>
-              <span style={{ color: "#64748b", fontSize: 12 }}>— rings close at this combination</span>
-            </div>
-            <div style={{ background: "#0f172a", borderRadius: 6, padding: "8px 12px", border: "1px solid #1e293b", display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ color: "#ef4444", fontSize: 18 }}>❌</span>
-              <span style={{ color: "#ef4444", fontWeight: 700 }}>No solution</span>
-              <span style={{ color: "#64748b", fontSize: 12 }}>— rings don't weave at this AR</span>
-            </div>
-            <div style={{ background: "#0f172a", borderRadius: 6, padding: "8px 12px", border: "1px solid #1e293b", display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ color: "#4a7a9b", fontSize: 18 }}>+</span>
-              <span style={{ color: "#4a7a9b", fontWeight: 700 }}>Untested</span>
-              <span style={{ color: "#64748b", fontSize: 12 }}>— click to open the Tuner with that ID × wire pre-filled</span>
-            </div>
-          </div>
-
-          <Warn>
-            The matrix is populated entirely by your Tuner saves — it's per-device. Two users on different devices see independent matrices until they share a JSON export.
-          </Warn>
-
-          <Feat title="Click an active cell">Applies that weave's geometry to whatever design tool is currently selected.</Feat>
-          <Feat title={`Click a "+" cell`}>Opens the Tuner pre-loaded with that ring size + wire combination and a guided setup flow — tune rings, then save with the status.</Feat>
-
-          <Note>
-            The Atlas's "Apply to Designer" path pushes geometry (ID, WD, center spacing, tilt) but does <em>not</em> change colors or layout. Apply, then paint freely on top.
-          </Note>
-        </Sec>
+        {/* Weave Tuner (/tuner) + Weave Atlas (/atlas) sections removed for
+            the first release (per Erin) — those tools are hidden until
+            scales return. Re-add their <Sec> blocks then. */}
 
         {/* ── BASIC ────────────────────────────────────────────────────────── */}
         <Sec id="pattern" icon="🪡" title="Basic">

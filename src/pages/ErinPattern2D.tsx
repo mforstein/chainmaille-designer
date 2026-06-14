@@ -858,25 +858,27 @@ const ErinPattern2D: React.FC = () => {
               onClick={(e) => { e.stopPropagation(); window.location.href = "/wovenrainbowsbyerin"; }}>
               🏠
             </ToolBtn>
-            <ToolBtn title="Paint mode" active={paintActive}
-              onClick={() => setPaintActive(true)}>
-              🎨
+            {/* Single Paint ⇄ Erase toggle (icon swaps) — unified across
+                Basic / Designer / Freeform. */}
+            <ToolBtn title={isErasing ? "Erase (click to paint)" : "Paint (click to erase)"}
+              active={paintActive}
+              onClick={() => {
+                // Coming from Pan: resume drawing in the same mode (no flip).
+                // Already drawing: flip paint ⇄ erase.
+                if (paintActive) setIsErasing((v) => !v);
+                else setPaintActive(true);
+              }}>
+              {isErasing ? <IconEraser size={18} /> : "🎨"}
             </ToolBtn>
             <ToolBtn title="Pan / move (drag to pan)" active={!paintActive}
               onClick={() => setPaintActive(false)}>
               ✋
             </ToolBtn>
             {paintActive && (
-              <>
-                <ToolBtn title="Eraser" active={isErasing}
-                  onClick={() => setIsErasing((v) => !v)}>
-                  <IconEraser size={18} />
-                </ToolBtn>
-                <ToolBtn title="Clear all painted cells" style={{ background: "#ef4444" }}
-                  onClick={clearAll}>
-                  🧹
-                </ToolBtn>
-              </>
+              <ToolBtn title="Clear all painted cells" style={{ background: "#ef4444" }}
+                onClick={clearAll}>
+                🧹
+              </ToolBtn>
             )}
             <div style={{ opacity: canUndo ? 1 : 0.35, pointerEvents: canUndo ? "auto" : "none" }}>
               <ToolBtn title="Undo (Ctrl+Z)" onClick={handleUndo}>

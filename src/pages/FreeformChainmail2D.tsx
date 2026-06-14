@@ -39,13 +39,14 @@ import {
 
 import { DraggablePill, DraggableCompassNav } from "../App";
 import type { ExportRing, PaletteAssignment } from "../types/project";
-import { IconCircle, IconSquare, IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo, IconMirror, IconRing, IconScale } from "../components/icons/ToolIcons";
+import { IconCircle, IconSquare, IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo, IconMirror, IconScale } from "../components/icons/ToolIcons";
 import { ToolBtn } from "../components/ui/ToolBtn";
 import ShapePanel, { ShapeTool as ShapeToolId } from "../components/ShapePanel";
 import { computeShapeCells } from "../utils/shapeFill";
 import { useAuth, tierAtLeast } from "../auth/AuthContext";
 import defaultFreeformDesign from "../data/defaultFreeformDesign";
 import SupplierColorPalette from "../components/SupplierColorPalette";
+import AutoCalibrateButton from "../components/AutoCalibrateButton";
 // SupplierColorRefreshButton + FreeformCostPanel imports removed 2026-06-01
 // (Refresh-Colors button and Cost Estimator panel both retired from Freeform UI).
 import CustomShapeEditor from "../components/CustomShapeEditor";
@@ -1165,7 +1166,11 @@ const FreeformChainmail2D: React.FC = () => {
   // Whether the vertical element strip (rings on the R layer, scales on the S
   // layer) is visible. R/S only picks the type; pressing the ring/scale icon
   // toggles this. So the strip shows only when the icon is pressed.
-  const [elementStripOpen, setElementStripOpen] = useState(false);
+  // Calibrated rings strip is disabled for the first release: its toggle was
+  // removed (per Erin) because the strip is fed by the now-hidden Tuner. Kept
+  // as a const so the strip's render block + state plumbing stay intact for an
+  // easy re-enable when scales/Tuner return.
+  const elementStripOpen = false;
   const [builtinShapeOverrides, setBuiltinShapeOverrides] =
     useState<BuiltinOverrides>(() => loadBuiltinOverrides());
   const [customShapeEntries, setCustomShapeEntries] = useState<CustomScaleShape[]>(
@@ -1536,8 +1541,11 @@ const FreeformChainmail2D: React.FC = () => {
   // ====================================================
   // GEOMETRY (synced with Tuner)
   // ====================================================
+  // Default ring when no Tuner-calibrated set is active: 5/16" ID (7.94 mm) with
+  // 1.6 mm wire (per Erin). The Tuner/Atlas are hidden until scales return, so
+  // these defaults are what most users actually weave with.
   const [innerIDmm, setInnerIDmm] = useState(7.94);
-  const [wireMm, setWireMm] = useState(1.2);
+  const [wireMm, setWireMm] = useState(1.6);
   const [centerSpacing, setCenterSpacing] = useState(7.0);
   const [angleIn, setAngleIn] = useState(25);
   const [angleOut, setAngleOut] = useState(-25);
@@ -5677,6 +5685,17 @@ const derived = useMemo(() => {
   // Ring Set loading (Tuner + JSON)
   // ===============================
   const reloadRingSets = useCallback(() => {
+    // Tuner is hidden for the first release (per Erin). Stale Tuner ring sets in
+    // localStorage must NOT drive the lattice — otherwise auto-follow applies an
+    // old saved size over the intended default (16 ga / 5/16" / AR 5.0). Keeping
+    // ringSets empty makes every auto-follow + tilt effect inert (they all early
+    // -return on an empty list), so the default geometry stands. Flip this back
+    // to re-enable the calibrated-rings palette when the Tuner returns.
+    const TUNER_FEATURE_ENABLED = false;
+    if (!TUNER_FEATURE_ENABLED) {
+      setRingSets([]);
+      return;
+    }
     try {
       const txt = localStorage.getItem(TUNER_LS_KEY);
       if (!txt) {
@@ -6369,39 +6388,48 @@ const derived = useMemo(() => {
             ⚙️
           </ToolBtn>
 
+          {/* Paint/Erase toggle + Pan hand live in the always-visible top half
+              of the toolbar, so they stay reachable even when the tools below
+              are collapsed. Unified Paint ⇄ Erase toggle (icon swaps). */}
+          <ToolBtn
+            active={selectionMode === "none"}
+            onClick={() => {
+              // Already in the draw tool: flip paint ⇄ erase. Coming from a
+              // shape/select tool: just return to drawing (no flip).
+              if (selectionMode === "none") setEraseMode((v) => !v);
+              setSelectionMode("none");
+              clearSelectionState();
+              cancelOverlayPickingIfActive();
+              if (isSelecting) {
+                setIsSelecting(false);
+                selectionRef.current = null;
+                clearInteractionCanvas();
+              }
+            }}
+            title={eraseMode ? "Erase (click to paint)" : "Paint (click to erase)"}
+          >
+            {eraseMode ? <IconEraser size={18} /> : "🎨"}
+          </ToolBtn>
+
+          <ToolBtn
+            active={panMode}
+            onClick={() => {
+              setPanMode((v) => !v);
+              setSelectionMode("none");
+              clearSelectionState();
+              if (isSelecting) {
+                setIsSelecting(false);
+                selectionRef.current = null;
+                clearInteractionCanvas();
+              }
+            }}
+            title="Pan / Drag view"
+          >
+            ✋
+          </ToolBtn>
+
           {!toolbarCollapsed && (
             <div style={isPreviewOnly ? { opacity: 0.3, pointerEvents: "none", display: "contents" } : { display: "contents" }}>
-              <ToolBtn
-                active={!eraseMode && selectionMode === "none"}
-                onClick={() => {
-                  setEraseMode(false);
-                  setSelectionMode("none");
-                  clearSelectionState();
-                  cancelOverlayPickingIfActive();
-                }}
-                title="Paint rings"
-              >
-                🎨
-              </ToolBtn>
-
-              <ToolBtn
-                active={eraseMode}
-                onClick={() => {
-                  setEraseMode((v) => !v);
-
-                  clearSelectionState();
-
-                  if (isSelecting) {
-                    setIsSelecting(false);
-                    selectionRef.current = null;
-                    clearInteractionCanvas();
-                  }
-                }}
-                title="Eraser — click rings/scales to remove"
-              >
-                <IconEraser size={18} />
-              </ToolBtn>
-
               <ToolBtn
                 onClick={handleUndoAction}
                 title="Undo (Ctrl+Z)"
@@ -6430,18 +6458,10 @@ const derived = useMemo(() => {
                 <IconSquare />
               </ToolBtn>
 
-              {/* Calibrated rings strip toggle. */}
-              <div style={{ position: "relative", display: "inline-flex" }} data-nondrag>
-                <ToolBtn
-                  active={elementStripOpen}
-                  onClick={() => {
-                    setElementStripOpen((v) => !v);
-                  }}
-                  title="Show/hide the calibrated rings strip"
-                >
-                  <IconRing size={18} />
-                </ToolBtn>
-              </div>
+              {/* Calibrated rings strip toggle hidden for the first release
+                  (per Erin) — the strip is fed by the Tuner, which is hidden
+                  until scales return, so the picker has nothing to show. The
+                  strip + state remain in the code, just no toggle to open it. */}
 
               {shapeEditor && (
                 <CustomShapeEditor
@@ -6512,23 +6532,7 @@ const derived = useMemo(() => {
                 }}
               />
 
-              <ToolBtn
-                active={panMode}
-                onClick={() => {
-                  setPanMode((v) => !v);
-                  setSelectionMode("none");
-                  clearSelectionState();
-
-                  if (isSelecting) {
-                    setIsSelecting(false);
-                    selectionRef.current = null;
-                    clearInteractionCanvas();
-                  }
-                }}
-                title="Pan / Drag view"
-              >
-                ✋
-              </ToolBtn>
+              {/* Pan hand moved to the always-visible top of the toolbar. */}
 
               {/* Mirror draw — set a reference on the canvas (tap = point /
                   180° reflection; drag = an axis line), then every ring/scale
@@ -6929,6 +6933,10 @@ const derived = useMemo(() => {
             >
               🏭
             </button>
+            {/* Auto color-calibration — small "C" button. Runs a headless
+                calibration in place (progress bar only), then auto-saves +
+                applies. No page or dialog. */}
+            <AutoCalibrateButton from="freeform" />
           </div>
 
           {paletteManagerOpen && (

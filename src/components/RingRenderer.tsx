@@ -16,6 +16,10 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import SpriteText from "three-spritetext";
 import type { OverlayState } from "../components/ImageOverlayPanel";
 import RingRendererInstanced from "./RingRendererInstanced";
+// Color calibration: applyCalibrationHex is identity when no calibration is
+// saved, so these wraps are no-ops until the user runs the auto-calibrate ("C")
+// button — then painted ring colors display through the saved gain/gamma table.
+import { applyCalibrationHex } from "../utils/colorCalibration";
 
 // ============================================================
 // Utility Constants & Conversions
@@ -615,7 +619,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
             defaultHex,
         );
 
-        mat.color.set(colorHex);
+        mat.color.set(applyCalibrationHex(colorHex));
       }
     };
 
@@ -626,7 +630,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       const meshes = meshesRef.current;
       if (!meshes || meshes.length === 0) return;
 
-      const defaultHex = normalizeColor6(paramsRef.current.ringColor || "#CCCCCC");
+      const defaultHex = applyCalibrationHex(normalizeColor6(paramsRef.current.ringColor || "#CCCCCC"));
       for (const mesh of meshes) {
         const mat = mesh.material as THREE.MeshStandardMaterial;
         if (!mat) continue;
@@ -730,7 +734,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       const mat = mesh.material as THREE.MeshStandardMaterial;
       if (mat?.color) {
         const fallback = normalizeColor6(paramsRef.current.ringColor || "#CCCCCC");
-        mat.color.set(nextColor ?? fallback);
+        mat.color.set(applyCalibrationHex(nextColor ?? fallback));
       }
     };
 
@@ -1324,7 +1328,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         // material — baking defaultHex here made base-material changes show only
         // after a full rebuild (refresh).
         mesh.userData.directColor = direct ? normalizeColor6(direct) : null;
-        mat.color.set(colorHex);
+        mat.color.set(applyCalibrationHex(colorHex));
 
         group.add(mesh);
         meshes.push(mesh);

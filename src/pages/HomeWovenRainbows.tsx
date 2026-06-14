@@ -168,12 +168,8 @@ const HomeWovenRainbows: React.FC = () => {
             <Link to="/chart" style={tileStyle}>
               📊 Ring Size Chart
             </Link>
-            <Link to="/tuner" style={tileStyle}>
-              ⚙️ Weave Tuner
-            </Link>
-            <Link to="/atlas" style={tileStyle}>
-              🌐 Weave Atlas
-            </Link>
+            {/* Weave Tuner + Weave Atlas hidden for first release (per Erin);
+                they return with scales. Routes remain for deep-linking. */}
           </div>
         </section>
 

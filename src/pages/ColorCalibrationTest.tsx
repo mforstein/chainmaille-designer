@@ -253,7 +253,13 @@ export default function ColorCalibrationTest() {
   const returnTo = useMemo(() => {
     const sp = new URLSearchParams(location.search);
     const from = sp.get("from");
-    return from === "tuner" ? "/tuner" : "/tuner";
+    // Calibration is now reached from the Designer + Freeform color palettes
+    // (the Tuner entry point is hidden for the first release). Default back to
+    // Freeform when the origin is unknown.
+    if (from === "designer") return "/designer";
+    if (from === "freeform") return "/freeform";
+    if (from === "tuner") return "/tuner";
+    return "/freeform";
   }, [location.search]);
 
   const palette = useMemo(() => DEFAULT_PALETTE.map(normalizeColor6), []);
@@ -720,15 +726,15 @@ export default function ColorCalibrationTest() {
             fontWeight: 800,
             boxShadow: "0 10px 30px rgba(0,0,0,0.35)",
           }}
-          title="Back to Weave Tuner"
+          title="Back"
         >
-          ← Back to Tuner
+          ← Back
         </button>
       </div>
 
       {/* Mode toggle + refresh */}
       <div style={{ position: "fixed", top: 56, right: 14, zIndex: 100000, display: "flex", gap: 8, alignItems: "center" }}>
-        {(["ring", "scale"] as const).map((m) => (
+        {(["ring"] as const).map((m) => (
           <button
             key={m}
             onClick={() => { setCalibMode(m); setResults([]); setStatusMsg(""); }}
