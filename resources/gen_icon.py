@@ -27,37 +27,39 @@ glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(18))
 img.alpha_composite(glow_layer)
 draw = ImageDraw.Draw(img)
 
-# ── Shawl silhouette ──────────────────────────────────────────────────────────
-shawl_top_y = 195
-shawl_bot_y = 935
-shawl_cx   = SIZE // 2
+# ── Back plane (circle) ───────────────────────────────────────────────────────
+circle_cx = SIZE // 2
+circle_cy = 480
+R = 372
 
-# Layered triangles, lightest at edges to give fabric depth
-shawl_defs = [
-    (44,  980, (148, 100, 210, 55)),
-    (86,  938, (130,  80, 190, 75)),
-    (125, 899, (115,  68, 175, 95)),
-    (160, 864, (100,  58, 162, 115)),
-    (192, 832, ( 88,  50, 150, 130)),
+# Layered concentric circles, lightest/most transparent at the outer edge to
+# give the same woven-fabric depth the triangle drape had.
+circle_defs = [
+    (R,       (148, 100, 210, 55)),
+    (R - 34,  (130,  80, 190, 75)),
+    (R - 66,  (115,  68, 175, 95)),
+    (R - 96,  (100,  58, 162, 115)),
+    (R - 124, ( 88,  50, 150, 130)),
 ]
-for lx, rx, col in shawl_defs:
+for rad, col in circle_defs:
     layer = Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
     ld = ImageDraw.Draw(layer)
-    ld.polygon([(lx, shawl_top_y), (rx, shawl_top_y), (shawl_cx, shawl_bot_y)], fill=col)
+    ld.ellipse((circle_cx - rad, circle_cy - rad, circle_cx + rad, circle_cy + rad), fill=col)
     img.alpha_composite(layer)
 draw = ImageDraw.Draw(img)
 
-# Shawl border
-draw.polygon([(44, shawl_top_y), (980, shawl_top_y), (shawl_cx, shawl_bot_y)],
+# Circle border
+draw.ellipse((circle_cx - R, circle_cy - R, circle_cx + R, circle_cy + R),
              outline=(190, 150, 240, 160), width=3)
 
-# Horizontal weave lines on the shawl
+# Horizontal weave lines, clipped to the circle (chord width at each height)
 for i in range(9):
     t = (i + 1) / 10
-    y  = shawl_top_y + t * (shawl_bot_y - shawl_top_y)
-    lx = 44  + t * (shawl_cx - 44)
-    rx = 980 - t * (980 - shawl_cx)
-    draw.line([(lx + 6, y), (rx - 6, y)], fill=(210, 170, 255, 50), width=2)
+    y = (circle_cy - R) + t * (2 * R)
+    half = math.sqrt(max(0.0, R * R - (y - circle_cy) ** 2))
+    if half > 10:
+        draw.line([(circle_cx - half + 6, y), (circle_cx + half - 6, y)],
+                  fill=(210, 170, 255, 50), width=2)
 
 # ── Interlocked rings (WR motif) ─────────────────────────────────────────────
 # Six rings in a 2-row hexagonal cluster, drawn with thick ellipse strokes
