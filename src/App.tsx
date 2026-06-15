@@ -124,6 +124,7 @@ import RequiresTier from "./auth/RequiresTier";
 import { useAuth, tierAtLeast } from "./auth/AuthContext";
 import SupplierColorPalette from "./components/SupplierColorPalette";
 import AutoCalibrateButton from "./components/AutoCalibrateButton";
+import ValueStepper from "./components/ValueStepper";
 import { calibrationUpdatedEventName } from "./utils/colorCalibration";
 
 // ==============================
@@ -207,20 +208,30 @@ function clampToViewport(
   pos: { x: number; y: number },
   size: { w: number; h: number },
 ) {
+  // Minimum slice of the panel that must stay on-screen so its drag handle
+  // remains reachable. The vertical travel is bounded by KEEP, NOT by the
+  // panel's measured height: some panels' boxes measure much taller than they
+  // look (padding / conditionally-rendered or zero-opacity sections), and the
+  // old `maxY = innerHeight - size.h - margin` then pinned them near the middle
+  // of the screen — the "paint palette / control panel won't move to the
+  // bottom" bug. Keying the bottom limit off KEEP lets every panel travel to
+  // the bottom edge regardless of how tall its box measures.
+  const KEEP = 56;
+
   // Position that keeps the far (right/bottom) edge inside the margin. When the
   // panel is LARGER than the viewport (e.g. a tall toolbar after rotating to a
   // short landscape screen), this goes negative.
   const fitX = window.innerWidth - size.w - UI_MARGIN;
-  const fitY = window.innerHeight - size.h - UI_MARGIN;
 
-  // Normal case (panel fits): clamp between UI_MARGIN and fit.
-  // Oversized case (fit < UI_MARGIN): allow the panel to overhang either edge —
-  // range becomes [fit, UI_MARGIN] — so it can still be dragged to reveal the
-  // top/left OR bottom/right edge instead of being locked half off-screen.
+  // Horizontal: clamp fully on-screen when it fits; allow overhang when oversized.
   const minX = Math.min(UI_MARGIN, fitX);
   const maxX = Math.max(UI_MARGIN, fitX);
-  const minY = Math.min(UI_MARGIN, fitY);
-  const maxY = Math.max(UI_MARGIN, fitY);
+
+  // Vertical: travel from the top margin (or overhang upward, if the panel is
+  // taller than the viewport, so its bottom can be revealed) down until only
+  // KEEP px of its top edge remains visible above the bottom of the screen.
+  const minY = Math.min(UI_MARGIN, window.innerHeight - size.h - UI_MARGIN);
+  const maxY = Math.max(minY, window.innerHeight - KEEP);
 
   return {
     x: clamp(pos.x, minX, maxX),
@@ -382,7 +393,8 @@ function DraggablePill({
     } catch {}
   }, [id, scale]);
 
-  // ✅ After first paint (and on resize/orientation change), measure and clamp.
+  // ✅ After first paint (and on resize/orientation change), measure and clamp
+  // the panel back inside the viewport so it can never get stranded off-screen.
   useEffect(() => {
     const clampNow = () => {
       const el = rootRef.current;
@@ -402,16 +414,44 @@ function DraggablePill({
       });
     };
 
-    // clamp after mount
-    requestAnimationFrame(() => clampNow());
+    // iOS Safari fires `orientationchange` (and an early `resize`) BEFORE the
+    // viewport metrics (window.innerWidth/Height) have settled to the new
+    // orientation, so a single clamp reads stale dimensions and leaves the
+    // panel off-screen — the "panels get stuck after rotating" bug. Re-run the
+    // clamp several times across the rotation animation so at least one pass
+    // sees the final dimensions. visualViewport's resize is the most reliable
+    // "metrics settled" signal on mobile, so we listen to it too.
+    const timers: number[] = [];
+    const scheduleClamp = () => {
+      timers.forEach((t) => window.clearTimeout(t));
+      timers.length = 0;
+      requestAnimationFrame(clampNow);
+      for (const d of [60, 200, 450, 800]) {
+        timers.push(window.setTimeout(clampNow, d));
+      }
+    };
 
-    // clamp on resize + orientation changes
-    window.addEventListener("resize", clampNow);
-    window.addEventListener("orientationchange", clampNow);
+    // A rotation must never leave the panel stuck to the pointer either — drop
+    // any in-flight drag, then re-clamp.
+    const onOrientation = () => {
+      draggingRef.current = false;
+      setDragging(false);
+      scheduleClamp();
+    };
+
+    // clamp after mount
+    requestAnimationFrame(clampNow);
+
+    window.addEventListener("resize", scheduleClamp);
+    window.addEventListener("orientationchange", onOrientation);
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", scheduleClamp);
 
     return () => {
-      window.removeEventListener("resize", clampNow);
-      window.removeEventListener("orientationchange", clampNow);
+      window.removeEventListener("resize", scheduleClamp);
+      window.removeEventListener("orientationchange", onOrientation);
+      vv?.removeEventListener("resize", scheduleClamp);
+      timers.forEach((t) => window.clearTimeout(t));
     };
   }, []);
 
@@ -1513,7 +1553,7 @@ const doClearPaint = () => {
               display: "flex",
               flexDirection: "column",
               gap: 10,
-              width: 160,
+              width: 220,
               background: "#0b1324",
               border: "1px solid #0b1020",
               borderRadius: 16,
@@ -1524,79 +1564,43 @@ const doClearPaint = () => {
           >
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Grid Size</div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <label
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 8,
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {/* ▼ / ▲ steppers (with press-and-hold auto-repeat) plus an
+                  editable number so big jumps can still be typed. Both paths
+                  funnel through clampAndPersist so the rows×cols memory cap and
+                  persistence stay consistent. */}
+              <ValueStepper
+                label="Columns"
+                value={params.cols}
+                min={1}
+                max={400}
+                step={1}
+                editable
+                onChange={(nextCols) => {
+                  const { rows: safeRows, cols: safeCols } = clampAndPersist(
+                    "designer",
+                    params.rows,
+                    nextCols
+                  );
+                  setParams((p) => ({ ...p, rows: safeRows, cols: safeCols }));
                 }}
-              >
-                <span>Columns:</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={400}
-                  value={params.cols}
-onChange={(e) => {
-  const raw = parseInt(e.target.value, 10);
-  const nextCols = Number.isFinite(raw) ? raw : params.cols;
-
-  const { rows: safeRows, cols: safeCols } = clampAndPersist(
-    "designer",
-    params.rows,
-    nextCols
-  );
-
-  setParams((p) => ({ ...p, rows: safeRows, cols: safeCols }));
-}}
-                  style={{
-                    width: 80,
-                    textAlign: "right",
-                    background: "#111827",
-                    color: "#fff",
-                    border: "1px solid #222",
-                    borderRadius: 6,
-                  }}
-                />
-              </label>
-
-              <label
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  gap: 8,
+              />
+              <ValueStepper
+                label="Rows"
+                value={params.rows}
+                min={1}
+                max={400}
+                step={1}
+                editable
+                onChange={(nextRows) => {
+                  const { rows: safeRows, cols: safeCols } = clampAndPersist(
+                    "designer",
+                    nextRows,
+                    params.cols
+                  );
+                  setParams((p) => ({ ...p, rows: safeRows, cols: safeCols }));
                 }}
-              >
-                <span>Rows:</span>
-                <input
-                  type="number"
-                  min={1}
-                  max={400}
-                  value={params.rows}
-onChange={(e) => {
-  const raw = parseInt(e.target.value, 10);
-  const nextRows = Number.isFinite(raw) ? raw : params.rows;
-
-  const { rows: safeRows, cols: safeCols } = clampAndPersist(
-    "designer",
-    nextRows,
-    params.cols
-  );
-
-  setParams((p) => ({ ...p, rows: safeRows, cols: safeCols }));
-}}
-
-                  style={{
-                    width: 80,
-                    textAlign: "right",
-                    background: "#111827",
-                    color: "#fff",
-                    border: "1px solid #222",
-                    borderRadius: 6,
-                  }}
-                />
-              </label>
+              />
             </div>
           </DraggablePill>
           </div>

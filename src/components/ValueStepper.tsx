@@ -23,6 +23,10 @@ interface ValueStepperProps {
   decimals?: number;
   /** Optional suffix shown after the value (e.g. "°", "%"). */
   suffix?: string;
+  /** Render an editable number input between the arrows instead of static
+   *  text, so the user can also type a value directly (handy for wide ranges
+   *  like grid size where stepping one-by-one to 400 would be tedious). */
+  editable?: boolean;
 }
 
 export const ValueStepper: React.FC<ValueStepperProps> = ({
@@ -34,6 +38,7 @@ export const ValueStepper: React.FC<ValueStepperProps> = ({
   max,
   decimals = 0,
   suffix = "",
+  editable = false,
 }) => {
   // Latest value, mirrored to a ref so press-and-hold auto-repeat keeps
   // progressing without waiting on a re-render (no stale closure).
@@ -104,10 +109,28 @@ export const ValueStepper: React.FC<ValueStepperProps> = ({
       <span style={{ color: "#9ca3af", flex: 1 }}>{label}</span>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         {arrow("▼", -1, `Decrease ${label}`)}
-        <span style={valStyle}>
-          {value.toFixed(decimals)}
-          {suffix}
-        </span>
+        {editable ? (
+          <input
+            type="number"
+            min={min}
+            max={max}
+            value={value}
+            aria-label={label}
+            onChange={(e) => {
+              const raw = parseFloat(e.target.value);
+              if (!Number.isFinite(raw)) return; // ignore mid-typing empties
+              onChange(round(Math.max(min, Math.min(max, raw))));
+            }}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            style={inputStyle}
+          />
+        ) : (
+          <span style={valStyle}>
+            {value.toFixed(decimals)}
+            {suffix}
+          </span>
+        )}
         {arrow("▲", 1, `Increase ${label}`)}
       </div>
     </div>
@@ -137,6 +160,18 @@ const valStyle: React.CSSProperties = {
   textAlign: "center",
   fontVariantNumeric: "tabular-nums",
   color: "#e5e7eb",
+};
+
+const inputStyle: React.CSSProperties = {
+  width: 52,
+  textAlign: "center",
+  fontVariantNumeric: "tabular-nums",
+  background: "#111827",
+  color: "#fff",
+  border: "1px solid #374151",
+  borderRadius: 8,
+  padding: "5px 4px",
+  fontSize: 14,
 };
 
 export default ValueStepper;
