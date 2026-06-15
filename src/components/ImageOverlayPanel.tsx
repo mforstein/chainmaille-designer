@@ -405,6 +405,21 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
         />
       )}
 
+      {/* Transfer — placed directly under the preview so the primary action is
+          right where the user sees the result. */}
+      {overlay.dataUrl && (
+        <button
+          onClick={async () => {
+            const snapshot = await createSnapshot();
+            if (snapshot) onApply(snapshot);
+          }}
+          style={{ ...btnPrimary, width: "100%", marginBottom: 10 }}
+          title="Send overlay settings to the main canvas/rings layer"
+        >
+          📤 Transfer to Rings
+        </button>
+      )}
+
       {/* Controls */}
       {overlay.dataUrl && (
         <div
@@ -702,12 +717,12 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
         </div>
       )}
 
-      {/* Apply / Reset */}
+      {/* Reset (Transfer moved up directly under the preview) */}
       {overlay.dataUrl && (
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent: "flex-start",
             marginTop: 10,
           }}
         >
@@ -717,16 +732,6 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
             title="Remove overlay and reset settings"
           >
             Reset
-          </button>
-          <button
-            onClick={async () => {
-              const snapshot = await createSnapshot();
-              if (snapshot) onApply(snapshot);
-            }}
-            style={btnPrimary}
-            title="Send overlay settings to the main canvas/rings layer"
-          >
-            📤 Transfer to Rings
           </button>
         </div>
       )}
