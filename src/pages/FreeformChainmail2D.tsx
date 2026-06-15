@@ -14,6 +14,9 @@ import * as THREE from "three";
 import SplineSandbox from "../splineSandbox/SplineSandbox";
 import RingRenderer from "../components/RingRenderer";
 import type { OverlayState } from "../components/ImageOverlayPanel";
+import PanArrows from "../components/PanArrows";
+import ValueStepper from "../components/ValueStepper";
+import OverlayPreview from "../components/OverlayPreview";
 import FinalizeAndExportPanel from "../components/FinalizeAndExportPanel";
 import ProjectSaveLoadButtons from "../components/ProjectSaveLoadButtons";
 import { ProjectLibraryPanel, type LoadMode } from "../components/ProjectLibraryPanel";
@@ -2100,9 +2103,15 @@ const FreeformChainmail2D: React.FC = () => {
     const isInsideMask = (wx: number, wy: number) =>
       wx >= maskMinX && wx <= maskMaxX && wy >= maskMinY && wy <= maskMaxY;
 
-    // Preview panel: 360px wide, 14px padding each side → 332px content, 180px tall.
+    // Preview panel: 360px wide, 14px padding each side → 332px content.
     const PREVIEW_W = 332;
-    const PREVIEW_H = 180;
+    // Map the target ring region onto the preview ISOTROPICALLY so the
+    // transferred image keeps its aspect ratio. PREVIEW_H was previously a fixed
+    // 180px, which assumed the ring region was always 332:180 (≈1.84:1) — any
+    // other region aspect stretched/squished the image (X scaled by 332/worldW,
+    // Y by 180/worldH). Deriving the height from worldH/worldW makes both axes
+    // share one scale, matching the panel preview (height = width ÷ gridAspect).
+    const PREVIEW_H = Math.max(1, Math.min(4000, (PREVIEW_W * worldH) / worldW));
     // Height the image occupies in the preview at scale=1 (fills PREVIEW_W, height auto)
     const imageDisplayH = (PREVIEW_W * iH) / iW;
     // Cap canvas height to keep drawImage fast on Android — large source images
@@ -3360,6 +3369,20 @@ const derived = useMemo(() => {
   const overlayWorldBoundsRef = useRef(overlayWorldBounds);
   const overlayPxPerMmRef = useRef(overlayPxPerMm);
   const overlayMaskOverrideRef = useRef(overlayMaskOverride);
+
+  // Cache of the rasterized overlay pixels for the sampled-color preview. For a
+  // non-tiled image the offscreen buffer depends only on the image itself —
+  // pan/scale/rotation are applied per-pixel in sampleAtWorld, NOT baked into
+  // these pixels. Caching it lets a Pan X/Y nudge re-run only the cheap per-ring
+  // arithmetic instead of decoding the image + getImageData every time (the old
+  // behavior that froze large designs while panning).
+  const overlaySampleCacheRef = useRef<{
+    dataUrl: string;
+    offData: Uint8ClampedArray;
+    offW: number;
+    offH: number;
+    imageDisplayH: number;
+  } | null>(null);
   useEffect(() => { overlayWorldBoundsRef.current = overlayWorldBounds; }, [overlayWorldBounds]);
   useEffect(() => { overlayPxPerMmRef.current = overlayPxPerMm; }, [overlayPxPerMm]);
   useEffect(() => { overlayMaskOverrideRef.current = overlayMaskOverride; }, [overlayMaskOverride]);
@@ -3488,71 +3511,38 @@ const derived = useMemo(() => {
       return;
     }
     let cancelled = false;
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      if (cancelled) return;
-      const iW = img.naturalWidth || 1;
-      const iH = img.naturalHeight || 1;
-      const PREVIEW_W = 332;
-      const PREVIEW_H = 180;
-      const imageDisplayH = (PREVIEW_W * iH) / iW;
-      const MAX_CANVAS_H = 800;
-      const imgCanvasH = Math.max(1, Math.min(MAX_CANVAS_H, Math.ceil(imageDisplayH)));
+    const dataUrl = overlay.dataUrl;
 
-      const isTiled = (overlay as any)?.repeat === "tile";
-      const patternScaleVal = Number((overlay as any)?.patternScale ?? 100);
-      const rotationDeg = Number((overlay as any)?.rotation ?? 0);
-      const offsetX = Number((overlay as any)?.offsetX ?? 0);
-      const offsetY = Number((overlay as any)?.offsetY ?? 0);
-      const scl = Math.max(1e-6, Number((overlay as any)?.scale ?? 1));
-      // Sampled-Colors preview mirrors the transfer result, which ignores
-      // opacity (always full-strength image — no fade toward white).
+    const PREVIEW_W = 332;
+    // Isotropic mapping so the sampled-color preview keeps the image's aspect
+    // ratio (mirrors transferOverlayToRings — see note there). A fixed 180px
+    // squished the preview whenever the ring region wasn't 332:180.
+    const PREVIEW_H = Math.max(
+      1,
+      Math.min(
+        4000,
+        (PREVIEW_W * Math.max(1e-6, overlayWorldBounds.worldH)) /
+          Math.max(1e-6, overlayWorldBounds.worldW),
+      ),
+    );
+    const isTiled = (overlay as any)?.repeat === "tile";
+    const patternScaleVal = Number((overlay as any)?.patternScale ?? 100);
+    const rotationDeg = Number((overlay as any)?.rotation ?? 0);
+    const offsetX = Number((overlay as any)?.offsetX ?? 0);
+    const offsetY = Number((overlay as any)?.offsetY ?? 0);
+    const scl = Math.max(1e-6, Number((overlay as any)?.scale ?? 1));
+    // Sampled-Colors preview mirrors the transfer result, which ignores
+    // opacity (always full-strength image — no fade toward white).
 
-      const offCanvas = document.createElement("canvas");
-      const offCtx = offCanvas.getContext("2d", {
-        willReadFrequently: true,
-      } as CanvasRenderingContext2DSettings) as CanvasRenderingContext2D | null;
-      if (!offCtx) return;
-      let offData: Uint8ClampedArray;
-      let offW: number;
-      let offH: number;
-      try {
-        if (isTiled) {
-          offCanvas.width = PREVIEW_W;
-          offCanvas.height = PREVIEW_H;
-          offW = PREVIEW_W;
-          offH = PREVIEW_H;
-          const tilePx = Math.max(1, PREVIEW_W * (patternScaleVal / 100));
-          const tilePy = Math.max(1, tilePx * iH / iW);
-          const tileCanvas = document.createElement("canvas");
-          tileCanvas.width = Math.ceil(tilePx);
-          tileCanvas.height = Math.ceil(tilePy);
-          const tileCtx = tileCanvas.getContext("2d") as CanvasRenderingContext2D | null;
-          if (tileCtx) tileCtx.drawImage(img, 0, 0, tileCanvas.width, tileCanvas.height);
-          const pattern = offCtx.createPattern(tileCanvas, "repeat");
-          if (pattern) {
-            pattern.setTransform(new DOMMatrix().translate(offsetX, offsetY));
-            offCtx.fillStyle = pattern;
-          }
-          offCtx.save();
-          offCtx.translate(PREVIEW_W / 2, PREVIEW_H / 2);
-          offCtx.rotate(rotationDeg * (Math.PI / 180));
-          offCtx.translate(-PREVIEW_W / 2, -PREVIEW_H / 2);
-          offCtx.fillRect(0, 0, PREVIEW_W, PREVIEW_H);
-          offCtx.restore();
-        } else {
-          offCanvas.width = PREVIEW_W;
-          offCanvas.height = imgCanvasH;
-          offW = PREVIEW_W;
-          offH = imgCanvasH;
-          offCtx.drawImage(img, 0, 0, PREVIEW_W, imgCanvasH);
-        }
-        offData = offCtx.getImageData(0, 0, offW, offH).data;
-      } catch {
-        return;
-      }
-
+    // Run the per-ring sampling loop against an already-rasterized buffer.
+    // This is the only part that depends on pan/scale/rotation (applied
+    // per-pixel below), so it is cheap to repeat on every Pan X/Y nudge.
+    const sampleAllRings = (
+      offData: Uint8ClampedArray,
+      offW: number,
+      offH: number,
+      imageDisplayH: number,
+    ) => {
       const baseR = 255, baseG = 255, baseB = 255;
       const rotRad = rotationDeg * (Math.PI / 180);
       const cosR = Math.cos(rotRad);
@@ -3602,7 +3592,6 @@ const derived = useMemo(() => {
       };
 
       const doRings = (transferTarget === "rings" || transferTarget === "both") && rings.size > 0;
-      const doScales = false;
       const useSelection = overlayScope === "selection" && overlayMaskKeys.size > 0;
 
       const out = new Map<string, string>();
@@ -3618,10 +3607,81 @@ const derived = useMemo(() => {
       }
       if (!cancelled) setPreviewSampledColors(out);
     };
+
+    // Fast path: a non-tiled image whose pixels we've already rasterized.
+    // Skips the decode + draw + getImageData entirely so panning stays smooth.
+    const cache = overlaySampleCacheRef.current;
+    if (!isTiled && cache && cache.dataUrl === dataUrl) {
+      sampleAllRings(cache.offData, cache.offW, cache.offH, cache.imageDisplayH);
+      return;
+    }
+
+    // Slow path: decode the image, rasterize the offscreen buffer, cache it
+    // (non-tiled only — tiled bakes pan/rotation into the pixels), then sample.
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      if (cancelled) return;
+      const iW = img.naturalWidth || 1;
+      const iH = img.naturalHeight || 1;
+      const imageDisplayH = (PREVIEW_W * iH) / iW;
+      const MAX_CANVAS_H = 800;
+      const imgCanvasH = Math.max(1, Math.min(MAX_CANVAS_H, Math.ceil(imageDisplayH)));
+
+      const offCanvas = document.createElement("canvas");
+      const offCtx = offCanvas.getContext("2d", {
+        willReadFrequently: true,
+      } as CanvasRenderingContext2DSettings) as CanvasRenderingContext2D | null;
+      if (!offCtx) return;
+      let offData: Uint8ClampedArray;
+      let offW: number;
+      let offH: number;
+      try {
+        if (isTiled) {
+          offCanvas.width = PREVIEW_W;
+          offCanvas.height = PREVIEW_H;
+          offW = PREVIEW_W;
+          offH = PREVIEW_H;
+          const tilePx = Math.max(1, PREVIEW_W * (patternScaleVal / 100));
+          const tilePy = Math.max(1, tilePx * iH / iW);
+          const tileCanvas = document.createElement("canvas");
+          tileCanvas.width = Math.ceil(tilePx);
+          tileCanvas.height = Math.ceil(tilePy);
+          const tileCtx = tileCanvas.getContext("2d") as CanvasRenderingContext2D | null;
+          if (tileCtx) tileCtx.drawImage(img, 0, 0, tileCanvas.width, tileCanvas.height);
+          const pattern = offCtx.createPattern(tileCanvas, "repeat");
+          if (pattern) {
+            pattern.setTransform(new DOMMatrix().translate(offsetX, offsetY));
+            offCtx.fillStyle = pattern;
+          }
+          offCtx.save();
+          offCtx.translate(PREVIEW_W / 2, PREVIEW_H / 2);
+          offCtx.rotate(rotationDeg * (Math.PI / 180));
+          offCtx.translate(-PREVIEW_W / 2, -PREVIEW_H / 2);
+          offCtx.fillRect(0, 0, PREVIEW_W, PREVIEW_H);
+          offCtx.restore();
+        } else {
+          offCanvas.width = PREVIEW_W;
+          offCanvas.height = imgCanvasH;
+          offW = PREVIEW_W;
+          offH = imgCanvasH;
+          offCtx.drawImage(img, 0, 0, PREVIEW_W, imgCanvasH);
+        }
+        offData = offCtx.getImageData(0, 0, offW, offH).data;
+      } catch {
+        return;
+      }
+
+      // Cache only the non-tiled buffer (tiled pixels embed pan/rotation).
+      if (!isTiled) {
+        overlaySampleCacheRef.current = { dataUrl, offData, offW, offH, imageDisplayH };
+      }
+      sampleAllRings(offData, offW, offH, imageDisplayH);
+    };
     img.onerror = () => {
       if (!cancelled) setPreviewSampledColors(new Map());
     };
-    img.src = overlay.dataUrl;
+    img.src = dataUrl;
     return () => {
       cancelled = true;
     };
@@ -7708,67 +7768,53 @@ const derived = useMemo(() => {
               }}
             >{isTransferring ? "Transferring…" : "Transfer to Rings"}</button>
 
-            {/* Source preview — STABLE. Shows the image content (scale +
-                rotation applied) so the user knows what will be painted.
-                pan/zoom of the on-canvas overlay does NOT shift this view —
-                use the canvas overlay drag or Pan X/Y sliders for positioning.
-                "What you see here is the subject; what you drag on the canvas
-                decides where it lands." */}
+            {/* Source preview — shared with the Designer via <OverlayPreview>:
+                one-finger drag pans, two-finger pinch / wheel zooms. Feeds the
+                same overlay transform the Pan X/Y arrows and Transfer use, so
+                the on-canvas preview and painted result follow. */}
             {overlay?.dataUrl && (
-              <div
-                style={{ position: "relative", width: "100%", height: 180, borderRadius: 8, overflow: "hidden", background: "#000", display: "flex", justifyContent: "center", alignItems: "center", boxShadow: "inset 0 0 12px rgba(0,0,0,0.4)", touchAction: "none" }}
-              >
-                <img
-                  src={overlay.dataUrl}
-                  alt="Overlay preview"
-                  style={{
-                    position: "absolute",
-                    transform: `scale(${overlay.scale ?? 1}) rotate(${overlay.rotation ?? 0}deg)`,
-                    transformOrigin: "center",
-                    width: "100%", height: "auto",
-                    objectFit: "contain",
-                    opacity: overlay.opacity ?? 0.8,
-                    pointerEvents: "none",
-                  }}
-                />
-              </div>
+              <OverlayPreview
+                overlay={overlay}
+                height={180}
+                onChange={(patch) => setOverlay((p) => (p ? { ...p, ...patch } : p))}
+              />
             )}
 
-            {/* Sliders */}
-            <label style={{ display: "grid", gap: 3 }}>
-              <span style={{ color: "#9ca3af" }}>Scale</span>
-              <input type="range" min={0.2} max={6} step={0.01}
-                value={overlay?.scale ?? 1}
-                onChange={(e) => setOverlay((p) => p ? { ...p, scale: Number(e.target.value) } : p)}
-              />
-            </label>
-            <label style={{ display: "grid", gap: 3 }}>
-              <span style={{ color: "#9ca3af" }}>Opacity</span>
-              <input type="range" min={0} max={1} step={0.01}
-                value={overlay?.opacity ?? 0.8}
-                onChange={(e) => setOverlay((p) => p ? { ...p, opacity: Number(e.target.value) } : p)}
-              />
-            </label>
-            <label style={{ display: "grid", gap: 3 }}>
-              <span style={{ color: "#9ca3af" }}>Rotation</span>
-              <input type="range" min={0} max={360} step={1}
-                value={overlay?.rotation ?? 0}
-                onChange={(e) => setOverlay((p) => p ? { ...p, rotation: Number(e.target.value) } : p)}
-              />
-            </label>
+            {/* Controls — up/down arrow steppers (replaced the range sliders).
+                Sliders fired a re-sample of every ring on each input event,
+                which froze on large designs and had no touch thumb on iPad.
+                Tap = one step, press-and-hold = auto-repeat. */}
+            <ValueStepper
+              label="Scale" value={overlay?.scale ?? 1}
+              min={0.2} max={6} step={0.05} decimals={2}
+              onChange={(n) => setOverlay((p) => p ? { ...p, scale: n } : p)}
+            />
+            <ValueStepper
+              label="Opacity" value={overlay?.opacity ?? 0.8}
+              min={0} max={1} step={0.05} decimals={2}
+              onChange={(n) => setOverlay((p) => p ? { ...p, opacity: n } : p)}
+            />
+            <ValueStepper
+              label="Rotation" value={overlay?.rotation ?? 0}
+              min={0} max={360} step={5} decimals={0} suffix="°"
+              onChange={(n) => setOverlay((p) => p ? { ...p, rotation: n } : p)}
+            />
 
-            {(["offsetX", "offsetY"] as const).map((field) => (
-              <label key={field} style={{ display: "grid", gap: 3 }}>
-                <span style={{ color: "#9ca3af", display: "flex", justifyContent: "space-between" }}>
-                  <span>{field === "offsetX" ? "Pan X" : "Pan Y"}</span>
-                  <span style={{ fontVariantNumeric: "tabular-nums" }}>{Math.round(overlay?.[field] ?? 0)}</span>
-                </span>
-                <input type="range" min={-300} max={300} step={1}
-                  value={overlay?.[field] ?? 0}
-                  onChange={(e) => setOverlay((p) => p ? { ...p, [field]: Number(e.target.value) } : p)}
-                />
-              </label>
-            ))}
+            {/* Pan X / Pan Y — arrow steppers (replaced the old range sliders).
+                Sliders fired a re-sample of every ring on each input event,
+                which froze on large designs and had no touch thumb on iPad.
+                Tap = one nudge, press-and-hold = auto-repeat. */}
+            <PanArrows
+              offsetX={overlay?.offsetX ?? 0}
+              offsetY={overlay?.offsetY ?? 0}
+              step={5}
+              onNudge={(dx, dy) =>
+                setOverlay((p) =>
+                  p ? { ...p, offsetX: (p.offsetX ?? 0) + dx, offsetY: (p.offsetY ?? 0) + dy } : p,
+                )
+              }
+              onReset={() => setOverlay((p) => (p ? { ...p, offsetX: 0, offsetY: 0 } : p))}
+            />
 
             <label style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
               <input type="checkbox"
@@ -7782,27 +7828,12 @@ const derived = useMemo(() => {
                 Designer page's Image Overlay panel. Lower % = more, smaller
                 tiles; 100% = one tile fills the design. */}
             {overlay?.repeat === "tile" && (
-              <label style={{ display: "grid", gap: 4 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
-                  <span title="Tile width as a percentage of the design's bounding box. Lower = smaller, more numerous tiles.">
-                    Pattern Scale (%)
-                  </span>
-                  <span style={{ fontVariantNumeric: "tabular-nums", color: "#94a3b8", minWidth: 32, textAlign: "right" }}>
-                    {Math.round(Number((overlay as any)?.patternScale ?? 100))}
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={5}
-                  max={200}
-                  step={1}
-                  value={Math.round(Number((overlay as any)?.patternScale ?? 100))}
-                  onChange={(e) => {
-                    const n = Number(e.target.value);
-                    setOverlay((p) => p ? ({ ...(p as any), patternScale: Math.max(5, Math.min(200, n)) }) : p);
-                  }}
-                />
-              </label>
+              <ValueStepper
+                label="Pattern Scale"
+                value={Math.round(Number((overlay as any)?.patternScale ?? 100))}
+                min={5} max={200} step={5} decimals={0} suffix="%"
+                onChange={(n) => setOverlay((p) => p ? ({ ...(p as any), patternScale: n }) : p)}
+              />
             )}
 
             {/* Mask Outline controls — let the user snap the mask back to
@@ -8029,8 +8060,13 @@ const derived = useMemo(() => {
               // offsetY). One preview-pixel == one PREVIEW_W-th of the design's
               // world-bounding-box width, projected to screen.
               const PREVIEW_W = 332;
-              const PREVIEW_H = 180;
               const bounds = overlayWorldBoundsRef.current;
+              // Isotropic mapping (mirrors Transfer): height tracks the world-box
+              // aspect so panning feels 1:1 in both axes.
+              const PREVIEW_H = Math.max(
+                1,
+                Math.min(4000, (PREVIEW_W * Math.max(1e-6, bounds.worldH)) / Math.max(1e-6, bounds.worldW)),
+              );
               const px = overlayPxPerMmRef.current;
               const denomX = px * bounds.worldW;
               const denomY = px * bounds.worldH;
@@ -8044,6 +8080,11 @@ const derived = useMemo(() => {
             }}
             onDragEnd={() => {
               overlayCanvasDragRef.current = null;
+            }}
+            onScale={(nextScale) => {
+              if (!showImageOverlay) return;
+              const clamped = Math.max(0.1, Math.min(6, nextScale));
+              setOverlay((p) => (p ? { ...p, scale: clamped } : p));
             }}
           />
         )}
@@ -8846,6 +8887,10 @@ interface OverlayClippedProps {
   onDragStart: (e: React.PointerEvent) => void;
   onDragMove: (e: React.PointerEvent) => void;
   onDragEnd: () => void;
+  // Two-finger pinch (touch) / wheel (desktop) → absolute new overlay scale.
+  // The parent clamps and writes it to overlay.scale so the canvas + transfer
+  // both reflect the zoom.
+  onScale: (nextScale: number) => void;
 }
 function OverlayClipped({
   overlay,
@@ -8861,12 +8906,96 @@ function OverlayClipped({
   onDragStart,
   onDragMove,
   onDragEnd,
+  onScale,
 }: OverlayClippedProps) {
   // Stable id per mount so multiple overlays (HMR / strict mode) don't collide.
   const clipId = useMemo(
     () => `overlayClip-${Math.random().toString(36).slice(2, 9)}`,
     [],
   );
+
+  // ── Touch/mouse gestures on the on-canvas image ──────────────────────────
+  // One finger pans (offsetX/offsetY via onDragMove); two fingers pinch-zoom
+  // (overlay.scale via onScale). Mirrors the panel preview's gesture model so
+  // editing the image on the iPhone/iPad canvas feels identical. A ref holds
+  // live pointers + the pinch baseline so it survives re-renders.
+  const gesture = useRef<{
+    pointers: Map<number, { x: number; y: number }>;
+    pinchStartDist: number | null;
+    pinchStartScale: number;
+    panActive: boolean;
+  }>({ pointers: new Map(), pinchStartDist: null, pinchStartScale: 1, panActive: false });
+
+  const SCALE_MIN = 0.1;
+  const SCALE_MAX = 6;
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (!interactive) return;
+      e.preventDefault();
+      (e.currentTarget as SVGElement).setPointerCapture?.(e.pointerId);
+      const s = gesture.current;
+      s.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (s.pointers.size === 1) {
+        s.panActive = true;
+        onDragStart(e);
+      } else if (s.pointers.size === 2) {
+        // Second finger down → switch from pan to pinch.
+        s.panActive = false;
+        const pts = [...s.pointers.values()];
+        s.pinchStartDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || null;
+        s.pinchStartScale = overlay.scale ?? 1;
+      }
+    },
+    [interactive, onDragStart, overlay.scale],
+  );
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      const s = gesture.current;
+      if (!s.pointers.has(e.pointerId)) return;
+      s.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (s.pointers.size >= 2 && s.pinchStartDist) {
+        const pts = [...s.pointers.values()];
+        const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        const ratio = dist / s.pinchStartDist;
+        onScale(Math.max(SCALE_MIN, Math.min(SCALE_MAX, s.pinchStartScale * ratio)));
+      } else if (s.pointers.size === 1 && s.panActive) {
+        onDragMove(e);
+      }
+    },
+    [onDragMove, onScale],
+  );
+
+  const handlePointerUp = useCallback(
+    (e: React.PointerEvent) => {
+      const s = gesture.current;
+      s.pointers.delete(e.pointerId);
+      if (s.pointers.size < 2) s.pinchStartDist = null;
+      if (s.pointers.size === 1) {
+        // One finger left after a pinch → re-seed the pan baseline to it so the
+        // image doesn't jump on the next move.
+        s.panActive = true;
+        const pt = [...s.pointers.values()][0];
+        onDragStart({ clientX: pt.x, clientY: pt.y } as React.PointerEvent);
+      }
+      if (s.pointers.size === 0) {
+        s.panActive = false;
+        onDragEnd();
+      }
+    },
+    [onDragStart, onDragEnd],
+  );
+
+  const handleWheel = useCallback(
+    (e: React.WheelEvent) => {
+      if (!interactive) return;
+      const factor = e.deltaY < 0 ? 1.1 : 0.9;
+      onScale(Math.max(SCALE_MIN, Math.min(SCALE_MAX, (overlay.scale ?? 1) * factor)));
+    },
+    [interactive, onScale, overlay.scale],
+  );
+
   const offsetX = overlay.offsetX ?? 0;
   const offsetY = overlay.offsetY ?? 0;
   const scl = overlay.scale ?? 1;
@@ -8888,15 +9017,14 @@ function OverlayClipped({
   //   sx = PREVIEW_W * nxWorld - offsetX  (then /scale, rotate, + PREVIEW_W/2)
   //   sy = -PREVIEW_H * nyWorld - offsetY (then /scale, rotate, + imageDisplayH/2)
   //
-  // To draw the image on the chainmail canvas:
-  //   - Its on-screen footprint must equal the *projected* world bounding box
-  //     stretched so the X axis spans worldW mm and the Y axis spans worldH *
-  //     (imageDisplayH / PREVIEW_H) mm (the Transfer's asymmetric Y mapping).
-  //   - offsetX / offsetY (stored in preview-pixel units) convert to screen
-  //     pixels by the same per-axis ratio.
+  // PREVIEW_H is derived from the world-box aspect (PREVIEW_W * worldH/worldW)
+  // so the world->image mapping is ISOTROPIC and the image keeps its aspect
+  // ratio. With that, the on-screen footprint reduces to worldW mm wide ×
+  // (worldW * iH/iW) mm tall (i.e. the image's natural aspect), and offsetX /
+  // offsetY share a single preview-pixel→screen ratio.
   const PREVIEW_W = 332;
-  const PREVIEW_H = 180;
   const { worldW, worldH, worldCenterX, worldCenterY } = worldBounds;
+  const PREVIEW_H = Math.max(1, Math.min(4000, (PREVIEW_W * worldH) / worldW));
   const iW = naturalImg?.w ?? 1;
   const iH = naturalImg?.h ?? 1;
   const imageDisplayH = (PREVIEW_W * iH) / iW;
@@ -8933,14 +9061,11 @@ function OverlayClipped({
         cursor: interactive ? "grab" : "default",
         touchAction: "none",
       }}
-      onPointerDown={(e) => {
-        if (!interactive) return;
-        (e.currentTarget as SVGElement).setPointerCapture?.(e.pointerId);
-        onDragStart(e);
-      }}
-      onPointerMove={onDragMove}
-      onPointerUp={onDragEnd}
-      onPointerCancel={onDragEnd}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      onWheel={handleWheel}
     >
       <defs>
         <clipPath id={clipId}>{clipShapes}</clipPath>

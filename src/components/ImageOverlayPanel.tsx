@@ -1,5 +1,7 @@
 // src/components/ImageOverlayPanel.tsx
 import React, { useRef, useState, useCallback, useEffect } from "react";
+import PanArrows from "./PanArrows";
+import OverlayPreview from "./OverlayPreview";
 
 export interface OverlayState {
   dataUrl: string | null;
@@ -50,8 +52,6 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
   const PREVIEW_W = 412;
   const previewH = gridAspect ? Math.max(120, Math.min(320, Math.round(PREVIEW_W / gridAspect))) : 240;
   const [overlay, setOverlay] = useState<OverlayState>(defaultOverlay);
-  const [dragging, setDragging] = useState(false);
-  const dragStart = useRef<{ x: number; y: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   // Test preview canvas — shows a single scale outline with the image clipped
   // and inset by boundaryPct so the user can see exactly how much of the scale
@@ -325,43 +325,10 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
     if (f && f.type.startsWith("image/")) loadFile(f);
   };
 
-  const startDrag = (x: number, y: number) => {
-    setDragging(true);
-    dragStart.current = { x, y };
-  };
-  const moveDrag = (x: number, y: number) => {
-    if (!dragging || !dragStart.current) return;
-    const dx = x - dragStart.current.x;
-    const dy = y - dragStart.current.y;
-    setOverlay((s) => ({
-      ...s,
-      offsetX: s.offsetX + dx,
-      offsetY: s.offsetY + dy,
-    }));
-    dragStart.current = { x, y };
-  };
-  const endDrag = () => {
-    setDragging(false);
-    dragStart.current = null;
-  };
-
-  /* Wheel zoom:
-     - non-repeat: adjust overlay.scale
-     - tile: adjust overlay.patternScale
-  */
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (overlay.repeat === "tile") {
-      const next = (overlay.patternScale ?? 100) * (e.deltaY < 0 ? 1.08 : 0.92);
-      setOverlay((s) => ({
-        ...s,
-        patternScale: Math.max(10, Math.min(400, next)),
-      }));
-    } else {
-      const next = overlay.scale * (e.deltaY < 0 ? 1.1 : 0.9);
-      setOverlay((s) => ({ ...s, scale: Math.max(0.1, Math.min(5, next)) }));
-    }
-  };
+  // Pan (drag) + zoom (pinch/wheel) of the preview now live in the shared
+  // <OverlayPreview> component, so the Designer and Freeform previews behave
+  // and look identically. It reports changes back via onChange (a partial
+  // overlay patch).
 
   /* ---------------- UI ---------------- */
   return (
@@ -428,110 +395,14 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
         </div>
       </div>
 
-      {/* Preview (pan/zoom/rotate) */}
+      {/* Preview — shared with Freeform via <OverlayPreview>: one-finger drag
+          pans, two-finger pinch / wheel zooms. */}
       {overlay.dataUrl && (
-        <div
-          style={{
-            position: "relative",
-            width: "100%",
-            height: previewH,
-            borderRadius: 8,
-            overflow: "hidden",
-            background: "#000",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            boxShadow: "inset 0 0 12px rgba(0,0,0,0.4)",
-            marginBottom: 12,
-            cursor: dragging ? "grabbing" : "grab",
-            touchAction: "none",
-          }}
-          onWheel={handleWheel}
-          onMouseDown={(e) => startDrag(e.clientX, e.clientY)}
-          onMouseMove={(e) => moveDrag(e.clientX, e.clientY)}
-          onMouseUp={endDrag}
-          onMouseLeave={endDrag}
-          onTouchStart={(e) => {
-            const t = e.touches[0];
-            startDrag(t.clientX, t.clientY);
-          }}
-          onTouchMove={(e) => {
-            const t = e.touches[0];
-            moveDrag(t.clientX, t.clientY);
-          }}
-          onTouchEnd={endDrag}
-        >
-          {/* Non-repeat: use <img> so translate/scale work intuitively */}
-          {overlay.repeat !== "tile" ? (
-            <img
-              src={overlay.dataUrl}
-              alt="Overlay Preview"
-              style={{
-                position: "absolute",
-                transform: `
-                  translate(${overlay.offsetX}px, ${overlay.offsetY}px)
-                  scale(${overlay.scale})
-                  rotate(${overlay.rotation}deg)
-                `,
-                transformOrigin: "center",
-                width: "100%",
-                height: "auto",
-                objectFit: "contain",
-                opacity: overlay.opacity,
-                transition: dragging ? "none" : "transform 0.15s ease",
-                pointerEvents: "none",
-              }}
-            />
-          ) : (
-            /* Repeat (tile): use a background layer so repeat/size/position are correct */
-            <div
-              aria-label="Tiled overlay"
-              style={{
-                position: "absolute",
-                inset: 0,
-                transform: `rotate(${overlay.rotation}deg)`,
-                transformOrigin: "center",
-                opacity: overlay.opacity,
-                backgroundImage: `url(${overlay.dataUrl})`,
-                backgroundRepeat: "repeat",
-                backgroundSize: `${overlay.patternScale ?? 100}% auto`,
-                backgroundPosition: `${overlay.offsetX}px ${overlay.offsetY}px`,
-                pointerEvents: "none",
-              }}
-            />
-          )}
-
-          {/* Transfer zone indicator — always the full preview area */}
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              border: "2px dashed rgba(255,255,255,0.75)",
-              borderRadius: 6,
-              pointerEvents: "none",
-              boxShadow: "inset 0 0 0 1px rgba(0,0,0,0.4)",
-            }}
-          >
-            {/* Corner label */}
-            <div
-              style={{
-                position: "absolute",
-                top: 5,
-                left: 7,
-                fontSize: 9,
-                fontWeight: 700,
-                letterSpacing: "0.06em",
-                color: "rgba(255,255,255,0.85)",
-                textShadow: "0 1px 3px rgba(0,0,0,0.9)",
-                textTransform: "uppercase",
-                pointerEvents: "none",
-                userSelect: "none",
-              }}
-            >
-              Transfer area
-            </div>
-          </div>
-        </div>
+        <OverlayPreview
+          overlay={overlay}
+          height={previewH}
+          onChange={(patch) => setOverlay((s) => ({ ...s, ...patch }))}
+        />
       )}
 
       {/* Controls */}
@@ -675,6 +546,24 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
               style={numStyle}
             />
           </label>
+
+          {/* Pan X / Pan Y — arrow steppers. The preview <img> already reacts to
+              offsetX/offsetY via its CSS transform, so this updates live. Gives
+              touch users (iPad/iPhone) a way to position the image precisely
+              without relying on drag. Tap = one nudge, hold = auto-repeat. */}
+          <PanArrows
+            offsetX={overlay.offsetX}
+            offsetY={overlay.offsetY}
+            step={5}
+            onNudge={(dx, dy) =>
+              setOverlay((s) => ({
+                ...s,
+                offsetX: s.offsetX + dx,
+                offsetY: s.offsetY + dy,
+              }))
+            }
+            onReset={() => setOverlay((s) => ({ ...s, offsetX: 0, offsetY: 0 }))}
+          />
 
           {/* ───── Scale Image Fill (new) ───── */}
           {!hideScaleControls && (
