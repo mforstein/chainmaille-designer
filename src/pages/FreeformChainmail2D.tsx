@@ -328,6 +328,8 @@ function LongPressColorSwatch(props: {
   const { color, active, onClick, onLongPress } = props;
   const timerRef = useRef<number | null>(null);
   const longPressedRef = useRef(false);
+  const startRef = useRef<{ x: number; y: number } | null>(null);
+  const movedRef = useRef(false);
 
   const clear = () => {
     if (timerRef.current != null) window.clearTimeout(timerRef.current);
@@ -336,42 +338,69 @@ function LongPressColorSwatch(props: {
 
   const onPointerDown = (e: React.PointerEvent) => {
     e.stopPropagation();
+    // Capture the pointer so the matching pointerup/move are always delivered
+    // here even if the finger drifts off the swatch — on a touch screen a tap
+    // never lands pixel-perfect, and without capture the up-event missed the
+    // swatch and the colour never selected.
+    try {
+      (e.currentTarget as HTMLButtonElement).setPointerCapture(e.pointerId);
+    } catch {}
     longPressedRef.current = false;
+    movedRef.current = false;
+    startRef.current = { x: e.clientX, y: e.clientY };
     clear();
     timerRef.current = window.setTimeout(() => {
       longPressedRef.current = true;
       onLongPress();
-    }, 420);
+    }, 500);
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const s = startRef.current;
+    if (!s) return;
+    // Tolerate small jitter; a real drag past the threshold cancels the
+    // long-press (so a slip doesn't open the editor) but still counts as a tap.
+    if (Math.hypot(e.clientX - s.x, e.clientY - s.y) > 12) {
+      movedRef.current = true;
+      clear();
+    }
   };
 
   const onPointerUp = (e: React.PointerEvent) => {
     e.stopPropagation();
     const wasLong = longPressedRef.current;
     clear();
+    startRef.current = null;
     if (!wasLong) onClick();
   };
 
   const onPointerCancel = (e: React.PointerEvent) => {
     e.stopPropagation();
     clear();
+    startRef.current = null;
   };
 
   return (
     <button
       type="button"
       onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
       style={{
-        width: 22,
-        height: 22,
-        borderRadius: 6,
-        border: active ? "2px solid #f9fafb" : "1px solid rgba(15,23,42,0.9)",
+        width: "100%",
+        aspectRatio: "1 / 1",
+        minWidth: 40,
+        minHeight: 40,
+        borderRadius: 8,
+        border: active ? "3px solid #f9fafb" : "1px solid rgba(15,23,42,0.9)",
+        boxShadow: active ? "0 0 0 2px rgba(59,130,246,0.6)" : "none",
         background: color,
         cursor: "pointer",
         padding: 0,
+        touchAction: "none",
       }}
-      title={active ? "Active color" : "Click: select • Hold: edit"}
+      title={active ? "Active color" : "Tap: select • Hold: edit"}
     />
   );
 }
@@ -7142,8 +7171,10 @@ const derived = useMemo(() => {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(8, 1fr)",
-              gap: 6,
+              gridTemplateColumns: "repeat(6, 1fr)",
+              gap: 8,
+              width: "100%",
+              minWidth: 264,
             }}
           >
             {colorPalette.map((c, idx) => (

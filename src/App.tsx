@@ -663,20 +663,23 @@ function DraggablePill({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            height: 26,
+            // Taller grip = a bigger, easier touch target to move the panel
+            // (the body is wall-to-wall swatches/buttons, so this bar is the
+            // only reliable drag surface on a phone).
+            height: 36,
             marginBottom: 6,
             borderRadius: 999,
-            background: dragging ? "rgba(59,130,246,.30)" : "rgba(255,255,255,.07)",
+            background: dragging ? "rgba(59,130,246,.45)" : "rgba(255,255,255,.12)",
             cursor: dragging ? "grabbing" : "grab",
             touchAction: "none",
           }}
         >
           <span
             style={{
-              width: 34,
-              height: 5,
+              width: 44,
+              height: 6,
               borderRadius: 999,
-              background: "rgba(255,255,255,.45)",
+              background: "rgba(255,255,255,.6)",
             }}
           />
         </div>
