@@ -496,6 +496,31 @@ function DraggablePill({
     };
   }, []);
 
+  // Watchdog: an unconditional guarantee that a panel can NEVER stay locked.
+  // Regardless of WHY a drag's end-event was lost (rotation dropping pointerup,
+  // a captured pointer never releasing, an event listener that didn't fire),
+  // if a drag is "owned" but has had no pointer activity for a moment, it's
+  // dead — so we clear it. An active drag fires continuous pointermove, so its
+  // activity is always fresh and it's never interrupted. This self-heals a
+  // stuck panel within ~0.5s with no user action and no reliance on any
+  // particular browser event firing.
+  useEffect(() => {
+    // Longer than STALE_DRAG_MS so a deliberate press-pause-then-drag on the
+    // grip isn't cancelled; still recovers a genuinely stuck panel in ~1.5s.
+    const WATCHDOG_MS = 1500;
+    const iv = window.setInterval(() => {
+      if (
+        dragPointerIdRef.current !== null &&
+        Date.now() - dragActivityRef.current > WATCHDOG_MS
+      ) {
+        dragPointerIdRef.current = null;
+        draggingRef.current = false;
+        setDragging(false);
+      }
+    }, 500);
+    return () => window.clearInterval(iv);
+  }, []);
+
   // "Reset floating panels" — snap back to the default position + 100% zoom and
   // drop any drag state, so a stuck/off-screen panel is recoverable instantly
   // without reloading the page. defaultPosition can depend on window size, so
