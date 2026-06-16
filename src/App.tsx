@@ -204,10 +204,52 @@ function PasswordGateWrapper({ onUnlock }: { onUnlock: () => void }) {
 const UI_MARGIN = 12;
 
 
+// Read the CSS env() safe-area insets (status bar / Dynamic Island / notch /
+// home indicator). The app uses viewport-fit=cover, so the WKWebView extends
+// UNDER these regions and iOS intercepts touches there — a panel's drag grip
+// placed under the Dynamic Island becomes untappable (the "top toolbar freezes
+// but the bottom palette is fine" bug). A cached hidden probe element lets us
+// read the live inset values (they change with orientation).
+let _insetProbe: HTMLDivElement | null = null;
+function safeInsets(): { top: number; right: number; bottom: number; left: number } {
+  try {
+    if (typeof document === "undefined") return { top: 0, right: 0, bottom: 0, left: 0 };
+    if (!_insetProbe) {
+      const el = document.createElement("div");
+      el.style.cssText = [
+        "position:fixed", "top:0", "left:0", "width:0", "height:0",
+        "pointer-events:none", "visibility:hidden",
+        "padding-top:env(safe-area-inset-top,0px)",
+        "padding-right:env(safe-area-inset-right,0px)",
+        "padding-bottom:env(safe-area-inset-bottom,0px)",
+        "padding-left:env(safe-area-inset-left,0px)",
+      ].join(";");
+      document.documentElement.appendChild(el);
+      _insetProbe = el;
+    }
+    const cs = getComputedStyle(_insetProbe);
+    return {
+      top: parseFloat(cs.paddingTop) || 0,
+      right: parseFloat(cs.paddingRight) || 0,
+      bottom: parseFloat(cs.paddingBottom) || 0,
+      left: parseFloat(cs.paddingLeft) || 0,
+    };
+  } catch {
+    return { top: 0, right: 0, bottom: 0, left: 0 };
+  }
+}
+
 function clampToViewport(
   pos: { x: number; y: number },
   size: { w: number; h: number },
 ) {
+  // Keep panels clear of the safe-area insets so a drag grip never lands under
+  // the Dynamic Island / status bar / side notch where touches are eaten.
+  const ins = safeInsets();
+  const topClear = ins.top + UI_MARGIN;
+  const leftClear = ins.left + UI_MARGIN;
+  const rightClear = ins.right + UI_MARGIN;
+  const bottomInset = ins.bottom;
   // Minimum slice of the panel that must stay on-screen so its drag handle
   // remains reachable. The vertical travel is bounded by KEEP, NOT by the
   // panel's measured height: some panels' boxes measure much taller than they
@@ -218,25 +260,22 @@ function clampToViewport(
   // the bottom edge regardless of how tall its box measures.
   const KEEP = 56;
 
-  // Position that keeps the far (right/bottom) edge inside the margin. When the
-  // panel is LARGER than the viewport (e.g. a tall toolbar after rotating to a
-  // short landscape screen), this goes negative.
-  const fitX = window.innerWidth - size.w - UI_MARGIN;
+  // Position that keeps the far (right/bottom) edge inside the margin + inset.
+  const fitX = window.innerWidth - size.w - rightClear;
 
-  // Horizontal: clamp fully on-screen when it fits; allow overhang when oversized.
-  const minX = Math.min(UI_MARGIN, fitX);
-  const maxX = Math.max(UI_MARGIN, fitX);
+  // Horizontal: clamp fully on-screen (clear of side notches) when it fits;
+  // allow overhang when oversized.
+  const minX = Math.min(leftClear, fitX);
+  const maxX = Math.max(leftClear, fitX);
 
   // Vertical: the drag GRIP is at the TOP of the panel, so the top edge must
-  // never go above the top margin — otherwise a panel taller than the viewport
-  // (e.g. the main toolbar column, especially after rotating) gets its grip
-  // pushed off-screen and becomes impossible to move, while a short panel like
-  // the color palette is unaffected. So pin the top at UI_MARGIN (never
-  // negative); an oversized panel's bottom simply overflows off-screen (it can
-  // be shrunk via the panel zoom control or scrolls). Travel down until only
-  // KEEP px remain above the bottom of the screen.
-  const minY = UI_MARGIN;
-  const maxY = Math.max(UI_MARGIN, window.innerHeight - KEEP);
+  // stay BELOW the safe-area top (Dynamic Island / status bar). Pinning it at a
+  // bare 12px put the grip under the Dynamic Island in the fullscreen app,
+  // where iOS eats the touches — the top toolbar froze while the bottom palette
+  // (clear of the inset) stayed fine. Pin the top at the safe-area top + margin;
+  // an oversized panel's bottom simply overflows (it scrolls / can be shrunk).
+  const minY = topClear;
+  const maxY = Math.max(topClear, window.innerHeight - KEEP - bottomInset);
 
   return {
     x: clamp(pos.x, minX, maxX),
