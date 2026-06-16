@@ -7222,25 +7222,27 @@ const derived = useMemo(() => {
 
       {/* Always-on recovery control: snap every floating panel back to its
           default position + zoom if one gets dragged or stuck off-screen.
-          Reload-free (no lost work). Mirrors Designer's "Reset UI" button. */}
+          Reload-free (no lost work). Anchored top-right so its (invisible) hit
+          rect never sits over the bottom-left color palette / spline controls
+          or the bottom-right stats + zoom controls. */}
       <button
         onClick={resetAllPills}
         title="Reset floating panels to their default positions"
         style={{
           position: "fixed",
-          left: "calc(12px + env(safe-area-inset-left))",
-          bottom: "calc(12px + env(safe-area-inset-bottom))",
+          right: "calc(12px + env(safe-area-inset-right))",
+          top: "calc(12px + env(safe-area-inset-top))",
           zIndex: 100000,
-          padding: "8px 10px",
+          padding: "6px 9px",
           borderRadius: 10,
           border: "1px solid rgba(255,255,255,.12)",
-          background: "rgba(15,23,42,.92)",
+          background: "rgba(15,23,42,.82)",
           color: "#dbeafe",
           cursor: "pointer",
-          fontSize: 13,
+          fontSize: 12,
         }}
       >
-        Reset Panels
+        ⟲ Reset
       </button>
 
       {/* Interference-check result banner — only while the on-demand check is
