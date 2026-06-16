@@ -302,6 +302,13 @@ function DraggablePill({
   // orientation change, where iOS can leave its primary-pointer bookkeeping
   // stale and flag the next genuine touch as non-primary.
   const dragPointerIdRef = useRef<number | null>(null);
+  // Timestamp of the last pointer activity (down/move/up) for the owning drag.
+  // Used to self-heal a STALE owner: if a new press arrives while a pointer is
+  // still "owned" but there's been no activity for a while, the previous
+  // gesture's end-event was dropped (classic iOS-on-rotation behavior), so the
+  // owner is dead and we take over instead of staying frozen forever.
+  const dragActivityRef = useRef(0);
+  const STALE_DRAG_MS = 700;
 
   // Per-panel zoom. Lets the user shrink an individual panel so it fits on a
   // short screen (e.g. iPhone). Scale is applied as a CSS transform from the
@@ -594,8 +601,22 @@ function DraggablePill({
         // e.isPrimary — after an orientation flip iOS can mark the next genuine
         // touch as non-primary, which silently blocked dragging ("panel won't
         // move after rotating"). Owning the pointerId is robust to that.
-        if (dragPointerIdRef.current !== null) return;
+        //
+        // Self-heal: if a pointer is still "owned" but has had no activity for
+        // a while, its end-event was dropped (iOS commonly drops pointerup/
+        // lostpointercapture during a rotation) — the owner is dead, so take
+        // over instead of being frozen forever. A real in-progress drag fires
+        // continuous pointermove, so its activity is always recent; this never
+        // steals an active drag (and a 2nd finger for pinch is still blocked,
+        // since the first finger's activity is recent).
+        if (
+          dragPointerIdRef.current !== null &&
+          Date.now() - dragActivityRef.current < STALE_DRAG_MS
+        ) {
+          return;
+        }
         dragPointerIdRef.current = e.pointerId;
+        dragActivityRef.current = Date.now();
         try {
           (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
         } catch {}
@@ -603,6 +624,7 @@ function DraggablePill({
       }}
       onPointerMove={(e) => {
         if (dragPointerIdRef.current !== e.pointerId) return;
+        dragActivityRef.current = Date.now(); // keep the owner "alive"
         move(e.clientX, e.clientY);
       }}
       onPointerUp={(e) => {
