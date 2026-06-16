@@ -297,6 +297,11 @@ function DraggablePill({
   const [dragging, setDragging] = useState(false);
   const draggingRef = useRef(false);
   const offsetRef = useRef({ x: 0, y: 0 });
+  // The pointerId that currently "owns" a drag, or null. Tracking the id (rather
+  // than relying on PointerEvent.isPrimary) keeps drag-start working after an
+  // orientation change, where iOS can leave its primary-pointer bookkeeping
+  // stale and flag the next genuine touch as non-primary.
+  const dragPointerIdRef = useRef<number | null>(null);
 
   // Per-panel zoom. Lets the user shrink an individual panel so it fits on a
   // short screen (e.g. iPhone). Scale is applied as a CSS transform from the
@@ -350,6 +355,7 @@ function DraggablePill({
         e.preventDefault();
         pinchRef.current = { startDist: dist(e.touches), startScale: scaleRef.current };
         // Cancel any drag the first finger started so pinch owns the gesture.
+        dragPointerIdRef.current = null;
         draggingRef.current = false;
         setDragging(false);
       }
@@ -432,8 +438,9 @@ function DraggablePill({
     };
 
     // A rotation must never leave the panel stuck to the pointer either — drop
-    // any in-flight drag, then re-clamp.
+    // any in-flight drag (and its owning pointer), then re-clamp.
     const onOrientation = () => {
+      dragPointerIdRef.current = null;
       draggingRef.current = false;
       setDragging(false);
       scheduleClamp();
@@ -536,23 +543,42 @@ function DraggablePill({
       onMouseLeave={() => setHovered(false)}
       onPointerDown={(e) => {
         if (isInteractive(e.target)) return;
-        if (!e.isPrimary) return;
+        // Claim the drag only when none is active. Deliberately NOT gated on
+        // e.isPrimary — after an orientation flip iOS can mark the next genuine
+        // touch as non-primary, which silently blocked dragging ("panel won't
+        // move after rotating"). Owning the pointerId is robust to that.
+        if (dragPointerIdRef.current !== null) return;
+        dragPointerIdRef.current = e.pointerId;
         try {
           (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
         } catch {}
         start(e.clientX, e.clientY);
       }}
       onPointerMove={(e) => {
-        if (!draggingRef.current) return;
+        if (dragPointerIdRef.current !== e.pointerId) return;
         move(e.clientX, e.clientY);
       }}
       onPointerUp={(e) => {
+        if (dragPointerIdRef.current !== e.pointerId) return;
+        dragPointerIdRef.current = null;
         stop();
         try {
           (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
         } catch {}
       }}
-      onPointerCancel={() => stop()}
+      onPointerCancel={(e) => {
+        if (dragPointerIdRef.current !== e.pointerId) return;
+        dragPointerIdRef.current = null;
+        stop();
+      }}
+      // Reliable "this pointer is finished" signal — fires even when a pointerup
+      // is dropped (e.g. interrupted by a rotation), so a drag can never wedge
+      // "active" and block all future drags.
+      onLostPointerCapture={(e) => {
+        if (dragPointerIdRef.current !== e.pointerId) return;
+        dragPointerIdRef.current = null;
+        stop();
+      }}
     >
       {(hovered || coarsePointer) && (
         <div
