@@ -227,11 +227,16 @@ function clampToViewport(
   const minX = Math.min(UI_MARGIN, fitX);
   const maxX = Math.max(UI_MARGIN, fitX);
 
-  // Vertical: travel from the top margin (or overhang upward, if the panel is
-  // taller than the viewport, so its bottom can be revealed) down until only
-  // KEEP px of its top edge remains visible above the bottom of the screen.
-  const minY = Math.min(UI_MARGIN, window.innerHeight - size.h - UI_MARGIN);
-  const maxY = Math.max(minY, window.innerHeight - KEEP);
+  // Vertical: the drag GRIP is at the TOP of the panel, so the top edge must
+  // never go above the top margin — otherwise a panel taller than the viewport
+  // (e.g. the main toolbar column, especially after rotating) gets its grip
+  // pushed off-screen and becomes impossible to move, while a short panel like
+  // the color palette is unaffected. So pin the top at UI_MARGIN (never
+  // negative); an oversized panel's bottom simply overflows off-screen (it can
+  // be shrunk via the panel zoom control or scrolls). Travel down until only
+  // KEEP px remain above the bottom of the screen.
+  const minY = UI_MARGIN;
+  const maxY = Math.max(UI_MARGIN, window.innerHeight - KEEP);
 
   return {
     x: clamp(pos.x, minX, maxX),
