@@ -462,6 +462,31 @@ function DraggablePill({
     };
   }, []);
 
+  // "Reset floating panels" — snap back to the default position + 100% zoom and
+  // drop any drag state, so a stuck/off-screen panel is recoverable instantly
+  // without reloading the page. defaultPosition can depend on window size, so
+  // read it from a ref to keep this listener stable.
+  const defaultPosRef = useRef(defaultPosition);
+  defaultPosRef.current = defaultPosition;
+  useEffect(() => {
+    const onResetPills = () => {
+      dragPointerIdRef.current = null;
+      draggingRef.current = false;
+      setDragging(false);
+      setScale(1);
+      const el = rootRef.current;
+      const size = el
+        ? {
+            w: Math.max(1, Math.round(el.getBoundingClientRect().width)),
+            h: Math.max(1, Math.round(el.getBoundingClientRect().height)),
+          }
+        : { w: 280, h: 280 };
+      setPos(clampToViewport(defaultPosRef.current, size));
+    };
+    window.addEventListener(RESET_PILLS_EVENT, onResetPills);
+    return () => window.removeEventListener(RESET_PILLS_EVENT, onResetPills);
+  }, []);
+
   // iOS Safari sometimes gives Text nodes (emoji) as event targets.
   const getTargetElement = (t: EventTarget | null): Element | null => {
     if (!t) return null;
@@ -660,6 +685,9 @@ function DraggablePill({
     </div>
   );
 }
+// Event every DraggablePill listens for; dispatched by resetAllPills().
+const RESET_PILLS_EVENT = "reset-draggable-pills";
+
 function resetAllPills() {
   try {
     Object.keys(localStorage).forEach((k) => {
@@ -668,8 +696,10 @@ function resetAllPills() {
       if (k.startsWith("pill-pos-") || k.startsWith("pill-scale-")) localStorage.removeItem(k);
     });
   } catch {}
-  // force reload so each pill re-initializes to defaults
-  window.location.reload();
+  // Tell every mounted pill to snap back to its default position + 100% zoom
+  // immediately. No page reload — so an in-progress design isn't disturbed and
+  // it works the same on Freeform and Designer. (Pills re-persist the defaults.)
+  window.dispatchEvent(new Event(RESET_PILLS_EVENT));
 }
 // ==============================================
 // === CHAINMAIL DESIGNER COMPONENT STARTS HERE ===
@@ -2568,7 +2598,7 @@ function App() {
 // ======================================
 // ✅ EXPORTS
 // ======================================
-export { DraggableCompassNav, DraggablePill };
+export { DraggableCompassNav, DraggablePill, resetAllPills };
 export default App;
 
 // Keep imports "live" for future switching / shared helpers.

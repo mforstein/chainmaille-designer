@@ -40,7 +40,7 @@ import {
   resolveScaleGeom,
 } from "../v2/elementBrush";
 
-import { DraggablePill, DraggableCompassNav } from "../App";
+import { DraggablePill, DraggableCompassNav, resetAllPills } from "../App";
 import type { ExportRing, PaletteAssignment } from "../types/project";
 import { IconCircle, IconSquare, IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo, IconMirror, IconScale } from "../components/icons/ToolIcons";
 import { ToolBtn } from "../components/ui/ToolBtn";
@@ -5720,26 +5720,12 @@ const derived = useMemo(() => {
     // Redraw hit circles in the new state
     scheduleDrawHitCircles();
 
-    // Attempt to reset DraggablePill positions by clearing any stored keys
-    // that reference our pill ids (safe no-ops if nothing matches).
-    try {
-      const pillIds = [
-        "freeform-toolbar",
-        "freeform-palette",
-        "freeform-stats",
-        "freeform-image-overlay",
-      ];
-
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const k = localStorage.key(i);
-        if (!k) continue;
-        if (pillIds.some((id) => k.includes(id))) {
-          localStorage.removeItem(k);
-        }
-      }
-    } catch {
-      // ignore
-    }
+    // Snap every floating panel back to its default position + zoom. This is
+    // the shared, reload-free reset used by Designer too: it clears the saved
+    // pill positions AND tells the live panels to move, so a panel that got
+    // dragged/stuck off-screen actually returns (the old per-id localStorage
+    // clear here did nothing to already-mounted panels).
+    resetAllPills();
   }, [clearInteractionCanvas, scheduleDrawHitCircles]);
   // ===============================
   // Ring Set loading (Tuner + JSON)
@@ -7233,6 +7219,29 @@ const derived = useMemo(() => {
           ✨
         </button>
       )}
+
+      {/* Always-on recovery control: snap every floating panel back to its
+          default position + zoom if one gets dragged or stuck off-screen.
+          Reload-free (no lost work). Mirrors Designer's "Reset UI" button. */}
+      <button
+        onClick={resetAllPills}
+        title="Reset floating panels to their default positions"
+        style={{
+          position: "fixed",
+          left: "calc(12px + env(safe-area-inset-left))",
+          bottom: "calc(12px + env(safe-area-inset-bottom))",
+          zIndex: 100000,
+          padding: "8px 10px",
+          borderRadius: 10,
+          border: "1px solid rgba(255,255,255,.12)",
+          background: "rgba(15,23,42,.92)",
+          color: "#dbeafe",
+          cursor: "pointer",
+          fontSize: 13,
+        }}
+      >
+        Reset Panels
+      </button>
 
       {/* Interference-check result banner — only while the on-demand check is
           on. Red when overlaps are found (offending rings tinted on canvas),
