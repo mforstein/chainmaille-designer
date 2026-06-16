@@ -37,6 +37,29 @@ cd "$CI_PRIMARY_REPOSITORY_PATH"
 echo "▸ Installing JS dependencies (npm ci)…"
 npm ci
 
+# Vite inlines client config (Supabase URL/key, Stripe price ids) from .env files
+# at build time, but .env.local is gitignored — so a CI checkout builds a bundle
+# with NO auth config and the app shows "Auth not configured". Recreate .env.local
+# here from Xcode Cloud environment variables. These are CLIENT-SAFE values (the
+# VITE_ vars already ship in the public web bundle); do NOT put server secrets
+# (STRIPE_SECRET_KEY, SUPABASE_SERVICE_ROLE_KEY, etc.) into Xcode Cloud.
+# Disable command echo while writing so values never land in the build log.
+echo "▸ Writing .env.local from Xcode Cloud environment variables…"
+set +x
+: > .env.local
+for V in \
+  VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY \
+  VITE_STRIPE_PRICE_CRAFTER VITE_STRIPE_PRICE_MAKER VITE_STRIPE_PRICE_STUDIO \
+  VITE_STRIPE_PAYMENT_LINK_CRAFTER VITE_STRIPE_PAYMENT_LINK_MAKER VITE_STRIPE_PAYMENT_LINK_STUDIO; do
+  eval "VAL=\${$V:-}"
+  if [ -n "$VAL" ]; then printf '%s=%s\n' "$V" "$VAL" >> .env.local; fi
+done
+set -x
+echo "  .env.local now has $(grep -c '=' .env.local 2>/dev/null || echo 0) VITE_ vars"
+if ! grep -q '^VITE_SUPABASE_URL=' .env.local; then
+  echo "⚠️  VITE_SUPABASE_URL not set in Xcode Cloud — this build will have NO auth!"
+fi
+
 echo "▸ Building the web app (npm run build)…"
 npm run build
 
