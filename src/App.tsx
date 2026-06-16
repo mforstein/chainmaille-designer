@@ -437,27 +437,49 @@ function DraggablePill({
       }
     };
 
-    // A rotation must never leave the panel stuck to the pointer either — drop
-    // any in-flight drag (and its owning pointer), then re-clamp.
-    const onOrientation = () => {
+    // Clear any in-flight drag (and its owning pointer) so a rotation can never
+    // leave the panel stuck to a pointer. iOS frequently DROPS the
+    // pointerup/lostpointercapture during a rotation, which would otherwise
+    // leave dragPointerIdRef pinned to a dead pointer — and then the
+    // pointerdown guard (`if dragPointerIdRef !== null return`) blocks every
+    // future drag, i.e. the panel "freezes" after rotating. The legacy
+    // `orientationchange` event is unreliable in the Capacitor WKWebView, so we
+    // can't depend on it; instead we detect a real orientation flip from the
+    // resize / visualViewport signals (which DO fire) by watching for the
+    // viewport's portrait/landscape state to change.
+    const clearDragState = () => {
       dragPointerIdRef.current = null;
       draggingRef.current = false;
       setDragging(false);
+    };
+    let wasPortrait = window.innerHeight >= window.innerWidth;
+    const onViewportChange = () => {
+      const isPortrait = window.innerHeight >= window.innerWidth;
+      if (isPortrait !== wasPortrait) {
+        wasPortrait = isPortrait;
+        clearDragState(); // orientation actually flipped → unstick dragging
+      }
+      scheduleClamp();
+    };
+
+    // Keep the legacy event too (harmless where it fires); always unstick on it.
+    const onLegacyOrientation = () => {
+      clearDragState();
       scheduleClamp();
     };
 
     // clamp after mount
     requestAnimationFrame(clampNow);
 
-    window.addEventListener("resize", scheduleClamp);
-    window.addEventListener("orientationchange", onOrientation);
+    window.addEventListener("resize", onViewportChange);
+    window.addEventListener("orientationchange", onLegacyOrientation);
     const vv = window.visualViewport;
-    vv?.addEventListener("resize", scheduleClamp);
+    vv?.addEventListener("resize", onViewportChange);
 
     return () => {
-      window.removeEventListener("resize", scheduleClamp);
-      window.removeEventListener("orientationchange", onOrientation);
-      vv?.removeEventListener("resize", scheduleClamp);
+      window.removeEventListener("resize", onViewportChange);
+      window.removeEventListener("orientationchange", onLegacyOrientation);
+      vv?.removeEventListener("resize", onViewportChange);
       timers.forEach((t) => window.clearTimeout(t));
     };
   }, []);
