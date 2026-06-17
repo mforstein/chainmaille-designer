@@ -23,7 +23,15 @@ const config: CapacitorConfig = {
     webContentsDebuggingEnabled: true,
   },
   ios: {
-    contentInset: "automatic",
+    // "never" (not "automatic"): the app already uses viewport-fit=cover and
+    // handles safe areas via CSS env(), so the WKWebView must NOT add its own
+    // automatic content inset. With "automatic", the inset differs between
+    // portrait (large top inset for the Dynamic Island) and landscape (~none),
+    // and after a rotation the rendered position and the touch HIT-TEST get
+    // offset by that inset — so in portrait the floating panels render where you
+    // see them but accept taps elsewhere, i.e. they "lock" (grip highlights in
+    // landscape but not portrait). "never" keeps render and hit-test aligned.
+    contentInset: "never",
     scrollEnabled: true,
     limitsNavigationsToAppBoundDomains: true,
   },
