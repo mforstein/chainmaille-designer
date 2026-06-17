@@ -1013,6 +1013,23 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
           };
         }
 
+        // While painting, the LEFT mouse button and one-finger drag belong to
+        // the brush — they must NOT move the camera. The locked branch above
+        // only disabled PAN; the unlocked branch left LEFT mapped to ROTATE, so
+        // a paint stroke also nudged the view ("screen moves a little while
+        // painting"). Make both inert here so left-drag / one-finger only paint;
+        // RIGHT button and two-finger still pan/zoom for deliberate navigation.
+        if (painting) {
+          controls.mouseButtons = {
+            ...controls.mouseButtons,
+            LEFT: undefined as unknown as THREE.MOUSE,
+          };
+          controls.touches = {
+            ...controls.touches,
+            ONE: undefined as unknown as THREE.TOUCH,
+          };
+        }
+
         controls.update();
       };
 
