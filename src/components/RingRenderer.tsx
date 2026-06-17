@@ -358,6 +358,32 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
 ) {
   const useInstanced = (props?.rings?.length ?? 0) >= LARGE_THRESHOLD;
 
+  // Lock document scroll while the full-screen canvas is mounted (Designer /
+  // Freeform). The iOS WKWebView (and the iPad-app-on-Mac build) has a native
+  // scroll view enabled via capacitor.config `scrollEnabled`, so a mouse-drag
+  // to paint also panned the whole web page a little — but ONLY in the Mac app:
+  // the website has no such scroll view, and on iPhone/iPad touch-action + the
+  // paint handler's preventDefault already suppress it. With nothing to scroll,
+  // the drag can't pan. Scoped to this canvas so the long content pages
+  // (Pricing, User Manual) that DO need scrolling are unaffected.
+  useEffect(() => {
+    const docEl = document.documentElement;
+    const body = document.body;
+    const prev = {
+      htmlOverflow: docEl.style.overflow,
+      bodyOverflow: body.style.overflow,
+      bodyOverscroll: body.style.overscrollBehavior,
+    };
+    docEl.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    body.style.overscrollBehavior = "none";
+    return () => {
+      docEl.style.overflow = prev.htmlOverflow;
+      body.style.overflow = prev.bodyOverflow;
+      body.style.overscrollBehavior = prev.bodyOverscroll;
+    };
+  }, []);
+
   // If instanced ever fails, permanently fall back for this mount.
   const [instancedFailed, setInstancedFailed] = useState(false);
 
