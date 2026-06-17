@@ -373,36 +373,21 @@ const RingRenderer = forwardRef<RingRendererHandle, Props>(function RingRenderer
       htmlOverflow: docEl.style.overflow,
       bodyOverflow: body.style.overflow,
       bodyOverscroll: body.style.overscrollBehavior,
-      bodyPosition: body.style.position,
-      bodyTop: body.style.top,
-      bodyLeft: body.style.left,
-      bodyWidth: body.style.width,
-      bodyHeight: body.style.height,
     };
-    // Classic hard scroll-lock: pinning the body with position:fixed (not just
-    // overflow:hidden) defeats the WKWebView scroll view's rubber-band BOUNCE,
-    // which a mouse-drag was triggering in the iPad-app-on-Mac build — panning
-    // the whole page in every direction (visible as the moving black strip at
-    // the top). overflow:hidden alone left the bounce intact. Scoped to the
-    // full-screen canvas; long content pages don't mount RingRenderer, so their
-    // scrolling is untouched.
+    // Mild scroll-lock for the full-screen canvas (Designer / Freeform): the
+    // iPad-app-on-Mac build's WKWebView scroll view let a mouse-drag pan the
+    // page. overflow:hidden + overscroll:none stops it WITHOUT touching the
+    // body's position. (An earlier position:fixed body lock was reverted — on
+    // iOS it triggered a WKWebView bug where fixed panels keep STALE touch hit
+    // regions after a rotation, so the toolbar + palette rendered fine but were
+    // dead to touch. Hit regions are now refreshed in DraggablePill instead.)
     docEl.style.overflow = "hidden";
     body.style.overflow = "hidden";
     body.style.overscrollBehavior = "none";
-    body.style.position = "fixed";
-    body.style.top = "0";
-    body.style.left = "0";
-    body.style.width = "100%";
-    body.style.height = "100%";
     return () => {
       docEl.style.overflow = prev.htmlOverflow;
       body.style.overflow = prev.bodyOverflow;
       body.style.overscrollBehavior = prev.bodyOverscroll;
-      body.style.position = prev.bodyPosition;
-      body.style.top = prev.bodyTop;
-      body.style.left = prev.bodyLeft;
-      body.style.width = prev.bodyWidth;
-      body.style.height = prev.bodyHeight;
     };
   }, []);
 

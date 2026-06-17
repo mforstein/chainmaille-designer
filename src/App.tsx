@@ -318,6 +318,16 @@ function DraggablePill({
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
 
+  // Bumped on every orientation change to force WebKit to recompute this fixed
+  // panel's TOUCH hit region. iOS WKWebView has a long-standing bug where a
+  // position:fixed element keeps its OLD hit region after a rotation — the
+  // panel renders in the right place but taps land nowhere, so the toolbar and
+  // color palette "lock" (dead to touch) after rotating. Applying a sub-pixel
+  // top offset that flips each rotation changes the element's geometry just
+  // enough to refresh the hit region, invisibly. (No event-based unstick helps
+  // here because the pointer events never reach the panel at all.)
+  const [repaintTick, setRepaintTick] = useState(0);
+
   const [pos, setPos] = useState<{ x: number; y: number }>(() => {
     // load saved position if any
     let initial = defaultPosition;
@@ -436,6 +446,14 @@ function DraggablePill({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // On each rotation (repaintTick), force a synchronous layout flush so WebKit
+  // rebuilds this fixed panel's touch hit region — pairs with the sub-pixel top
+  // nudge to fix the iOS "panel dead to touch after rotating" bug.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (el) void el.offsetHeight; // reading offsetHeight forces reflow
+  }, [repaintTick]);
+
   // Persist position
   useEffect(() => {
     try {
@@ -479,12 +497,23 @@ function DraggablePill({
     // sees the final dimensions. visualViewport's resize is the most reliable
     // "metrics settled" signal on mobile, so we listen to it too.
     const timers: number[] = [];
+    // Refresh the fixed-element touch hit region (see repaintTick note). Bumped
+    // across the rotation settle so WebKit recomputes where taps land.
+    const bumpRepaint = () => setRepaintTick((t) => t + 1);
     const scheduleClamp = () => {
       timers.forEach((t) => window.clearTimeout(t));
       timers.length = 0;
-      requestAnimationFrame(clampNow);
+      requestAnimationFrame(() => {
+        clampNow();
+        bumpRepaint();
+      });
       for (const d of [60, 200, 450, 800]) {
-        timers.push(window.setTimeout(clampNow, d));
+        timers.push(
+          window.setTimeout(() => {
+            clampNow();
+            bumpRepaint();
+          }, d),
+        );
       }
     };
 
@@ -650,7 +679,10 @@ function DraggablePill({
         // Infrastructure always wins
         position: "fixed",
         left: pos.x,
-        top: pos.y,
+        // Sub-pixel nudge that flips each rotation (repaintTick) forces WebKit
+        // to recompute this fixed panel's touch hit region, fixing the iOS bug
+        // where the toolbar/palette go dead to touch after rotating. Invisible.
+        top: pos.y + (repaintTick % 2) * 0.01,
         zIndex: 9999,
         userSelect: "none",
         cursor: dragging ? "grabbing" : "grab",
