@@ -137,6 +137,14 @@ type Props = {
   initialEraseMode?: boolean;
   initialRotationLocked?: boolean;
   onGridAspectChange?: (aspect: number) => void;
+  // Geometric fill-shape tool (Designer). When set, a drag on the canvas defines
+  // the shape in WORLD coords and onShapeFill is called on release; the parent
+  // colors the rings inside the shape (no rings are added). Null = normal paint.
+  shapeTool?: string | null;
+  onShapeFill?: (
+    tool: string,
+    sel: { x0: number; y0: number; x1: number; y1: number },
+  ) => void;
   // Keys (formatted as "row-col" or "row,col" — both formats are accepted) of
   // scales/rings that should be visually highlighted as "selected". Selected
   // scales render with a bright outline + glow so the user can see which one
@@ -429,6 +437,8 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       paint,
       setPaint,
       activeColor,
+      shapeTool,
+      onShapeFill,
       overlay,
       externalViewState,
       initialPaintMode = true,
@@ -511,6 +521,17 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
     const activeColorRef = useRef(activeColor);
     const paintRef = useRef(paint);
     const paramsRef = useRef(safeParams);
+    // Shape-fill tool (Designer): drag defines the shape in world coords.
+    const shapeToolRef = useRef(shapeTool);
+    const onShapeFillRef = useRef(onShapeFill);
+    const shapeDragRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+    useEffect(() => { shapeToolRef.current = shapeTool; }, [shapeTool]);
+    useEffect(() => { onShapeFillRef.current = onShapeFill; }, [onShapeFill]);
+    // While a shape tool is active, OrbitControls must stand down so the drag
+    // defines the shape instead of rotating/panning the camera.
+    useEffect(() => {
+      if (controlsRef.current) controlsRef.current.enabled = !shapeTool;
+    }, [shapeTool]);
 
     useEffect(() => {
       paintModeRef.current = localPaintMode;
@@ -827,6 +848,22 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       }
     };
 
+    // Project a client point onto the z=0 grid plane → world (x,y). Used by the
+    // shape-fill tool to capture the drag rectangle in world coords.
+    const clientToWorld = (clientX: number, clientY: number): { x: number; y: number } | null => {
+      const cam = cameraRef.current;
+      const renderer = rendererRef.current;
+      if (!cam || !renderer) return null;
+      const rect = renderer.domElement.getBoundingClientRect();
+      const nx = ((clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+      const ny = -(((clientY - rect.top) / Math.max(1, rect.height)) * 2 - 1);
+      ndcRef.current.set(nx, ny);
+      raycasterRef.current.setFromCamera(ndcRef.current, cam);
+      const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+      const hit = new THREE.Vector3();
+      return raycasterRef.current.ray.intersectPlane(plane, hit) ? { x: hit.x, y: hit.y } : null;
+    };
+
     // #6 — undo every cell painted in the current gesture (used when a second
     // finger lands, so a two-finger pan/zoom never leaves a stray ring behind).
     const undoGesturePaint = () => {
@@ -1110,6 +1147,15 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       const el = renderer.domElement;
 
       const onPointerDown = (e: PointerEvent) => {
+        // Shape-fill tool owns the drag (color rings inside the shape).
+        if (shapeToolRef.current) {
+          const w = clientToWorld(e.clientX, e.clientY);
+          if (w) shapeDragRef.current = { x0: w.x, y0: w.y, x1: w.x, y1: w.y };
+          try { (e.target as any)?.setPointerCapture?.(e.pointerId); } catch {}
+          try { e.preventDefault(); } catch {}
+          try { e.stopPropagation(); } catch {}
+          return;
+        }
         if (!paintModeRef.current) return;
         if (multiTouchRef.current) return; // two-finger gesture owns the canvas
 
@@ -1133,6 +1179,13 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       };
 
       const onPointerMove = (e: PointerEvent) => {
+        if (shapeToolRef.current && shapeDragRef.current) {
+          const w = clientToWorld(e.clientX, e.clientY);
+          if (w) { shapeDragRef.current.x1 = w.x; shapeDragRef.current.y1 = w.y; }
+          try { e.preventDefault(); } catch {}
+          try { e.stopPropagation(); } catch {}
+          return;
+        }
         if (!paintModeRef.current) return;
         if (multiTouchRef.current) return; // suppressed during two-finger pan/zoom
         if (!isPaintingGestureRef.current) return;
@@ -1148,6 +1201,16 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       };
 
       const endGesture = (e?: any) => {
+        // Finish a shape-fill drag → hand the world-space rect to the parent.
+        if (shapeDragRef.current && shapeToolRef.current) {
+          const s = shapeDragRef.current;
+          shapeDragRef.current = null;
+          onShapeFillRef.current?.(shapeToolRef.current, s);
+          try {
+            if (e?.pointerId != null) (e.target as any)?.releasePointerCapture?.(e.pointerId);
+          } catch {}
+          return;
+        }
         gesturePaintedRef.current.clear();
         if (!isPaintingGestureRef.current) return;
         isPaintingGestureRef.current = false;
@@ -1166,6 +1229,15 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
 
       // Touch fallback for iOS Safari cases where pointermove is flaky
       const onTouchStart = (e: TouchEvent) => {
+        // Shape-fill tool (single finger) defines the shape rect.
+        if (shapeToolRef.current && e.touches && e.touches.length === 1) {
+          const t = e.touches[0];
+          const w = clientToWorld(t.clientX, t.clientY);
+          if (w) shapeDragRef.current = { x0: w.x, y0: w.y, x1: w.x, y1: w.y };
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
         if (!paintModeRef.current) return;
         if (!e.touches || e.touches.length === 0) return;
 
@@ -1194,6 +1266,14 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       };
 
       const onTouchMove = (e: TouchEvent) => {
+        if (shapeToolRef.current && shapeDragRef.current && e.touches && e.touches.length >= 1) {
+          const t = e.touches[0];
+          const w = clientToWorld(t.clientX, t.clientY);
+          if (w) { shapeDragRef.current.x1 = w.x; shapeDragRef.current.y1 = w.y; }
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
         if (!paintModeRef.current) return;
         if (multiTouchRef.current || (e.touches && e.touches.length >= 2)) return; // panning
         if (!isPaintingGestureRef.current) return;
@@ -1206,6 +1286,15 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       };
 
       const onTouchEnd = (e: TouchEvent) => {
+        // Finish a shape-fill drag on touch.
+        if (shapeDragRef.current && shapeToolRef.current && (!e.touches || e.touches.length === 0)) {
+          const s = shapeDragRef.current;
+          shapeDragRef.current = null;
+          e.preventDefault();
+          e.stopPropagation();
+          onShapeFillRef.current?.(shapeToolRef.current, s);
+          return;
+        }
         // #6 — only return to paint once ALL fingers have lifted, so lifting one
         // finger of a pinch doesn't immediately paint with the remaining one.
         if (e.touches && e.touches.length === 0) {

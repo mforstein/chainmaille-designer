@@ -125,6 +125,8 @@ import { useAuth, tierAtLeast } from "./auth/AuthContext";
 import type { Tier } from "./auth/AuthContext";
 import SupplierColorPalette from "./components/SupplierColorPalette";
 import AutoCalibrateButton from "./components/AutoCalibrateButton";
+import ShapePanel, { ShapeTool as ShapeToolId } from "./components/ShapePanel";
+import { computeShapeCells } from "./utils/shapeFill";
 import { calibrationUpdatedEventName } from "./utils/colorCalibration";
 
 // ==============================
@@ -950,6 +952,11 @@ function ChainmailDesigner() {
   // 🧩 All your useState hooks go here — top level
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
   const [showOverlayPanel, setShowOverlayPanel] = useState(false);
+  // Geometric fill-shape tool (ported from Freeform). When set, dragging on the
+  // canvas colors the rings inside the shape with the active color (no rings
+  // added). null = normal paint.
+  const [shapeTool, setShapeTool] = useState<ShapeToolId | null>(null);
+  const [shapePanelOpen, setShapePanelOpen] = useState(false);
   const [debugVisible, setDebugVisible] = useState(false);
   const [debugMessage, setDebugMessage] = useState("");
   const [finalizeOpen, setFinalizeOpen] = useState(false);
@@ -1772,6 +1779,43 @@ const doClearPaint = () => {
     [isPaid],
   );
 
+  // Geometric fill: RingRenderer hands us the shape's drag rect in WORLD coords;
+  // we map it to grid cells (computeShapeCells) and COLOR the rings inside with
+  // the active color — no rings are added. The renderer flips Y (world_y =
+  // −logical_y), so negate y to get the logical frame computeShapeCells expects.
+  const onShapeFill = useCallback(
+    (tool: string, worldSel: { x0: number; y0: number; x1: number; y1: number }) => {
+      const spacing = params.centerSpacing ?? 7.5;
+      const rowOffset = (row: number) => (row % 2 === 1 ? spacing / 2 : 0);
+      const rcToLogical = (row: number, col: number) => ({
+        x: col * spacing + rowOffset(row),
+        y: row * spacing * 0.866,
+      });
+      const logicalToRowColApprox = (x: number, y: number) => {
+        const row = Math.round(y / (spacing * 0.866));
+        const col = Math.round((x - rowOffset(row)) / spacing);
+        return { row, col };
+      };
+      const cells = computeShapeCells({
+        tool: tool as ShapeToolId,
+        sel: { lx0: worldSel.x0, ly0: -worldSel.y0, lx1: worldSel.x1, ly1: -worldSel.y1 },
+        logicalToRowColApprox,
+        rcToLogical,
+      });
+      if (!cells.length) return;
+      setPaint((prev) => {
+        const next = new Map(prev);
+        for (const { row, col } of cells) {
+          if (row >= 0 && col >= 0 && row < params.rows && col < params.cols) {
+            next.set(`${row},${col}`, effectiveColor);
+          }
+        }
+        return next;
+      });
+    },
+    [params.centerSpacing, params.rows, params.cols, effectiveColor],
+  );
+
   // --- render ---
   return (
     <div style={{ width: "100vw", height: "100vh", background: "#0E0F12" }}>
@@ -1798,6 +1842,8 @@ const doClearPaint = () => {
           activeColor={effectiveColor}
           overlay={overlayState}
           onGridAspectChange={setGridAspect}
+          shapeTool={shapeTool}
+          onShapeFill={onShapeFill}
         />
       </div>
 
@@ -2036,6 +2082,25 @@ const doClearPaint = () => {
       style={{ opacity: canUseOverlay ? 1 : 0.45, position: "relative" }}
     >
       🖼️{!canUseOverlay && <span style={{ position: "absolute", top: 2, right: 2, fontSize: 8, lineHeight: 1 }}>🔒</span>}
+    </ToolBtn>
+
+    {/* Geometric fill shapes — color rings inside a dragged shape. Tap to open
+        the picker; when a shape is active, tap again to return to painting. */}
+    <ToolBtn
+      title={shapeTool ? "Shapes (active — tap to exit)" : "Fill Shapes"}
+      active={!!shapeTool}
+      onClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        if (shapeTool) {
+          setShapeTool(null);
+          setShapePanelOpen(false);
+        } else {
+          setShapePanelOpen((v) => !v);
+        }
+      }}
+    >
+      ◼
     </ToolBtn>
 
     {/* Draw toggle + Pan hand moved to the always-visible top of the toolbar. */}
@@ -2398,6 +2463,17 @@ const doClearPaint = () => {
           </div>
         </DraggablePill>
       )}
+
+      {/* === Fill-Shapes picker === */}
+      <ShapePanel
+        open={shapePanelOpen}
+        active={shapeTool ?? "square"}
+        onClose={() => setShapePanelOpen(false)}
+        onPick={(t) => {
+          setShapeTool(t);
+          setShapePanelOpen(false);
+        }}
+      />
 
       {/* === Image Overlay Panel === */}
       {showOverlayPanel && (
