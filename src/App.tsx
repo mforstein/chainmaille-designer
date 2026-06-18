@@ -969,7 +969,16 @@ function ChainmailDesigner() {
   const [showMaterialPalette, setShowMaterialPalette] = useState(false);
   const [showDesignerSupplierColors, setShowDesignerSupplierColors] = useState(false);
   const [showCompass, setShowCompass] = useState(false);
-  const [overlayState, setOverlayState] = useState<OverlayState | null>(null);
+  // Persist the image overlay (incl. its dataURL) so a refresh / "Continue"
+  // doesn't wipe it. Restored from localStorage on load.
+  const [overlayState, setOverlayState] = useState<OverlayState | null>(() => {
+    try {
+      const saved = localStorage.getItem("cmd.overlay");
+      return saved ? (JSON.parse(saved) as OverlayState) : null;
+    } catch {
+      return null;
+    }
+  });
   const [gridAspect, setGridAspect] = useState<number>(1.6);
 
   // ============================================================
@@ -1113,6 +1122,19 @@ function ChainmailDesigner() {
       localStorage.setItem("cmd.params", JSON.stringify(params));
     } catch {}
   }, [params]);
+
+  // Persist the image overlay so it survives a refresh / "Continue". The dataURL
+  // can be large; if it exceeds the storage quota the write is skipped (the
+  // overlay just won't persist for that image) rather than crashing.
+  useEffect(() => {
+    try {
+      if (overlayState && (overlayState as any).dataUrl) {
+        localStorage.setItem("cmd.overlay", JSON.stringify(overlayState));
+      } else {
+        localStorage.removeItem("cmd.overlay");
+      }
+    } catch {}
+  }, [overlayState]);
 
   // Free tier can resize up to 20×20. Once the tier is known (and whenever it
   // changes), cap a free user's grid at 20 per dimension (preserving anything
@@ -2487,11 +2509,13 @@ const doClearPaint = () => {
                 onClick={() => {
                   setParams(prev => ({ ...prev, rows: 20, cols: 20 }));
                   setPaint(new Map());
+                  setOverlayState(null);
                   paintHistoryRef.current = [new Map()];
                   paintHistoryIdxRef.current = 0;
                   setCanUndo(false);
                   setCanRedo(false);
                   try { localStorage.removeItem("cmd.paint"); } catch {}
+                  try { localStorage.removeItem("cmd.overlay"); } catch {}
                   setShowNewProjectDialog(false);
                 }}
                 style={{
