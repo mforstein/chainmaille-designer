@@ -851,126 +851,84 @@ function resetAllPills() {
 // ==============================================
 // === CHAINMAIL DESIGNER COMPONENT STARTS HERE ===
 // ==============================================
-// #5 — Resize mode. A full-canvas overlay (so it can't collide with painting):
-// drag from whichever SIDE you want — the edge is chosen by where the drag
-// starts (top/bottom/left/right half) and its dominant axis; dragging that side
-// outward grows it, inward shrinks it, ~1 row/col per PX_PER_CELL of sustained
-// drag. Re-index for top/left keeps the existing design anchored (see
-// resizeEdge). Available to all tiers (free is capped at 20×20 by resizeEdge).
+// #5 — per-edge arrow controls (replaces the steppers AND the drag gesture).
+// Each of the 4 edges has a grow arrow (points outward) and a shrink arrow
+// (points inward); press-and-hold auto-repeats for a sustained resize. Lives in
+// the Grid Size panel — no canvas gesture, so it never collides with painting.
+// Growing top/left re-indexes the design (see resizeEdge). All tiers; free is
+// capped at 20×20 inside resizeEdge.
 type GridEdge = "top" | "bottom" | "left" | "right";
-function ResizeGridOverlay({
+function EdgeArrows({
   onResize,
-  onExit,
-  maxLabel,
 }: {
   onResize: (edge: GridEdge, delta: number) => void;
-  onExit: () => void;
-  maxLabel: string;
 }) {
-  const PX_PER_CELL = 22;
-  const drag = useRef<{
-    sx: number;
-    sy: number;
-    edge: GridEdge | null;
-    startPerp: number;
-    applied: number;
-  } | null>(null);
-
-  // "Outward" perpendicular coordinate per edge: increasing value = grow.
-  const perp = (edge: GridEdge, x: number, y: number) =>
-    edge === "top" ? -y : edge === "bottom" ? y : edge === "left" ? -x : x;
-
-  const onDown = (e: React.PointerEvent) => {
-    e.preventDefault();
-    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-    drag.current = { sx: e.clientX, sy: e.clientY, edge: null, startPerp: 0, applied: 0 };
-  };
-  const onMove = (e: React.PointerEvent) => {
-    const d = drag.current;
-    if (!d) return;
-    if (d.edge === null) {
-      const dx = e.clientX - d.sx;
-      const dy = e.clientY - d.sy;
-      if (Math.hypot(dx, dy) < 8) return; // wait until the drag shows intent
-      const cx = window.innerWidth / 2;
-      const cy = window.innerHeight / 2;
-      // Dominant axis picks vertical (top/bottom) vs horizontal (left/right);
-      // the drag's start half picks which of the two edges.
-      d.edge =
-        Math.abs(dy) >= Math.abs(dx)
-          ? d.sy < cy
-            ? "top"
-            : "bottom"
-          : d.sx < cx
-          ? "left"
-          : "right";
-      d.startPerp = perp(d.edge, d.sx, d.sy);
-    }
-    const target = Math.trunc((perp(d.edge, e.clientX, e.clientY) - d.startPerp) / PX_PER_CELL);
-    const step = target - d.applied;
-    if (step !== 0) {
-      onResize(d.edge, step);
-      d.applied = target;
+  const timer = useRef<number | null>(null);
+  const stop = () => {
+    if (timer.current != null) {
+      window.clearInterval(timer.current);
+      timer.current = null;
     }
   };
-  const end = () => {
-    drag.current = null;
+  useEffect(() => stop, []);
+  const start = (edge: GridEdge, delta: number) => {
+    stop();
+    onResize(edge, delta);
+    timer.current = window.setInterval(() => onResize(edge, delta), 110);
   };
 
-  return (
-    <div
-      onPointerDown={onDown}
-      onPointerMove={onMove}
-      onPointerUp={end}
-      onPointerCancel={end}
+  const btn = (edge: GridEdge, delta: number, label: string, title: string) => (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        (e.currentTarget as HTMLButtonElement).setPointerCapture?.(e.pointerId);
+        start(edge, delta);
+      }}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+      onPointerLeave={stop}
       style={{
-        position: "absolute",
-        inset: 0,
-        zIndex: 50,
+        width: 34,
+        height: 30,
+        borderRadius: 8,
+        border: "1px solid #374151",
+        background: "#1f2937",
+        color: "#f3f4f6",
+        fontSize: 14,
+        fontWeight: 700,
+        cursor: "pointer",
         touchAction: "none",
-        cursor: "crosshair",
-        background: "rgba(124,58,237,0.06)",
-        boxShadow: "inset 0 0 0 3px rgba(124,58,237,0.45)",
       }}
     >
-      <div
-        onPointerDown={(e) => e.stopPropagation()}
-        style={{
-          position: "absolute",
-          top: "calc(12px + env(safe-area-inset-top))",
-          left: "50%",
-          transform: "translateX(-50%)",
-          background: "rgba(15,23,42,0.95)",
-          border: "1px solid rgba(167,139,250,0.55)",
-          borderRadius: 12,
-          padding: "8px 12px",
-          color: "#c4b5fd",
-          fontSize: 12,
-          fontWeight: 700,
-          display: "flex",
-          gap: 12,
-          alignItems: "center",
-          maxWidth: "90vw",
-          textAlign: "center",
-        }}
-      >
-        <span>↔ Resize: drag a side outward to grow, inward to shrink {maxLabel}</span>
-        <button
-          onClick={onExit}
-          style={{
-            padding: "5px 12px",
-            borderRadius: 8,
-            border: "1px solid rgba(255,255,255,0.18)",
-            background: "rgba(124,58,237,0.5)",
-            color: "#fff",
-            cursor: "pointer",
-            fontSize: 12,
-            fontWeight: 700,
-          }}
+      {label}
+    </button>
+  );
+
+  const rows: { edge: GridEdge; name: string; grow: string; shrink: string }[] = [
+    { edge: "top", name: "Top", grow: "▲", shrink: "▽" },
+    { edge: "bottom", name: "Bottom", grow: "▼", shrink: "△" },
+    { edge: "left", name: "Left", grow: "◀", shrink: "▷" },
+    { edge: "right", name: "Right", grow: "▶", shrink: "◁" },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {rows.map((r) => (
+        <div
+          key={r.edge}
+          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}
         >
-          Done
-        </button>
-      </div>
+          <span style={{ color: "#94a3b8", fontSize: 12, width: 52 }}>{r.name}</span>
+          <div style={{ display: "flex", gap: 6 }}>
+            {btn(r.edge, 1, r.grow, `Grow ${r.name.toLowerCase()} edge`)}
+            {btn(r.edge, -1, r.shrink, `Shrink ${r.name.toLowerCase()} edge`)}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -989,7 +947,6 @@ function ChainmailDesigner() {
   // 🧩 All your useState hooks go here — top level
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
   const [showOverlayPanel, setShowOverlayPanel] = useState(false);
-  const [resizeMode, setResizeMode] = useState(false); // #5 grid resize overlay
   const [debugVisible, setDebugVisible] = useState(false);
   const [debugMessage, setDebugMessage] = useState("");
   const [finalizeOpen, setFinalizeOpen] = useState(false);
@@ -1819,15 +1776,6 @@ const doClearPaint = () => {
         />
       </div>
 
-      {/* #5 — grid resize mode overlay (replaces the Rows/Cols steppers). All
-          tiers; free is capped at 20×20 inside resizeEdge. */}
-      {resizeMode && (
-        <ResizeGridOverlay
-          onResize={resizeEdge}
-          onExit={() => setResizeMode(false)}
-          maxLabel={isPaid ? "" : "(max 20×20)"}
-        />
-      )}
 
       {/* === Left Toolbar (emoji pill) === */}
       <DraggablePill id="camera-pill" defaultPosition={{ x: 20, y: 20 }}>
@@ -1969,30 +1917,15 @@ const doClearPaint = () => {
           >
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Grid Size</div>
 
-            {/* Steppers replaced by Resize mode (#5). Tap "Resize grid" to enter
-                a full-canvas resize layer (painting paused), then drag from a
-                side outward to grow / inward to shrink. Free is capped at 20×20;
-                paid goes up to the device limit (default 50×50). */}
+            {/* Steppers replaced by per-edge arrow controls (#5): grow/shrink
+                each edge (press-and-hold to repeat). Free caps at 20×20; paid
+                goes to the device limit (default 50×50). */}
             <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
               <div style={{ color: "#e5e7eb" }}>
                 {params.cols} × {params.rows}
                 {!isPaid && <span style={{ color: "#64748b" }}> (max 20×20)</span>}
               </div>
-              <button
-                onClick={() => setResizeMode(true)}
-                style={{
-                  padding: "7px 10px",
-                  borderRadius: 8,
-                  border: "1px solid rgba(167,139,250,0.5)",
-                  background: "rgba(124,58,237,0.18)",
-                  color: "#c4b5fd",
-                  cursor: "pointer",
-                  fontSize: 12,
-                  fontWeight: 700,
-                }}
-              >
-                ↔ Resize grid
-              </button>
+              <EdgeArrows onResize={resizeEdge} />
               {!isPaid && (
                 <button
                   onClick={() => navigate("/pricing")}
