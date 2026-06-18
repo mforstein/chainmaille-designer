@@ -854,7 +854,15 @@ function resetAllPills() {
 // ==============================================
 function ChainmailDesigner() {
   const { tier } = useAuth();
-  const canUseOverlay = tierAtLeast(tier, "crafter");
+  const navigate = useNavigate();
+  // Paid = any non-free tier (the single paid plan is "crafter"; existing
+  // maker/studio subscribers count as paid too). Free is the limited Designer:
+  // fixed 20×20 grid, no image overlay. Paid unlocks both.
+  const isPaid = tier !== "free";
+  const canUseOverlay = isPaid;
+  // Free tier is hard-locked to a 20×20 grid; paid can resize up to the device
+  // limit and defaults to 50×50.
+  const FREE_GRID = 20;
   // 🧩 All your useState hooks go here — top level
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
   const [showOverlayPanel, setShowOverlayPanel] = useState(false);
@@ -968,8 +976,10 @@ function ChainmailDesigner() {
 
   const [params, setParams] = useState<Params>(() => {
     const def: Params = {
-      rows: 20,
-      cols: 20,
+      // Paid default grid. Free tier is clamped down to 20×20 by a tier effect
+      // once the user's tier is known.
+      rows: 50,
+      cols: 50,
       innerDiameter: 7.94,
       wireDiameter: 1.6,
       overlapX: 0.3,
@@ -1019,6 +1029,18 @@ function ChainmailDesigner() {
       localStorage.setItem("cmd.params", JSON.stringify(params));
     } catch {}
   }, [params]);
+
+  // Free tier is locked to a 20×20 grid. Once the tier is known (and whenever it
+  // changes), clamp a free user's grid down to 20×20. Paid users are untouched
+  // (their saved size or the 50×50 default stands).
+  useEffect(() => {
+    if (isPaid) return;
+    setParams((p) =>
+      p.rows <= FREE_GRID && p.cols <= FREE_GRID
+        ? p
+        : { ...p, rows: FREE_GRID, cols: FREE_GRID },
+    );
+  }, [isPaid]);
 
   useEffect(() => {
     try {
@@ -1768,44 +1790,69 @@ const doClearPaint = () => {
           >
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Grid Size</div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {/* ▼ / ▲ steppers (with press-and-hold auto-repeat) plus an
-                  editable number so big jumps can still be typed. Both paths
-                  funnel through clampAndPersist so the rows×cols memory cap and
-                  persistence stay consistent. */}
-              <ValueStepper
-                label="Columns"
-                value={params.cols}
-                min={1}
-                max={400}
-                step={1}
-                editable
-                onChange={(nextCols) => {
-                  const { rows: safeRows, cols: safeCols } = clampAndPersist(
-                    "designer",
-                    params.rows,
-                    nextCols
-                  );
-                  setParams((p) => ({ ...p, rows: safeRows, cols: safeCols }));
-                }}
-              />
-              <ValueStepper
-                label="Rows"
-                value={params.rows}
-                min={1}
-                max={400}
-                step={1}
-                editable
-                onChange={(nextRows) => {
-                  const { rows: safeRows, cols: safeCols } = clampAndPersist(
-                    "designer",
-                    nextRows,
-                    params.cols
-                  );
-                  setParams((p) => ({ ...p, rows: safeRows, cols: safeCols }));
-                }}
-              />
-            </div>
+            {isPaid ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {/* ▼ / ▲ steppers (with press-and-hold auto-repeat) plus an
+                    editable number so big jumps can still be typed. Both paths
+                    funnel through clampAndPersist so the rows×cols memory cap and
+                    persistence stay consistent. */}
+                <ValueStepper
+                  label="Columns"
+                  value={params.cols}
+                  min={1}
+                  max={400}
+                  step={1}
+                  editable
+                  onChange={(nextCols) => {
+                    const { rows: safeRows, cols: safeCols } = clampAndPersist(
+                      "designer",
+                      params.rows,
+                      nextCols
+                    );
+                    setParams((p) => ({ ...p, rows: safeRows, cols: safeCols }));
+                  }}
+                />
+                <ValueStepper
+                  label="Rows"
+                  value={params.rows}
+                  min={1}
+                  max={400}
+                  step={1}
+                  editable
+                  onChange={(nextRows) => {
+                    const { rows: safeRows, cols: safeCols } = clampAndPersist(
+                      "designer",
+                      nextRows,
+                      params.cols
+                    );
+                    setParams((p) => ({ ...p, rows: safeRows, cols: safeCols }));
+                  }}
+                />
+              </div>
+            ) : (
+              // Free tier: grid is locked at 20×20. Show the size read-only with
+              // an upgrade hint instead of the resize controls.
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+                <div style={{ color: "#e5e7eb" }}>
+                  {params.cols} × {params.rows} <span style={{ color: "#64748b" }}>(fixed)</span>
+                </div>
+                <button
+                  onClick={() => navigate("/pricing")}
+                  style={{
+                    padding: "7px 10px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(167,139,250,0.5)",
+                    background: "rgba(124,58,237,0.18)",
+                    color: "#c4b5fd",
+                    cursor: "pointer",
+                    fontSize: 12,
+                    fontWeight: 700,
+                  }}
+                >
+                  🔓 Upgrade to resize (50×50+)
+                </button>
+              </div>
+            )}
           </DraggablePill>
           </div>
         )}
@@ -2610,7 +2657,10 @@ const homeLinkStyle: React.CSSProperties = {
 // Legacy wrappers replaced by RequiresTier — kept as thin aliases so any
 // remaining references in JSX don't break during the transition period.
 function RequireDesignerAuth({ children }: { children: JSX.Element }) {
-  return <RequiresTier minTier="maker" featureName="3D Designer">{children}</RequiresTier>;
+  // 3D Designer is now FREE (limited to a 20×20 grid, no image overlay). The
+  // paid $5.99 plan unlocks larger grids (default 50×50) + image overlay +
+  // commercial-use license — those are gated inside the Designer by tier.
+  return <RequiresTier minTier="free" featureName="3D Designer">{children}</RequiresTier>;
 }
 function RequireFreeformAuth({ children }: { children: JSX.Element }) {
   return <RequiresTier minTier="studio" featureName="Freeform Designer">{children}</RequiresTier>;
