@@ -124,7 +124,6 @@ import RequiresTier from "./auth/RequiresTier";
 import { useAuth, tierAtLeast } from "./auth/AuthContext";
 import SupplierColorPalette from "./components/SupplierColorPalette";
 import AutoCalibrateButton from "./components/AutoCalibrateButton";
-import ValueStepper from "./components/ValueStepper";
 import { calibrationUpdatedEventName } from "./utils/colorCalibration";
 
 // ==============================
@@ -852,6 +851,85 @@ function resetAllPills() {
 // ==============================================
 // === CHAINMAIL DESIGNER COMPONENT STARTS HERE ===
 // ==============================================
+// #5 — four edge gutters overlaid on the Designer canvas (paid only). Dragging
+// a gutter perpendicular to its edge grows (outward) or shrinks (inward) that
+// edge, ~1 row/col per PX_PER_CELL pixels of sustained drag. Thin strips at the
+// viewport edges so the center stays free for painting.
+type GridEdge = "top" | "bottom" | "left" | "right";
+function GridEdgeResizers({
+  onResize,
+}: {
+  onResize: (edge: GridEdge, delta: number) => void;
+}) {
+  const PX_PER_CELL = 22;
+  const drag = useRef<{ edge: GridEdge; startPerp: number; applied: number } | null>(null);
+
+  // "Outward" perpendicular coordinate per edge: increasing value = grow.
+  const perp = (edge: GridEdge, x: number, y: number) =>
+    edge === "top" ? -y : edge === "bottom" ? y : edge === "left" ? -x : x;
+
+  const begin = (edge: GridEdge) => (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    drag.current = { edge, startPerp: perp(edge, e.clientX, e.clientY), applied: 0 };
+  };
+  const moveHandler = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    const target = Math.trunc((perp(d.edge, e.clientX, e.clientY) - d.startPerp) / PX_PER_CELL);
+    const step = target - d.applied;
+    if (step !== 0) {
+      onResize(d.edge, step);
+      d.applied = target;
+    }
+  };
+  const end = () => {
+    drag.current = null;
+  };
+
+  const base: React.CSSProperties = {
+    position: "absolute",
+    zIndex: 30,
+    background: "rgba(124,58,237,0.12)",
+    touchAction: "none",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "rgba(196,181,253,0.9)",
+    fontSize: 11,
+    fontWeight: 700,
+    userSelect: "none",
+  };
+  const GUT = 26; // gutter thickness
+  const edgeStyle = (edge: GridEdge): React.CSSProperties =>
+    edge === "top"
+      ? { ...base, top: 0, left: GUT, right: GUT, height: GUT, cursor: "ns-resize" }
+      : edge === "bottom"
+      ? { ...base, bottom: 0, left: GUT, right: GUT, height: GUT, cursor: "ns-resize" }
+      : edge === "left"
+      ? { ...base, left: 0, top: GUT, bottom: GUT, width: GUT, cursor: "ew-resize" }
+      : { ...base, right: 0, top: GUT, bottom: GUT, width: GUT, cursor: "ew-resize" };
+
+  return (
+    <>
+      {(["top", "bottom", "left", "right"] as GridEdge[]).map((edge) => (
+        <div
+          key={edge}
+          style={edgeStyle(edge)}
+          title={`Drag to resize the ${edge} edge`}
+          onPointerDown={begin(edge)}
+          onPointerMove={moveHandler}
+          onPointerUp={end}
+          onPointerCancel={end}
+        >
+          {edge === "top" || edge === "bottom" ? "⇕" : "⇔"}
+        </div>
+      ))}
+    </>
+  );
+}
+
 function ChainmailDesigner() {
   const { tier } = useAuth();
   const navigate = useNavigate();
@@ -1621,6 +1699,49 @@ const doClearPaint = () => {
 
     console.log("🧲 Material/Weave updated — paint and overlay preserved.");
   };
+  // #5 — edge-drag resize (paid only). Grows/shrinks one edge of the grid.
+  // The grid is anchored at row0/col0 (top-left), growing right/down, so the
+  // bottom/right edges just change the count, while the top/left edges also
+  // shift every painted cell by the added rows/cols (dRow/dCol) so the existing
+  // design stays put and the dragged edge visibly moves outward. Cells pushed
+  // off the grid (on shrink) are dropped.
+  const resizeEdge = useCallback(
+    (edge: "top" | "bottom" | "left" | "right", delta: number) => {
+      if (!isPaid || !delta) return;
+      setParams((p) => {
+        let rows = p.rows;
+        let cols = p.cols;
+        let dRow = 0;
+        let dCol = 0;
+        if (edge === "top" || edge === "bottom") {
+          rows = Math.max(1, Math.min(400, p.rows + delta));
+          if (edge === "top") dRow = rows - p.rows;
+        } else {
+          cols = Math.max(1, Math.min(400, p.cols + delta));
+          if (edge === "left") dCol = cols - p.cols;
+        }
+        const safe = clampAndPersist("designer", rows, cols);
+        rows = safe.rows;
+        cols = safe.cols;
+        if (rows === p.rows && cols === p.cols) return p;
+        // Re-index / clip the paint map to the new grid.
+        setPaint((prev) => {
+          const next = new Map<string, string | null>();
+          for (const [k, v] of prev) {
+            const i = k.indexOf(",");
+            if (i < 0) continue;
+            const r = parseInt(k.slice(0, i), 10) + dRow;
+            const c = parseInt(k.slice(i + 1), 10) + dCol;
+            if (r >= 0 && c >= 0 && r < rows && c < cols) next.set(`${r},${c}`, v);
+          }
+          return next;
+        });
+        return { ...p, rows, cols };
+      });
+    },
+    [isPaid],
+  );
+
   // --- render ---
   return (
     <div style={{ width: "100vw", height: "100vh", background: "#0E0F12" }}>
@@ -1649,6 +1770,9 @@ const doClearPaint = () => {
           onGridAspectChange={setGridAspect}
         />
       </div>
+
+      {/* #5 — paid-only edge-drag grid resize (replaces the Rows/Cols steppers) */}
+      {isPaid && <GridEdgeResizers onResize={resizeEdge} />}
 
       {/* === Left Toolbar (emoji pill) === */}
       <DraggablePill id="camera-pill" defaultPosition={{ x: 20, y: 20 }}>
@@ -1791,43 +1915,17 @@ const doClearPaint = () => {
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Grid Size</div>
 
             {isPaid ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {/* ▼ / ▲ steppers (with press-and-hold auto-repeat) plus an
-                    editable number so big jumps can still be typed. Both paths
-                    funnel through clampAndPersist so the rows×cols memory cap and
-                    persistence stay consistent. */}
-                <ValueStepper
-                  label="Columns"
-                  value={params.cols}
-                  min={1}
-                  max={400}
-                  step={1}
-                  editable
-                  onChange={(nextCols) => {
-                    const { rows: safeRows, cols: safeCols } = clampAndPersist(
-                      "designer",
-                      params.rows,
-                      nextCols
-                    );
-                    setParams((p) => ({ ...p, rows: safeRows, cols: safeCols }));
-                  }}
-                />
-                <ValueStepper
-                  label="Rows"
-                  value={params.rows}
-                  min={1}
-                  max={400}
-                  step={1}
-                  editable
-                  onChange={(nextRows) => {
-                    const { rows: safeRows, cols: safeCols } = clampAndPersist(
-                      "designer",
-                      nextRows,
-                      params.cols
-                    );
-                    setParams((p) => ({ ...p, rows: safeRows, cols: safeCols }));
-                  }}
-                />
+              // Steppers replaced by edge-drag (#5): drag any of the four canvas
+              // edge gutters perpendicular to that edge to grow/shrink it. Show
+              // the current size read-only here.
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
+                <div style={{ color: "#e5e7eb" }}>
+                  {params.cols} × {params.rows}
+                </div>
+                <div style={{ color: "#64748b", fontSize: 11, lineHeight: 1.5 }}>
+                  Drag a canvas edge (⇔ / ⇕) outward to grow that side, inward to
+                  shrink it.
+                </div>
               </div>
             ) : (
               // Free tier: grid is locked at 20×20. Show the size read-only with
