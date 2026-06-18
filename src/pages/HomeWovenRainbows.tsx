@@ -133,14 +133,12 @@ const HomeWovenRainbows: React.FC = () => {
               gap: 12,
             }}
           >
-            <Link to="/erin2d" style={tileStyle}>
-              🪡 Basic
-            </Link>
+            {/* Basic (/erin2d) and Freeform (/freeform, "Studio") tiles removed
+                per Erin's review — those tools are hidden from the home page.
+                Routes remain for deep-linking; manual sections marked "under
+                construction". */}
             <Link to="/designer" style={tileStyle}>
               🧩 Designer (3D)
-            </Link>
-            <Link to="/freeform" style={tileStyle}>
-              ✨ Studio
             </Link>
           </div>
 

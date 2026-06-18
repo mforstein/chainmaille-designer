@@ -169,6 +169,16 @@ const Sub: React.FC<{ title: string }> = ({ title }) => (
   <h3 style={{ color: "#7dd3fc", fontWeight: 700, margin: "20px 0 9px", fontSize: "0.92rem", letterSpacing: 0.4 }}>{title}</h3>
 );
 
+const UnderConstruction: React.FC = () => (
+  <div style={{ background: "rgba(120,53,15,0.22)", border: "1px solid #d97706", borderRadius: 10, padding: "18px 18px", textAlign: "center", color: "#fcd34d", lineHeight: 1.6 }}>
+    <div style={{ fontSize: "1.6rem", marginBottom: 6 }}>🚧</div>
+    <div style={{ fontWeight: 800, fontSize: "1rem", marginBottom: 4 }}>Under construction</div>
+    <div style={{ fontSize: 13, color: "#fde68a" }}>
+      This section is being reworked and isn't available yet. Check back in a future update.
+    </div>
+  </div>
+);
+
 const Note: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <div style={{ background: "rgba(30,58,138,0.18)", border: "1px solid #3b82f6", borderRadius: 8, padding: "9px 14px", fontSize: 13, color: "#93c5fd", lineHeight: 1.6, margin: "10px 0" }}>
     💡 {children}
@@ -361,74 +371,7 @@ export default function UserManual() {
 
         {/* ── FREEFORM STUDIO ─────────────────────────────────────────────── */}
         <Sec id="studio" icon="✨" title="Freeform Studio · /freeform">
-          <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
-            The primary production design environment. Place rings on a free-form hex grid, apply colors, overlay reference images, fill shapes, copy + paste regions, and export finished patterns.
-          </p>
-          <Shot src="/manual/freeform.jpg" alt="Freeform Studio overview" label="/freeform"
-                fallback={<StudioFallback />} />
-
-          <Sub title="Floating toolbar (draggable)" />
-          <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.7, marginBottom: 12 }}>
-            The vertical toolbar is a draggable pill — grab it anywhere and reposition. Use the ▸ button to collapse the lower section if you need canvas space.
-          </p>
-
-          <Feat title="☰ Navigation Menu">Opens the compass overlay for jumping between pages.</Feat>
-          <Feat title="📦 Finalize & Export">Opens the export panel (PDF, CSV, GLB, STL, Physical Pattern).</Feat>
-          <Feat title="▸ Collapse / ▾ Expand toolbar">Hides everything below it to maximize canvas. Tap again to restore.</Feat>
-          <Feat title="⚙️ Utility Panel">Toggles the secondary floating pill (Studio Geometry, Save/Load, Design Library, canvas BG, reset, Studio Stats).</Feat>
-          <Feat title="🎨 Draw (Paint)">Primary placement tool. Click or drag to place rings at hex-grid positions in the active color.</Feat>
-          <Feat title="⌫ Eraser">Click or drag to remove rings.</Feat>
-          <Feat title="↩️ Undo / ↪️ Redo">Per-action history. <KS>Ctrl/Cmd+Z</KS> / <KS>Ctrl+Shift+Z</KS>.</Feat>
-          <Feat title="◼ Shapes">Opens the Shape picker (Square, Circle, Hex, Octagon, Heart, Triangle). Drag on canvas to fill the shape. The current selection-tool also acts as a rubber-band selection — see Copy/Paste below.</Feat>
-          <Feat title="✋ Pan">Click-drag to scroll without placing rings. Two-finger touch always pans regardless of mode.</Feat>
-          <Feat title="📋 Copy — NEW">
-            Copies the most recently selected region's rings onto an internal clipboard. The clipboard captures the <strong>pre-paint snapshot</strong> of each cell, so a heart with image-transferred colors copies as the image — not the active paint that the selection tool dropped on top. Cmd/Ctrl+C also works.
-          </Feat>
-          <Feat title="📌 Paste — NEW">
-            Toggles paste mode. The cursor changes to <code>copy</code>; click anywhere on the canvas to drop the clipboard at that cell. Stays on after each click so you can place multiple copies. Cmd/Ctrl+V toggles; Esc exits.
-          </Feat>
-          <Feat title="🖼️ Image Overlay">Opens the Image Overlay panel (Studio tier). The panel is scrollable — the Transfer button at the bottom stays reachable even on short windows.</Feat>
-          <Feat title="🧹 Clear All">Removes all rings. Confirmation required.</Feat>
-
-          <Sub title="Image overlay" />
-          <Shot src="/manual/freeform-overlay-rings.jpg" alt="Freeform — image overlay transferred onto rings" label="Image overlay — rings"
-                fallback={SimpleHex("Image overlay (rings) — fallback")} />
-          <Feat title="Load / Replace image">Tap the drop zone, or drag a file in. Loading a new image replaces the previous one; the in-place "Replace image" button at the top of the panel does the same.</Feat>
-          <Feat title="Scale / Opacity / Rotation / Pan X / Pan Y">Adjust how the image is registered against the design. The on-canvas preview reflects every slider in real time.</Feat>
-          <Feat title="Tile (repeat)">Tile the image across the design. Pattern Scale (%) — <strong>new slider</strong> — controls tile size as a % of the design's bounding box. 100% = one tile fills the design (no visible tiling); ~15% gives a small dense pattern (matches the Designer's behavior).</Feat>
-          <Feat title="Mask outline">A dashed rectangle on the canvas defines the world-space region the image is painted into. Drag corners to resize, drag the body to reposition. Reset snaps it back to the auto bounds of the current target.</Feat>
-          <Feat title="Transfer Scope">All rings (every placed cell of the chosen target), or Selection only (rings the user previously rubber-banded).</Feat>
-          <Feat title="Preview mode — NEW">
-            <strong>Sampled Colors</strong> (default): each ring is drawn as an open colored ring (matches the actual torus geometry) showing the color it will become on Transfer. <strong>Raw Image</strong>: the source image is clipped to ring silhouettes — the legacy view.
-          </Feat>
-          <Feat title="Transfer button (green, bottom)">"Transfer to Rings". Closing the overlay panel removes the on-canvas preview — only the actual transfer leaves persistent state.</Feat>
-
-          <HowTo
-            title="Copy a heart with image colors and paste it elsewhere"
-            steps={[
-              <>Use Image Overlay to transfer an image into rings (e.g. a heart shape on a 4-in-1 panel).</>,
-              <>Open the Shapes menu, pick a shape (e.g. Heart), and drag over the area you want to copy. The selection auto-paints with the active color — that's the existing tool's behavior. <strong>The clipboard captures the pre-paint state, so the image colors are preserved.</strong></>,
-              <>Press <KS>Cmd/Ctrl+C</KS> or click 📋. The Paste button (📌) shows an item count.</>,
-              <>Press <KS>Ctrl+Z</KS> to undo the paint side-effect and restore the heart's image colors.</>,
-              <>Press <KS>Cmd/Ctrl+V</KS> or click 📌. The cursor switches to copy-mode.</>,
-              <>Click anywhere on the canvas to place a copy of the heart at that cell. Click more to place additional copies. <KS>Esc</KS> exits paste mode.</>,
-            ]}
-            note="Each paste is a separate undo step." />
-
-          <Sub title="Studio Geometry panel" />
-          <p style={{ color: "#64748b", fontSize: 13, lineHeight: 1.7 }}>
-            Tabbed dialog: 📏 Ring Spacing · ⭕ Circle Tuning · 💍 Ring Sets · 👁 View · 🔬 Diagnostics. Every parameter syncs with the Tuner snapshot.
-          </p>
-
-          <Sub title="Design Library" />
-          <Shot src="/manual/freeform-library.png" alt="Design Library" label="Design Library — My Designs + Starters"
-                fallback={<Mock label="Design Library (fallback)"><div style={{ padding: 20, color: "#94a3b8" }}>Saved designs grid + built-in starters.</div></Mock>} />
-          <Feat title="My Designs">Saved canvas JSONs. <em>Load</em> replaces the canvas; <em>Append</em> merges rings next to the existing work.</Feat>
-          <Feat title="Starters">Built-in templates (Blank, Small Patch, Bracelet, Wide Fill, Diamond, Rainbow Rows, Chevron, ...).</Feat>
-
-          <Sub title="Color palette" />
-          <Feat title="Swatches">Tap to activate. Long-press to edit. Tap + to add. Drag the palette pill anywhere; position persists.</Feat>
-          <Feat title="Check Available Colors at a Supplier Website (Freeform only)">Enter any supplier site's URL — the app attempts to scan that page for color names matching your palette. If the page can't be parsed or the site blocks the request, your default palette colors remain active unchanged.</Feat>
+          <UnderConstruction />
         </Sec>
 
         {/* ── 3D DESIGNER ─────────────────────────────────────────────────── */}
@@ -505,24 +448,7 @@ export default function UserManual() {
 
         {/* ── BASIC ────────────────────────────────────────────────────────── */}
         <Sec id="pattern" icon="🪡" title="Basic">
-          <p style={{ color: "#64748b", marginBottom: 12, fontSize: 13, lineHeight: 1.7 }}>
-            Lightweight grid-based 2D color planner — fastest path from idea to color-way sketch. Free for all tiers.
-          </p>
-          <Shot src="/manual/erin2d.png" alt="Basic" label="Basic"
-                fallback={<Mock label="Basic (fallback)"><div style={{ padding: 20, color: "#94a3b8" }}>Hex-offset grid with palette and pan/zoom.</div></Mock>} />
-
-          <Feat title="Grid painting">Tap to apply the active color; drag for a continuous stroke.</Feat>
-          <Feat title="Grid size">Rows / Columns inputs. Expanding adds empty cells at the edges.</Feat>
-          <Feat title="Row offset (hex)">Row Offset X / Y sliders shift alternating rows to match the Studio hex layout.</Feat>
-          <Feat title="Pan & zoom">Click-drag empty cells or two-finger drag. Scroll wheel / pinch zooms.</Feat>
-          <Feat title="Reference image overlay">Load an image behind the grid, pan and zoom to align as a color reference.</Feat>
-          <Feat title="Color palette pill — NEW drag handle">
-            The palette pill is movable. A thin <strong>⋮⋮ COLORS ⋮⋮</strong> strip sits at the top — drag from that strip (or the 4 px gaps between swatches) to move the pill anywhere. Position persists per device.
-          </Feat>
-          <Feat title="Save & Load">JSON project state — grid, colors, palette, overlay settings.</Feat>
-          <Feat title="Export">Opens the shared Finalize & Export panel for PDF / CSV.</Feat>
-
-          <Tip>Use Basic for fast color-way sketches, then recreate the chosen palette in Freeform Studio for placement.</Tip>
+          <UnderConstruction />
         </Sec>
 
         {/* ── EXPORT ──────────────────────────────────────────────────────── */}

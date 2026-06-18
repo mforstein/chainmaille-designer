@@ -2544,14 +2544,11 @@ function WorkspaceHome() {
             gap: 12,
           }}
         >
-          <Link to="/erin2d" style={homeLinkStyle}>
-            🪡 Basic
-          </Link>
+          {/* Basic (/erin2d) and Freeform (/freeform, "Studio") removed per
+              Erin's review — kept off the navigator like the home page. Routes
+              remain for deep-linking. */}
           <Link to="/designer" style={homeLinkStyle}>
             🧩 Designer (3D)
-          </Link>
-          <Link to="/freeform" style={homeLinkStyle}>
-            ✨ Studio
           </Link>
         </div>
 
