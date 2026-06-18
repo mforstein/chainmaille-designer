@@ -851,32 +851,61 @@ function resetAllPills() {
 // ==============================================
 // === CHAINMAIL DESIGNER COMPONENT STARTS HERE ===
 // ==============================================
-// #5 — four edge gutters overlaid on the Designer canvas (paid only). Dragging
-// a gutter perpendicular to its edge grows (outward) or shrinks (inward) that
-// edge, ~1 row/col per PX_PER_CELL pixels of sustained drag. Thin strips at the
-// viewport edges so the center stays free for painting.
+// #5 — Resize mode. A full-canvas overlay (so it can't collide with painting):
+// drag from whichever SIDE you want — the edge is chosen by where the drag
+// starts (top/bottom/left/right half) and its dominant axis; dragging that side
+// outward grows it, inward shrinks it, ~1 row/col per PX_PER_CELL of sustained
+// drag. Re-index for top/left keeps the existing design anchored (see
+// resizeEdge). Available to all tiers (free is capped at 20×20 by resizeEdge).
 type GridEdge = "top" | "bottom" | "left" | "right";
-function GridEdgeResizers({
+function ResizeGridOverlay({
   onResize,
+  onExit,
+  maxLabel,
 }: {
   onResize: (edge: GridEdge, delta: number) => void;
+  onExit: () => void;
+  maxLabel: string;
 }) {
   const PX_PER_CELL = 22;
-  const drag = useRef<{ edge: GridEdge; startPerp: number; applied: number } | null>(null);
+  const drag = useRef<{
+    sx: number;
+    sy: number;
+    edge: GridEdge | null;
+    startPerp: number;
+    applied: number;
+  } | null>(null);
 
   // "Outward" perpendicular coordinate per edge: increasing value = grow.
   const perp = (edge: GridEdge, x: number, y: number) =>
     edge === "top" ? -y : edge === "bottom" ? y : edge === "left" ? -x : x;
 
-  const begin = (edge: GridEdge) => (e: React.PointerEvent) => {
+  const onDown = (e: React.PointerEvent) => {
     e.preventDefault();
-    e.stopPropagation();
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-    drag.current = { edge, startPerp: perp(edge, e.clientX, e.clientY), applied: 0 };
+    drag.current = { sx: e.clientX, sy: e.clientY, edge: null, startPerp: 0, applied: 0 };
   };
-  const moveHandler = (e: React.PointerEvent) => {
+  const onMove = (e: React.PointerEvent) => {
     const d = drag.current;
     if (!d) return;
+    if (d.edge === null) {
+      const dx = e.clientX - d.sx;
+      const dy = e.clientY - d.sy;
+      if (Math.hypot(dx, dy) < 8) return; // wait until the drag shows intent
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      // Dominant axis picks vertical (top/bottom) vs horizontal (left/right);
+      // the drag's start half picks which of the two edges.
+      d.edge =
+        Math.abs(dy) >= Math.abs(dx)
+          ? d.sy < cy
+            ? "top"
+            : "bottom"
+          : d.sx < cx
+          ? "left"
+          : "right";
+      d.startPerp = perp(d.edge, d.sx, d.sy);
+    }
     const target = Math.trunc((perp(d.edge, e.clientX, e.clientY) - d.startPerp) / PX_PER_CELL);
     const step = target - d.applied;
     if (step !== 0) {
@@ -888,45 +917,61 @@ function GridEdgeResizers({
     drag.current = null;
   };
 
-  const base: React.CSSProperties = {
-    position: "absolute",
-    zIndex: 30,
-    background: "rgba(124,58,237,0.12)",
-    touchAction: "none",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    color: "rgba(196,181,253,0.9)",
-    fontSize: 11,
-    fontWeight: 700,
-    userSelect: "none",
-  };
-  const GUT = 26; // gutter thickness
-  const edgeStyle = (edge: GridEdge): React.CSSProperties =>
-    edge === "top"
-      ? { ...base, top: 0, left: GUT, right: GUT, height: GUT, cursor: "ns-resize" }
-      : edge === "bottom"
-      ? { ...base, bottom: 0, left: GUT, right: GUT, height: GUT, cursor: "ns-resize" }
-      : edge === "left"
-      ? { ...base, left: 0, top: GUT, bottom: GUT, width: GUT, cursor: "ew-resize" }
-      : { ...base, right: 0, top: GUT, bottom: GUT, width: GUT, cursor: "ew-resize" };
-
   return (
-    <>
-      {(["top", "bottom", "left", "right"] as GridEdge[]).map((edge) => (
-        <div
-          key={edge}
-          style={edgeStyle(edge)}
-          title={`Drag to resize the ${edge} edge`}
-          onPointerDown={begin(edge)}
-          onPointerMove={moveHandler}
-          onPointerUp={end}
-          onPointerCancel={end}
+    <div
+      onPointerDown={onDown}
+      onPointerMove={onMove}
+      onPointerUp={end}
+      onPointerCancel={end}
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 50,
+        touchAction: "none",
+        cursor: "crosshair",
+        background: "rgba(124,58,237,0.06)",
+        boxShadow: "inset 0 0 0 3px rgba(124,58,237,0.45)",
+      }}
+    >
+      <div
+        onPointerDown={(e) => e.stopPropagation()}
+        style={{
+          position: "absolute",
+          top: "calc(12px + env(safe-area-inset-top))",
+          left: "50%",
+          transform: "translateX(-50%)",
+          background: "rgba(15,23,42,0.95)",
+          border: "1px solid rgba(167,139,250,0.55)",
+          borderRadius: 12,
+          padding: "8px 12px",
+          color: "#c4b5fd",
+          fontSize: 12,
+          fontWeight: 700,
+          display: "flex",
+          gap: 12,
+          alignItems: "center",
+          maxWidth: "90vw",
+          textAlign: "center",
+        }}
+      >
+        <span>↔ Resize: drag a side outward to grow, inward to shrink {maxLabel}</span>
+        <button
+          onClick={onExit}
+          style={{
+            padding: "5px 12px",
+            borderRadius: 8,
+            border: "1px solid rgba(255,255,255,0.18)",
+            background: "rgba(124,58,237,0.5)",
+            color: "#fff",
+            cursor: "pointer",
+            fontSize: 12,
+            fontWeight: 700,
+          }}
         >
-          {edge === "top" || edge === "bottom" ? "⇕" : "⇔"}
-        </div>
-      ))}
-    </>
+          Done
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -944,6 +989,7 @@ function ChainmailDesigner() {
   // 🧩 All your useState hooks go here — top level
   const [showNewProjectDialog, setShowNewProjectDialog] = useState(false);
   const [showOverlayPanel, setShowOverlayPanel] = useState(false);
+  const [resizeMode, setResizeMode] = useState(false); // #5 grid resize overlay
   const [debugVisible, setDebugVisible] = useState(false);
   const [debugMessage, setDebugMessage] = useState("");
   const [finalizeOpen, setFinalizeOpen] = useState(false);
@@ -1108,15 +1154,15 @@ function ChainmailDesigner() {
     } catch {}
   }, [params]);
 
-  // Free tier is locked to a 20×20 grid. Once the tier is known (and whenever it
-  // changes), clamp a free user's grid down to 20×20. Paid users are untouched
-  // (their saved size or the 50×50 default stands).
+  // Free tier can resize up to 20×20. Once the tier is known (and whenever it
+  // changes), cap a free user's grid at 20 per dimension (preserving anything
+  // smaller). Paid users are untouched (their saved size or 50×50 default).
   useEffect(() => {
     if (isPaid) return;
     setParams((p) =>
       p.rows <= FREE_GRID && p.cols <= FREE_GRID
         ? p
-        : { ...p, rows: FREE_GRID, cols: FREE_GRID },
+        : { ...p, rows: Math.min(p.rows, FREE_GRID), cols: Math.min(p.cols, FREE_GRID) },
     );
   }, [isPaid]);
 
@@ -1707,17 +1753,19 @@ const doClearPaint = () => {
   // off the grid (on shrink) are dropped.
   const resizeEdge = useCallback(
     (edge: "top" | "bottom" | "left" | "right", delta: number) => {
-      if (!isPaid || !delta) return;
+      if (!delta) return;
+      // Free can resize up to 20×20; paid up to the device limit.
+      const MAX = isPaid ? 400 : FREE_GRID;
       setParams((p) => {
         let rows = p.rows;
         let cols = p.cols;
         let dRow = 0;
         let dCol = 0;
         if (edge === "top" || edge === "bottom") {
-          rows = Math.max(1, Math.min(400, p.rows + delta));
+          rows = Math.max(1, Math.min(MAX, p.rows + delta));
           if (edge === "top") dRow = rows - p.rows;
         } else {
-          cols = Math.max(1, Math.min(400, p.cols + delta));
+          cols = Math.max(1, Math.min(MAX, p.cols + delta));
           if (edge === "left") dCol = cols - p.cols;
         }
         const safe = clampAndPersist("designer", rows, cols);
@@ -1771,8 +1819,15 @@ const doClearPaint = () => {
         />
       </div>
 
-      {/* #5 — paid-only edge-drag grid resize (replaces the Rows/Cols steppers) */}
-      {isPaid && <GridEdgeResizers onResize={resizeEdge} />}
+      {/* #5 — grid resize mode overlay (replaces the Rows/Cols steppers). All
+          tiers; free is capped at 20×20 inside resizeEdge. */}
+      {resizeMode && (
+        <ResizeGridOverlay
+          onResize={resizeEdge}
+          onExit={() => setResizeMode(false)}
+          maxLabel={isPaid ? "" : "(max 20×20)"}
+        />
+      )}
 
       {/* === Left Toolbar (emoji pill) === */}
       <DraggablePill id="camera-pill" defaultPosition={{ x: 20, y: 20 }}>
@@ -1914,43 +1969,47 @@ const doClearPaint = () => {
           >
             <div style={{ fontWeight: 700, marginBottom: 4 }}>Grid Size</div>
 
-            {isPaid ? (
-              // Steppers replaced by edge-drag (#5): drag any of the four canvas
-              // edge gutters perpendicular to that edge to grow/shrink it. Show
-              // the current size read-only here.
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
-                <div style={{ color: "#e5e7eb" }}>
-                  {params.cols} × {params.rows}
-                </div>
-                <div style={{ color: "#64748b", fontSize: 11, lineHeight: 1.5 }}>
-                  Drag a canvas edge (⇔ / ⇕) outward to grow that side, inward to
-                  shrink it.
-                </div>
+            {/* Steppers replaced by Resize mode (#5). Tap "Resize grid" to enter
+                a full-canvas resize layer (painting paused), then drag from a
+                side outward to grow / inward to shrink. Free is capped at 20×20;
+                paid goes up to the device limit (default 50×50). */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
+              <div style={{ color: "#e5e7eb" }}>
+                {params.cols} × {params.rows}
+                {!isPaid && <span style={{ color: "#64748b" }}> (max 20×20)</span>}
               </div>
-            ) : (
-              // Free tier: grid is locked at 20×20. Show the size read-only with
-              // an upgrade hint instead of the resize controls.
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: 13 }}>
-                <div style={{ color: "#e5e7eb" }}>
-                  {params.cols} × {params.rows} <span style={{ color: "#64748b" }}>(fixed)</span>
-                </div>
+              <button
+                onClick={() => setResizeMode(true)}
+                style={{
+                  padding: "7px 10px",
+                  borderRadius: 8,
+                  border: "1px solid rgba(167,139,250,0.5)",
+                  background: "rgba(124,58,237,0.18)",
+                  color: "#c4b5fd",
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontWeight: 700,
+                }}
+              >
+                ↔ Resize grid
+              </button>
+              {!isPaid && (
                 <button
                   onClick={() => navigate("/pricing")}
                   style={{
-                    padding: "7px 10px",
+                    padding: "6px 10px",
                     borderRadius: 8,
-                    border: "1px solid rgba(167,139,250,0.5)",
-                    background: "rgba(124,58,237,0.18)",
-                    color: "#c4b5fd",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "transparent",
+                    color: "#94a3b8",
                     cursor: "pointer",
-                    fontSize: 12,
-                    fontWeight: 700,
+                    fontSize: 11,
                   }}
                 >
-                  🔓 Upgrade to resize (50×50+)
+                  🔓 Upgrade for larger grids (50×50+)
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </DraggablePill>
           </div>
         )}
