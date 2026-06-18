@@ -744,6 +744,13 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
     const ndcRef = useRef(new THREE.Vector2());
     const isPaintingGestureRef = useRef(false);
     const lastKeyRef = useRef<string | null>(null);
+    // #6 — two-finger gesture auto-switches paint → pan, then back on lift.
+    // multiTouchRef is true while 2+ fingers are down (OrbitControls pans/zooms;
+    // painting is suppressed). gesturePaintedRef records every cell painted in
+    // the current gesture with its PRE-paint value, so if a second finger lands
+    // we can undo the stray ring(s) the first finger dropped.
+    const multiTouchRef = useRef(false);
+    const gesturePaintedRef = useRef<Map<string, string | null>>(new Map());
 
     const applyPaintToMesh = (mesh: THREE.Mesh | null) => {
       if (!mesh) return;
@@ -757,6 +764,12 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       // Avoid hammering the same ring repeatedly during continuous move
       if (lastKeyRef.current === key) return;
       lastKeyRef.current = key;
+
+      // Remember this cell's PRE-paint value once, so a two-finger gesture can
+      // undo the stray ring the first finger dropped (#6).
+      if (!gesturePaintedRef.current.has(key)) {
+        gesturePaintedRef.current.set(key, paintRef.current.get(key) ?? null);
+      }
 
       const erase = eraseModeRef.current;
       const nextColor = erase ? null : normalizeColor6(activeColorRef.current);
@@ -812,6 +825,25 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       } catch {
         // ignore
       }
+    };
+
+    // #6 — undo every cell painted in the current gesture (used when a second
+    // finger lands, so a two-finger pan/zoom never leaves a stray ring behind).
+    const undoGesturePaint = () => {
+      const g = gesturePaintedRef.current;
+      if (g.size === 0) return;
+      const meshes = meshesRef.current || [];
+      const fallback = normalizeColor6(paramsRef.current.ringColor || "#CCCCCC");
+      for (const m of meshes) {
+        const key = `${m.userData.row},${m.userData.col}`;
+        if (!g.has(key)) continue;
+        const prev = g.get(key) ?? null;
+        queuePaintPatch(key, prev);
+        const mat = m.material as THREE.MeshStandardMaterial;
+        if (mat?.color) mat.color.set(applyCalibrationHex(prev ?? fallback));
+      }
+      g.clear();
+      flushPendingPaint();
     };
 
     // ============================================================
@@ -1079,6 +1111,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
 
       const onPointerDown = (e: PointerEvent) => {
         if (!paintModeRef.current) return;
+        if (multiTouchRef.current) return; // two-finger gesture owns the canvas
 
         // capture so move continues even if pointer leaves element
         try {
@@ -1101,6 +1134,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
 
       const onPointerMove = (e: PointerEvent) => {
         if (!paintModeRef.current) return;
+        if (multiTouchRef.current) return; // suppressed during two-finger pan/zoom
         if (!isPaintingGestureRef.current) return;
 
         try {
@@ -1114,6 +1148,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       };
 
       const endGesture = (e?: any) => {
+        gesturePaintedRef.current.clear();
         if (!isPaintingGestureRef.current) return;
         isPaintingGestureRef.current = false;
         lastKeyRef.current = null;
@@ -1134,6 +1169,21 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         if (!paintModeRef.current) return;
         if (!e.touches || e.touches.length === 0) return;
 
+        // #6 — a second finger means the user wants to pan/zoom, not paint.
+        // Switch to multi-touch mode: stop painting, hand the gesture to
+        // OrbitControls (two-finger DOLLY_PAN), and undo any stray ring the
+        // first finger already dropped.
+        if (e.touches.length >= 2) {
+          multiTouchRef.current = true;
+          isPaintingGestureRef.current = false;
+          lastKeyRef.current = null;
+          undoGesturePaint();
+          // Block the browser's own page pinch-zoom; OrbitControls drives the
+          // canvas zoom/pan via pointer events (unaffected by this).
+          e.preventDefault();
+          return;
+        }
+
         isPaintingGestureRef.current = true;
         lastKeyRef.current = null;
 
@@ -1145,6 +1195,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
 
       const onTouchMove = (e: TouchEvent) => {
         if (!paintModeRef.current) return;
+        if (multiTouchRef.current || (e.touches && e.touches.length >= 2)) return; // panning
         if (!isPaintingGestureRef.current) return;
         if (!e.touches || e.touches.length === 0) return;
 
@@ -1155,6 +1206,12 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       };
 
       const onTouchEnd = (e: TouchEvent) => {
+        // #6 — only return to paint once ALL fingers have lifted, so lifting one
+        // finger of a pinch doesn't immediately paint with the remaining one.
+        if (e.touches && e.touches.length === 0) {
+          multiTouchRef.current = false;
+          gesturePaintedRef.current.clear();
+        }
         if (!isPaintingGestureRef.current) return;
         e.preventDefault();
         e.stopPropagation();
