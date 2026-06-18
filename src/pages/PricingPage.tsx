@@ -22,20 +22,22 @@ interface Plan {
 const PLANS: Plan[] = [
   {
     tier: "free",
-    name: "Free",
+    name: "Free Trial",
     price: "$0",
-    period: "forever",
-    tagline: "Try the 3D Designer",
+    period: "3-day trial",
+    tagline: "Try the 3D Designer free for 3 days",
     color: "#374151",
     priceEnvKey: "",
     paymentLinkUrl: "",
     features: [
-      "3D Ring Grid Designer — 20×20 grid",
+      "3D Ring Grid Designer — up to 20×20",
+      "Full access for 3 days, no card required",
       "Paint & color your design",
       "Ring Size Chart & AR calculator",
       "Mobile app access",
+      "Upgrade any time to keep designing",
     ],
-    cta: "Get Started Free",
+    cta: "Start Free Trial",
   },
   {
     // Single paid plan. Tier stays "crafter" so the existing $5.99 Stripe

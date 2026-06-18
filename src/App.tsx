@@ -122,6 +122,7 @@ import { IconHamburger, IconSpline, IconEraser, IconUndo, IconRedo, IconGridResi
 import { ToolBtn } from "./components/ui/ToolBtn";
 import RequiresTier from "./auth/RequiresTier";
 import { useAuth, tierAtLeast } from "./auth/AuthContext";
+import type { Tier } from "./auth/AuthContext";
 import SupplierColorPalette from "./components/SupplierColorPalette";
 import AutoCalibrateButton from "./components/AutoCalibrateButton";
 import { calibrationUpdatedEventName } from "./utils/colorCalibration";
@@ -908,11 +909,12 @@ function EdgeArrows({
     </button>
   );
 
+  // + adds a row/column on that edge, − removes one. Same for all four edges.
   const rows: { edge: GridEdge; name: string; grow: string; shrink: string }[] = [
-    { edge: "top", name: "Top", grow: "▲", shrink: "▽" },
-    { edge: "bottom", name: "Bottom", grow: "▼", shrink: "△" },
-    { edge: "left", name: "Left", grow: "◀", shrink: "▷" },
-    { edge: "right", name: "Right", grow: "▶", shrink: "◁" },
+    { edge: "top", name: "Top", grow: "+", shrink: "−" },
+    { edge: "bottom", name: "Bottom", grow: "+", shrink: "−" },
+    { edge: "left", name: "Left", grow: "+", shrink: "−" },
+    { edge: "right", name: "Right", grow: "+", shrink: "−" },
   ];
 
   return (
@@ -934,8 +936,9 @@ function EdgeArrows({
 }
 
 function ChainmailDesigner() {
-  const { tier } = useAuth();
+  const { tier, user } = useAuth();
   const navigate = useNavigate();
+  const trial = trialInfo(user, tier); // 3-day free-trial state (free tier only)
   // Paid = any non-free tier (the single paid plan is "crafter"; existing
   // maker/studio subscribers count as paid too). Free is the limited Designer:
   // fixed 20×20 grid, no image overlay. Paid unlocks both.
@@ -1776,6 +1779,30 @@ const doClearPaint = () => {
         />
       </div>
 
+      {/* Free-trial countdown banner (free tier only, while the trial is live) */}
+      {trial.onTrial && !trial.expired && (
+        <button
+          onClick={() => navigate("/pricing")}
+          style={{
+            position: "fixed",
+            top: "calc(8px + env(safe-area-inset-top))",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 9998,
+            padding: "5px 12px",
+            borderRadius: 999,
+            border: "1px solid rgba(167,139,250,0.5)",
+            background: "rgba(124,58,237,0.85)",
+            color: "#fff",
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: "pointer",
+            boxShadow: "0 4px 14px rgba(0,0,0,0.4)",
+          }}
+        >
+          Free trial · {trial.daysLeft} day{trial.daysLeft === 1 ? "" : "s"} left · Upgrade
+        </button>
+      )}
 
       {/* === Left Toolbar (emoji pill) === */}
       <DraggablePill id="camera-pill" defaultPosition={{ x: 20, y: 20 }}>
@@ -2540,13 +2567,8 @@ function DraggableCompassNav({ onNavigate }: { onNavigate?: () => void }) {
           🧩
         </button>
 
-        <button onClick={() => go("/freeform")} title="Freeform" style={btnStyle}>
-          ✨
-        </button>
-
-        <button onClick={() => go("/erin2d")} title="Basic" style={btnStyle}>
-          🪡
-        </button>
+        {/* Freeform (/freeform) and Basic (/erin2d) removed from nav per Erin's
+            review — routes remain for deep-linking. */}
 
         <button onClick={() => go("/chart")} title="Ring Chart" style={btnStyle}>
           📊
@@ -2746,10 +2768,54 @@ const homeLinkStyle: React.CSSProperties = {
 
 // Legacy wrappers replaced by RequiresTier — kept as thin aliases so any
 // remaining references in JSX don't break during the transition period.
+// 3-day free trial length, in ms.
+const TRIAL_MS = 3 * 24 * 60 * 60 * 1000;
+/** Trial state for a (possibly null) user at the current tier. Only Free users
+ *  with a datable account are on the trial; paid users and undatable
+ *  anon/legacy free users are never "expired". */
+export function trialInfo(
+  user: { created_at?: string } | null,
+  tier: Tier,
+): { onTrial: boolean; expired: boolean; daysLeft: number } {
+  if (tier !== "free") return { onTrial: false, expired: false, daysLeft: 0 };
+  const createdMs = user?.created_at ? new Date(user.created_at).getTime() : null;
+  if (createdMs == null || !Number.isFinite(createdMs))
+    return { onTrial: false, expired: false, daysLeft: 0 };
+  const elapsed = Date.now() - createdMs;
+  const daysLeft = Math.max(0, Math.ceil((TRIAL_MS - elapsed) / 86400000));
+  return { onTrial: true, expired: elapsed > TRIAL_MS, daysLeft };
+}
+
 function RequireDesignerAuth({ children }: { children: JSX.Element }) {
-  // 3D Designer is now FREE (limited to a 20×20 grid, no image overlay). The
-  // paid $5.99 plan unlocks larger grids (default 50×50) + image overlay +
-  // commercial-use license — those are gated inside the Designer by tier.
+  // 3D Designer is FREE for a 3-day trial (20×20, no image overlay); the paid
+  // $5.99 plan removes the limit + adds image overlay + commercial license.
+  // Once a Free user's 3 days are up, gate the Designer behind upgrade.
+  const { user, tier, loading } = useAuth();
+  if (loading) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#0F1115", color: "#9ca3af" }}>
+        Loading…
+      </div>
+    );
+  }
+  const { expired } = trialInfo(user, tier);
+  if (expired) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", background: "#0F1115", color: "#e5e7eb", padding: 32, gap: 16, textAlign: "center" }}>
+        <div style={{ fontSize: 48 }}>⌛</div>
+        <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>Your free trial has ended</h2>
+        <p style={{ color: "#9ca3af", maxWidth: 380, margin: 0 }}>
+          The 3-day free trial of the 3D Designer is over. Subscribe for{" "}
+          <strong style={{ color: "#f9fafb" }}>$5.99/mo</strong> to keep designing
+          — larger grids, image overlay, and a commercial-use license.
+        </p>
+        <a href="/pricing" style={{ marginTop: 8, padding: "12px 28px", background: "#7c3aed", color: "white", borderRadius: 10, fontWeight: 700, fontSize: 15, textDecoration: "none" }}>
+          Subscribe — $5.99/mo
+        </a>
+        <a href="/wovenrainbowsbyerin" style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}>← Back to home</a>
+      </div>
+    );
+  }
   return <RequiresTier minTier="free" featureName="3D Designer">{children}</RequiresTier>;
 }
 function RequireFreeformAuth({ children }: { children: JSX.Element }) {
