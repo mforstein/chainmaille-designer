@@ -31,9 +31,11 @@ import {
   calibrationUpdatedEventName,
   loadProfiles,
   getActiveProfile,
-  // NOTE: We keep this import available, but we DO NOT apply correction by default,
-  // because you explicitly want colors to behave the same above/below 5000.
-  // getCorrectedHexForLargeCount,
+  // Same calibration the non-instanced renderer applies (applyCalibrationHex).
+  // Without it, instanced rings (>5000) rendered at raw/full brightness while
+  // the calibrated swatch showed a dimmer target — the "rings too bright above
+  // 5000" bug. Apply it so both render paths match the calibration.
+  applyCalibrationHex,
 } from "../utils/colorCalibration";
 import type { ColorCalibrationProfile } from "../utils/colorCalibration";
 
@@ -477,7 +479,10 @@ if (calibrationProfileRef.current == null) {
       const norm = normalizeColor6(hex).toLowerCase();
       const hit = colorCacheRef.current.get(norm);
       if (hit) return hit;
-      const c = new THREE.Color(norm);
+      // Apply the active color calibration (same as the non-instanced renderer)
+      // so high-ring-count designs match the calibrated brightness. Cache is
+      // keyed by the RAW hex; it's cleared whenever calibration changes.
+      const c = new THREE.Color(applyCalibrationHex(norm));
       colorCacheRef.current.set(norm, c);
       return c;
     };
@@ -541,6 +546,9 @@ if (calibrationProfileRef.current == null) {
     // Re-apply all colors on calibration tick (feature preserved)
     useEffect(() => {
       if (!groupsRef.current.length) return;
+      // The color cache bakes in the calibration, so it's stale once calibration
+      // changes — clear it before re-applying so colors recompute.
+      colorCacheRef.current.clear();
       for (const g of groupsRef.current) {
         for (const key of g.ringKeys) {
           const v = paintRef.current.get(key) ?? null;
