@@ -1356,7 +1356,10 @@ useEffect(() => {
     };
 
     const buildOverlaySampler = useCallback(
-      async (ov: OverlayState): Promise<OverlaySampler | null> => {
+      async (
+        ov: OverlayState,
+        boundsOverride?: { minX: number; maxX: number; minY: number; maxY: number },
+      ): Promise<OverlaySampler | null> => {
         if (!ov) return null;
         if (ringCenterRef.current.size === 0) return null;
 
@@ -1404,13 +1407,21 @@ useEffect(() => {
 
         const crop = getOverlayCropUV(ov as any);
 
-        // Compute bounds from ring centers
+        // Mapping region. Normally all ring centers; when masking to a shape we
+        // use the shape's bounds so the whole image fits the shape.
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        for (const p of ringCenterRef.current.values()) {
-          minX = Math.min(minX, p.x);
-          maxX = Math.max(maxX, p.x);
-          minY = Math.min(minY, p.y);
-          maxY = Math.max(maxY, p.y);
+        if (boundsOverride) {
+          minX = boundsOverride.minX;
+          maxX = boundsOverride.maxX;
+          minY = boundsOverride.minY;
+          maxY = boundsOverride.maxY;
+        } else {
+          for (const p of ringCenterRef.current.values()) {
+            minX = Math.min(minX, p.x);
+            maxX = Math.max(maxX, p.x);
+            minY = Math.min(minY, p.y);
+            maxY = Math.max(maxY, p.y);
+          }
         }
 
         const worldW =
@@ -1538,18 +1549,34 @@ useEffect(() => {
     );
 
     const applyOverlayToRings = useCallback(
-      async (ov: OverlayState) => {
+      async (ov: OverlayState, maskKeys?: Set<string>) => {
         if (!ov) return;
         if (!rings || rings.length === 0) return;
         if (ringCenterRef.current.size === 0) return;
 
-        const sampler = await buildOverlaySampler(ov);
+        // Shape mask → map the image to the shape's bounds (whole image fits the
+        // shape) and only recolor the rings inside it.
+        let boundsOverride: { minX: number; maxX: number; minY: number; maxY: number } | undefined;
+        if (maskKeys && maskKeys.size > 0) {
+          let mnX = Infinity, mxX = -Infinity, mnY = Infinity, mxY = -Infinity;
+          for (const [key, p] of ringCenterRef.current.entries()) {
+            if (!maskKeys.has(key)) continue;
+            mnX = Math.min(mnX, p.x);
+            mxX = Math.max(mxX, p.x);
+            mnY = Math.min(mnY, p.y);
+            mxY = Math.max(mxY, p.y);
+          }
+          if (mnX !== Infinity) boundsOverride = { minX: mnX, maxX: mxX, minY: mnY, maxY: mxY };
+        }
+
+        const sampler = await buildOverlaySampler(ov, boundsOverride);
         if (!sampler) return;
 
         setPaint((prev) => {
           const next = new Map(prev);
 
           for (const [key, p] of ringCenterRef.current.entries()) {
+            if (maskKeys && !maskKeys.has(key)) continue;
             const sampled = sampler.sampleWorld(p.x, p.y);
             if (!sampled) continue;
 
@@ -1688,8 +1715,8 @@ useEffect(() => {
         if (ctr) ctr.update();
       },
 
-      applyOverlayToRings: async (ov: OverlayState) => {
-        await applyOverlayToRings(ov);
+      applyOverlayToRings: async (ov: OverlayState, maskKeys?: Set<string>) => {
+        await applyOverlayToRings(ov, maskKeys);
       },
 
       getState: () => ({

@@ -1678,6 +1678,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
 
     const buildOverlaySampler = async (
       ov: OverlayState,
+      boundsOverride?: { minX: number; maxX: number; minY: number; maxY: number },
     ): Promise<OverlaySampler | null> => {
       if (!ov) return null;
       const meshes = meshesRef.current;
@@ -1696,17 +1697,26 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         (overlayGetString(ov as any, ["repeat"], "none") ?? "none") === "tile";
       const patternScale = overlayGetNumeric(ov as any, ["patternScale"], 100);
 
-      // Compute ring bounds in world space
+      // Mapping region in world space. Normally the full ring grid; when a
+      // shape mask is active we use the SHAPE's bounding box so the whole image
+      // fits inside the shape (instead of showing a crop of a grid-wide image).
       let minX = Infinity,
         maxX = -Infinity,
         minY = Infinity,
         maxY = -Infinity;
 
-      for (const m of meshes) {
-        minX = Math.min(minX, m.position.x);
-        maxX = Math.max(maxX, m.position.x);
-        minY = Math.min(minY, m.position.y);
-        maxY = Math.max(maxY, m.position.y);
+      if (boundsOverride) {
+        minX = boundsOverride.minX;
+        maxX = boundsOverride.maxX;
+        minY = boundsOverride.minY;
+        maxY = boundsOverride.maxY;
+      } else {
+        for (const m of meshes) {
+          minX = Math.min(minX, m.position.x);
+          maxX = Math.max(maxX, m.position.x);
+          minY = Math.min(minY, m.position.y);
+          maxY = Math.max(maxY, m.position.y);
+        }
       }
 
       const worldW = Math.max(1e-6, maxX - minX);
@@ -1858,9 +1868,24 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       const meshes = meshesRef.current;
       if (!meshes || meshes.length === 0) return;
 
+      // When masking to a shape, map the image to the SHAPE's bounding box so the
+      // whole image fits inside the shape (not a crop of the grid-wide mapping).
+      let boundsOverride: { minX: number; maxX: number; minY: number; maxY: number } | undefined;
+      if (maskKeys && maskKeys.size > 0) {
+        let mnX = Infinity, mxX = -Infinity, mnY = Infinity, mxY = -Infinity;
+        for (const m of meshes) {
+          if (!maskKeys.has(`${m.userData.row},${m.userData.col}`)) continue;
+          mnX = Math.min(mnX, m.position.x);
+          mxX = Math.max(mxX, m.position.x);
+          mnY = Math.min(mnY, m.position.y);
+          mxY = Math.max(mxY, m.position.y);
+        }
+        if (mnX !== Infinity) boundsOverride = { minX: mnX, maxX: mxX, minY: mnY, maxY: mxY };
+      }
+
       // Always rebuild the sampler on an explicit transfer — never use a cached one.
       overlaySamplerRef.current = null;
-      const sampler = await buildOverlaySampler(ov);
+      const sampler = await buildOverlaySampler(ov, boundsOverride);
       if (!sampler) return;
 
       setPaint((prev) => {
