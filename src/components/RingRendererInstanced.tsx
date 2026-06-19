@@ -210,6 +210,9 @@ type Props = {
   paint: PaintMap;
   setPaint: React.Dispatch<React.SetStateAction<PaintMap>>;
   activeColor: string;
+  shapeTool?: string | null;
+  onShapeFill?: (tool: string, sel: { x0: number; y0: number; x1: number; y1: number }) => void;
+  onShapeDragUpdate?: (sel: { x0: number; y0: number; x1: number; y1: number } | null) => void;
   overlay?: OverlayState | null;
   externalViewState?: ExternalViewState;
   initialPaintMode?: boolean;
@@ -247,6 +250,9 @@ const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
       paint,
       setPaint,
       activeColor,
+      shapeTool,
+      onShapeFill,
+      onShapeDragUpdate,
       overlay,
       externalViewState,
       initialPaintMode = true,
@@ -395,6 +401,18 @@ if (calibrationProfileRef.current == null) {
     const lockRef = useRef(rotationLocked);
     const activeColorRef = useRef(activeColor);
     const paintRef = useRef(paint);
+    // Shape-fill tool (same behavior as the non-instanced renderer).
+    const shapeToolRef = useRef(shapeTool);
+    const onShapeFillRef = useRef(onShapeFill);
+    const onShapeDragUpdateRef = useRef(onShapeDragUpdate);
+    const shapeDragRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+    const shapeClientRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+    useEffect(() => { shapeToolRef.current = shapeTool; }, [shapeTool]);
+    useEffect(() => { onShapeFillRef.current = onShapeFill; }, [onShapeFill]);
+    useEffect(() => { onShapeDragUpdateRef.current = onShapeDragUpdate; }, [onShapeDragUpdate]);
+    useEffect(() => {
+      if (controlsRef.current) controlsRef.current.enabled = !shapeTool;
+    }, [shapeTool]);
 
     // Tracks previous ring structure so color-only changes skip the expensive rebuild
     const prevRingStructureRef = useRef<{
@@ -840,6 +858,17 @@ const applyPaintAll = useCallback(() => {
       const onPointerDown = (e: PointerEvent) => {
         if (e.button !== 0) return;
 
+        // Shape-fill tool owns the drag (color rings inside the shape).
+        if (shapeToolRef.current) {
+          const wp = computeWorldPointOnZ0(e.clientX, e.clientY);
+          if (wp) shapeDragRef.current = { x0: wp.x, y0: wp.y, x1: wp.x, y1: wp.y };
+          shapeClientRef.current = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY };
+          onShapeDragUpdateRef.current?.(shapeClientRef.current);
+          try { (renderer.domElement as any).setPointerCapture?.(e.pointerId); } catch {}
+          e.preventDefault();
+          return;
+        }
+
         emitWorldClick(e.clientX, e.clientY);
 
         if (!lockRef.current) return;
@@ -862,6 +891,17 @@ const applyPaintAll = useCallback(() => {
       };
 
       const onPointerMove = (e: PointerEvent) => {
+        if (shapeToolRef.current && shapeDragRef.current) {
+          const wp = computeWorldPointOnZ0(e.clientX, e.clientY);
+          if (wp) { shapeDragRef.current.x1 = wp.x; shapeDragRef.current.y1 = wp.y; }
+          if (shapeClientRef.current) {
+            shapeClientRef.current.x1 = e.clientX;
+            shapeClientRef.current.y1 = e.clientY;
+            onShapeDragUpdateRef.current?.({ ...shapeClientRef.current });
+          }
+          e.preventDefault();
+          return;
+        }
         if (!isPainting) return;
         if (!lockRef.current) return;
         if (!paintModeRef.current) return;
@@ -876,6 +916,15 @@ const applyPaintAll = useCallback(() => {
       };
 
       const onPointerUp = (e: PointerEvent) => {
+        if (shapeDragRef.current && shapeToolRef.current) {
+          const s = shapeDragRef.current;
+          shapeDragRef.current = null;
+          shapeClientRef.current = null;
+          onShapeDragUpdateRef.current?.(null);
+          onShapeFillRef.current?.(shapeToolRef.current, s);
+          try { (renderer.domElement as any).releasePointerCapture?.(e.pointerId); } catch {}
+          return;
+        }
         isPainting = false;
         lastPaintKeyRef.current = "";
         try {
