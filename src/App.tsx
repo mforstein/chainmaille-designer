@@ -126,7 +126,7 @@ import type { Tier } from "./auth/AuthContext";
 import SupplierColorPalette from "./components/SupplierColorPalette";
 import AutoCalibrateButton from "./components/AutoCalibrateButton";
 import ShapePanel, { ShapeTool as ShapeToolId } from "./components/ShapePanel";
-import { computeShapeCells } from "./utils/shapeFill";
+import { computeShapeCells, shapeOutline } from "./utils/shapeFill";
 import { calibrationUpdatedEventName } from "./utils/colorCalibration";
 
 // ==============================
@@ -957,6 +957,8 @@ function ChainmailDesigner() {
   // added). null = normal paint.
   const [shapeTool, setShapeTool] = useState<ShapeToolId | null>(null);
   const [shapePanelOpen, setShapePanelOpen] = useState(false);
+  // Live shape drag rect in screen coords → drives the blue ghost preview.
+  const [shapeDragScreen, setShapeDragScreen] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const [debugVisible, setDebugVisible] = useState(false);
   const [debugMessage, setDebugMessage] = useState("");
   const [finalizeOpen, setFinalizeOpen] = useState(false);
@@ -1844,8 +1846,26 @@ const doClearPaint = () => {
           onGridAspectChange={setGridAspect}
           shapeTool={shapeTool}
           onShapeFill={onShapeFill}
+          onShapeDragUpdate={setShapeDragScreen}
         />
       </div>
+
+      {/* Blue "ghost" preview of the fill shape while dragging (screen-space) */}
+      {shapeTool && shapeDragScreen && (() => {
+        const pts = shapeOutline(shapeTool, {
+          lx0: shapeDragScreen.x0, ly0: shapeDragScreen.y0,
+          lx1: shapeDragScreen.x1, ly1: shapeDragScreen.y1,
+        });
+        if (pts.length < 2) return null;
+        const d = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ") + " Z";
+        return (
+          <svg
+            style={{ position: "fixed", inset: 0, width: "100vw", height: "100vh", zIndex: 40, pointerEvents: "none" }}
+          >
+            <path d={d} fill="rgba(59,130,246,0.18)" stroke="#3b82f6" strokeWidth={2} />
+          </svg>
+        );
+      })()}
 
       {/* Free-trial countdown banner (free tier only, while the trial is live) */}
       {trial.onTrial && !trial.expired && (

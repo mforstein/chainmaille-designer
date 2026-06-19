@@ -152,3 +152,31 @@ export function computeShapeCells(args: {
 
   return cells;
 }
+
+/** The outline polygon of a shape for the given drag, in the same coordinate
+ *  frame as `sel`. Used to draw the live "ghost" preview while dragging. */
+export function shapeOutline(tool: ShapeTool, sel: SelectionDrag): { x: number; y: number }[] {
+  const cx = sel.lx0;
+  const cy = sel.ly0;
+  const dx = sel.lx1 - sel.lx0;
+  const dy = sel.ly1 - sel.ly0;
+  const r = Math.sqrt(dx * dx + dy * dy);
+  if (tool === "square") {
+    const minX = Math.min(sel.lx0, sel.lx1);
+    const maxX = Math.max(sel.lx0, sel.lx1);
+    const minY = Math.min(sel.ly0, sel.ly1);
+    const maxY = Math.max(sel.ly0, sel.ly1);
+    return [
+      { x: minX, y: minY },
+      { x: maxX, y: minY },
+      { x: maxX, y: maxY },
+      { x: minX, y: maxY },
+    ];
+  }
+  if (tool === "circle") return regularPolygon(cx, cy, r, 48);
+  if (tool === "hex") return regularPolygon(cx, cy, r, 6, Math.PI / 6);
+  if (tool === "oct") return regularPolygon(cx, cy, r, 8, Math.PI / 8);
+  if (tool === "tri") return regularPolygon(cx, cy, r, 3, -Math.PI / 2);
+  if (tool === "heart") return heartBezierPolygon(cx, cy, r);
+  return [];
+}

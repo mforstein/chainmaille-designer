@@ -145,6 +145,10 @@ type Props = {
     tool: string,
     sel: { x0: number; y0: number; x1: number; y1: number },
   ) => void;
+  // Live drag rect in CLIENT (screen) coords for the ghost preview; null on end.
+  onShapeDragUpdate?: (
+    sel: { x0: number; y0: number; x1: number; y1: number } | null,
+  ) => void;
   // Keys (formatted as "row-col" or "row,col" — both formats are accepted) of
   // scales/rings that should be visually highlighted as "selected". Selected
   // scales render with a bright outline + glow so the user can see which one
@@ -439,6 +443,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       activeColor,
       shapeTool,
       onShapeFill,
+      onShapeDragUpdate,
       overlay,
       externalViewState,
       initialPaintMode = true,
@@ -524,9 +529,13 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
     // Shape-fill tool (Designer): drag defines the shape in world coords.
     const shapeToolRef = useRef(shapeTool);
     const onShapeFillRef = useRef(onShapeFill);
+    const onShapeDragUpdateRef = useRef(onShapeDragUpdate);
     const shapeDragRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+    // Parallel CLIENT-space drag for the ghost preview.
+    const shapeClientRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
     useEffect(() => { shapeToolRef.current = shapeTool; }, [shapeTool]);
     useEffect(() => { onShapeFillRef.current = onShapeFill; }, [onShapeFill]);
+    useEffect(() => { onShapeDragUpdateRef.current = onShapeDragUpdate; }, [onShapeDragUpdate]);
     // While a shape tool is active, OrbitControls must stand down so the drag
     // defines the shape instead of rotating/panning the camera.
     useEffect(() => {
@@ -1151,6 +1160,8 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         if (shapeToolRef.current) {
           const w = clientToWorld(e.clientX, e.clientY);
           if (w) shapeDragRef.current = { x0: w.x, y0: w.y, x1: w.x, y1: w.y };
+          shapeClientRef.current = { x0: e.clientX, y0: e.clientY, x1: e.clientX, y1: e.clientY };
+          onShapeDragUpdateRef.current?.(shapeClientRef.current);
           try { (e.target as any)?.setPointerCapture?.(e.pointerId); } catch {}
           try { e.preventDefault(); } catch {}
           try { e.stopPropagation(); } catch {}
@@ -1182,6 +1193,11 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         if (shapeToolRef.current && shapeDragRef.current) {
           const w = clientToWorld(e.clientX, e.clientY);
           if (w) { shapeDragRef.current.x1 = w.x; shapeDragRef.current.y1 = w.y; }
+          if (shapeClientRef.current) {
+            shapeClientRef.current.x1 = e.clientX;
+            shapeClientRef.current.y1 = e.clientY;
+            onShapeDragUpdateRef.current?.({ ...shapeClientRef.current });
+          }
           try { e.preventDefault(); } catch {}
           try { e.stopPropagation(); } catch {}
           return;
@@ -1205,6 +1221,8 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         if (shapeDragRef.current && shapeToolRef.current) {
           const s = shapeDragRef.current;
           shapeDragRef.current = null;
+          shapeClientRef.current = null;
+          onShapeDragUpdateRef.current?.(null); // clear ghost preview
           onShapeFillRef.current?.(shapeToolRef.current, s);
           try {
             if (e?.pointerId != null) (e.target as any)?.releasePointerCapture?.(e.pointerId);
@@ -1234,6 +1252,8 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
           const t = e.touches[0];
           const w = clientToWorld(t.clientX, t.clientY);
           if (w) shapeDragRef.current = { x0: w.x, y0: w.y, x1: w.x, y1: w.y };
+          shapeClientRef.current = { x0: t.clientX, y0: t.clientY, x1: t.clientX, y1: t.clientY };
+          onShapeDragUpdateRef.current?.(shapeClientRef.current);
           e.preventDefault();
           e.stopPropagation();
           return;
@@ -1270,6 +1290,11 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
           const t = e.touches[0];
           const w = clientToWorld(t.clientX, t.clientY);
           if (w) { shapeDragRef.current.x1 = w.x; shapeDragRef.current.y1 = w.y; }
+          if (shapeClientRef.current) {
+            shapeClientRef.current.x1 = t.clientX;
+            shapeClientRef.current.y1 = t.clientY;
+            onShapeDragUpdateRef.current?.({ ...shapeClientRef.current });
+          }
           e.preventDefault();
           e.stopPropagation();
           return;
@@ -1290,6 +1315,8 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         if (shapeDragRef.current && shapeToolRef.current && (!e.touches || e.touches.length === 0)) {
           const s = shapeDragRef.current;
           shapeDragRef.current = null;
+          shapeClientRef.current = null;
+          onShapeDragUpdateRef.current?.(null);
           e.preventDefault();
           e.stopPropagation();
           onShapeFillRef.current?.(shapeToolRef.current, s);
