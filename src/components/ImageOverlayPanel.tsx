@@ -28,6 +28,10 @@ interface Props {
   // Hide the scale-specific subpanel (Image Fill on Scales / Test Scale Shape /
   // Image Boundary / scale test canvas). Use on ring-only pages like /designer.
   hideScaleControls?: boolean;
+  // When provided, shows an "Apply within a shape" button: the image is then
+  // transferred into a dragged shape region only (the rest of the design is
+  // preserved). Receives the current overlay snapshot.
+  onApplyToShape?: (overlay: OverlayState) => void;
 }
 
 /* ----------------------- defaults ----------------------- */
@@ -46,7 +50,7 @@ const defaultOverlay: OverlayState = {
 };
 
 /* ------------------- component ------------------- */
-export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClose, hideScaleControls = false }) => {
+export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClose, hideScaleControls = false, onApplyToShape }) => {
   // Preview height matches the ring grid's aspect ratio (width ÷ aspect).
   // Panel content width is 412px (440px - 14px padding × 2).
   const PREVIEW_W = 412;
@@ -417,6 +421,31 @@ export const ImageOverlayPanel: React.FC<Props> = ({ onApply, gridAspect, onClos
           title="Send overlay settings to the main canvas/rings layer"
         >
           📤 Transfer to Rings
+        </button>
+      )}
+
+      {/* Transfer into a dragged shape region only — preserves the rest. */}
+      {overlay.dataUrl && onApplyToShape && (
+        <button
+          onClick={async () => {
+            const snapshot = await createSnapshot();
+            if (snapshot) onApplyToShape(snapshot);
+          }}
+          style={{
+            width: "100%",
+            marginBottom: 10,
+            padding: "9px 12px",
+            borderRadius: 10,
+            border: "1px solid rgba(167,139,250,0.55)",
+            background: "rgba(124,58,237,0.22)",
+            color: "#c4b5fd",
+            cursor: "pointer",
+            fontSize: 13,
+            fontWeight: 700,
+          }}
+          title="Pick a shape, then drag on the canvas to transfer the image into that area only"
+        >
+          📐 Apply within a shape
         </button>
       )}
 

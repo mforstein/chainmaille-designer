@@ -959,6 +959,10 @@ function ChainmailDesigner() {
   const [shapePanelOpen, setShapePanelOpen] = useState(false);
   // Live shape drag rect in screen coords → drives the blue ghost preview.
   const [shapeDragScreen, setShapeDragScreen] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  // When true, the next shape drag transfers the IMAGE OVERLAY into the shape
+  // region only (masked), instead of filling it with the active solid color —
+  // overlaying onto the existing design without wiping the rest.
+  const [overlayShapeMode, setOverlayShapeMode] = useState(false);
   const [debugVisible, setDebugVisible] = useState(false);
   const [debugMessage, setDebugMessage] = useState("");
   const [finalizeOpen, setFinalizeOpen] = useState(false);
@@ -1805,17 +1809,29 @@ const doClearPaint = () => {
         rcToLogical,
       });
       if (!cells.length) return;
+      const inBounds = cells.filter(
+        ({ row, col }) => row >= 0 && col >= 0 && row < params.rows && col < params.cols,
+      );
+
+      // Overlay-within-shape: transfer the IMAGE into just these rings, leaving
+      // the rest of the design intact. Falls back to solid fill otherwise.
+      if (overlayShapeMode && overlayState && (overlayState as any).dataUrl) {
+        const maskKeys = new Set(inBounds.map(({ row, col }) => `${row},${col}`));
+        rendererRef.current?.applyOverlayToRings?.(overlayState, maskKeys);
+        setOverlayShapeMode(false);
+        setShapeTool(null);
+        return;
+      }
+
       setPaint((prev) => {
         const next = new Map(prev);
-        for (const { row, col } of cells) {
-          if (row >= 0 && col >= 0 && row < params.rows && col < params.cols) {
-            next.set(`${row},${col}`, effectiveColor);
-          }
+        for (const { row, col } of inBounds) {
+          next.set(`${row},${col}`, effectiveColor);
         }
         return next;
       });
     },
-    [params.centerSpacing, params.rows, params.cols, effectiveColor],
+    [params.centerSpacing, params.rows, params.cols, effectiveColor, overlayShapeMode, overlayState],
   );
 
   // --- render ---
@@ -2525,6 +2541,18 @@ const doClearPaint = () => {
                 setDebugVisible(true);
               }
               setShowOverlayPanel(false);
+            }}
+            onApplyToShape={(overlay) => {
+              // Store the overlay, close the panel, and enter "overlay within
+              // shape" mode: the user picks a shape and drags, and the image is
+              // transferred into that area only (rest of the design preserved).
+              setOverlayState(overlay);
+              setShowOverlayPanel(false);
+              setOverlayShapeMode(true);
+              setShapeTool("square");
+              setShapePanelOpen(true);
+              setDebugMessage("📐 Pick a shape, then drag on the canvas to place the image.");
+              setDebugVisible(true);
             }}
           />
         </div>

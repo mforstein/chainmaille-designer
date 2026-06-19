@@ -171,7 +171,7 @@ export type RingRendererHandle = {
   lock2DView: () => void;
   forceLockRotation: (locked: boolean) => void;
 
-  applyOverlayToRings: (overlay: OverlayState) => Promise<void>;
+  applyOverlayToRings: (overlay: OverlayState, maskKeys?: Set<string>) => Promise<void>;
 
   getState: () => {
     paintMode: boolean;
@@ -1854,7 +1854,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       return sampler;
     };
 
-    const applyOverlayToRings = async (ov: OverlayState) => {
+    const applyOverlayToRings = async (ov: OverlayState, maskKeys?: Set<string>) => {
       const meshes = meshesRef.current;
       if (!meshes || meshes.length === 0) return;
 
@@ -1872,6 +1872,9 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
           if (row == null || col == null) continue;
 
           const key = `${row},${col}`;
+          // When a shape mask is supplied, only rings inside the shape are
+          // recolored — the rest of the design is left untouched.
+          if (maskKeys && !maskKeys.has(key)) continue;
           const wx = mesh.position.x;
           const wy = mesh.position.y;
 
