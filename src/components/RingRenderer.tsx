@@ -1514,7 +1514,12 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
         const gKey = `${ringRadius.toFixed(6)}_${tubeRadius.toFixed(6)}`;
         let geom = geomCache.get(gKey);
         if (!geom) {
-          geom = new THREE.TorusGeometry(ringRadius, tubeRadius, 32, 64);
+          // Match the instanced renderer's torus segments (16, 32) EXACTLY.
+          // A higher-poly torus here self-shadows more and renders noticeably
+          // darker than the instanced path, so a design's brightness jumped when
+          // it crossed the 5000-ring threshold (renderer switch). Same segments
+          // → same visual intensity at any ring count (and it's faster).
+          geom = new THREE.TorusGeometry(ringRadius, tubeRadius, 16, 32);
           geomCache.set(gKey, geom);
         }
 
