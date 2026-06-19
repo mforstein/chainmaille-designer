@@ -13,6 +13,7 @@ import React, {
 } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import SpriteText from "three-spritetext";
 import type { OverlayState } from "../components/ImageOverlayPanel";
 import RingRendererInstanced from "./RingRendererInstanced";
@@ -1060,6 +1061,20 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       (renderer.domElement.style as any).webkitTouchCallout = "none";
 
       rendererRef.current = renderer;
+
+      // Environment — MUST match the instanced renderer. Metallic rings
+      // (metalness 0.85) get most of their brightness from reflecting the
+      // environment, so without this the design rendered much darker than the
+      // instanced path and the brightness jumped at the 5000-ring threshold.
+      try {
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        pmrem.compileEquirectangularShader();
+        scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+        pmrem.dispose();
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn("PMREM/RoomEnvironment failed (continuing without env):", err);
+      }
 
       // ---- Lights ----
       scene.add(new THREE.AmbientLight(0xffffff, 0.85));
