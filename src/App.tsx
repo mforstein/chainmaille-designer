@@ -2924,10 +2924,8 @@ function WorkspaceHome() {
 
 // Public store listings for the native apps, linked from the Home "About" section.
 const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.wovenrainbows.chainmailledesigner";
-// Apple App Store: fill in once App Store Connect assigns the numeric Apple ID
-// (App Store Connect → your app → App Information → "Apple ID", ~10 digits), e.g.
-// "https://apps.apple.com/app/id1234567890". Empty string hides the link until set.
-const APP_STORE_URL = "";
+// Apple App Store — Chainmail Studio (Apple ID 6775567495).
+const APP_STORE_URL = "https://apps.apple.com/app/id6775567495";
 
 const homeLinkStyle: React.CSSProperties = {
   display: "flex",
