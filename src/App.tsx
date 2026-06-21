@@ -2141,6 +2141,31 @@ const doClearPaint = () => {
 
     {/* Draw toggle + Pan hand moved to the always-visible top of the toolbar. */}
 
+    {/* 3D / 2D view toggle. Locked = flat 2D top-down; unlocked = free 3D
+        rotation. Entering 3D turns painting OFF so a drag rotates the camera
+        instead of painting (otherwise the 3D view appears to "do nothing"). */}
+    <ToolBtn
+      title={rotationLocked ? "Switch to 3D view (drag to rotate)" : "Switch to 2D view (flat)"}
+      active={!rotationLocked}
+      onClick={(e) => {
+        e.stopPropagation();
+        const toLocked = !rotationLocked;
+        if (!toLocked) {
+          // Entering 3D: stop painting so left-drag / one-finger rotates.
+          setPaintMode(false);
+          setEraseMode(false);
+          setTimeout(() => {
+            rendererRef.current?.setPaintMode?.(false);
+            rendererRef.current?.setEraseMode?.(false);
+            rendererRef.current?.setPanEnabled?.(true);
+          }, 0);
+        }
+        setLock(toLocked);
+      }}
+    >
+      🧊
+    </ToolBtn>
+
     <ToolBtn
       title="Reset View"
       onClick={(e) => {
