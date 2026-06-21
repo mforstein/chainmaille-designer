@@ -2893,6 +2893,27 @@ function WorkspaceHome() {
           </Link>
         </div>
 
+        <div style={{ color: "#6b7280", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, margin: "16px 0 8px" }}>
+          About — Get the App
+        </div>
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 12,
+          }}
+        >
+          <a href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer" style={homeLinkStyle}>
+            ▶️ Chainmail Studio on Google Play
+          </a>
+          {APP_STORE_URL && (
+            <a href={APP_STORE_URL} target="_blank" rel="noopener noreferrer" style={homeLinkStyle}>
+              🍎 Chainmail Studio on the App Store
+            </a>
+          )}
+        </div>
+
         <div style={{ marginTop: 14, color: "#9ca3af", fontSize: 12 }}>
           Tip: Use the menu button (☰) inside Studio to jump between pages.
         </div>
@@ -2900,6 +2921,13 @@ function WorkspaceHome() {
     </div>
   );
 }
+
+// Public store listings for the native apps, linked from the Home "About" section.
+const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.wovenrainbows.chainmailledesigner";
+// Apple App Store: fill in once App Store Connect assigns the numeric Apple ID
+// (App Store Connect → your app → App Information → "Apple ID", ~10 digits), e.g.
+// "https://apps.apple.com/app/id1234567890". Empty string hides the link until set.
+const APP_STORE_URL = "";
 
 const homeLinkStyle: React.CSSProperties = {
   display: "flex",
