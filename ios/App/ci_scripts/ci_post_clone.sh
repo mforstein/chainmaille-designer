@@ -66,4 +66,24 @@ npm run build
 echo "▸ Syncing the web bundle + config into iOS (cap sync ios)…"
 npx cap sync ios
 
+# The web build bundles ~200MB of marketing/showcase art (images/designer,
+# designer.zip, images/etsy, Archive.zip, …) that the NATIVE app never uses.
+# Left in, the iOS bundle balloons to ~213MB and the Xcode Cloud archive runs
+# the runner out of disk / produces an oversized app. Strip those web-only
+# assets from the synced bundle; the live website (which does serve them) is
+# untouched. Keep manual/, braid-reference.jpeg, icons/, logos.
+echo "▸ Pruning web-only marketing assets from the iOS app bundle…"
+IOS_PUBLIC="ios/App/App/public"
+rm -rf \
+  "$IOS_PUBLIC/images/designer" \
+  "$IOS_PUBLIC/images/designer.zip" \
+  "$IOS_PUBLIC/images/etsy" \
+  "$IOS_PUBLIC/images/etsy 2.zip" \
+  "$IOS_PUBLIC/Archive.zip" \
+  "$IOS_PUBLIC/IMG_4282.heic" \
+  "$IOS_PUBLIC/WovenRainbowsByErin - Etsy.html" \
+  "$IOS_PUBLIC/braid-reference.old.jpeg" \
+  2>/dev/null || true
+echo "  iOS bundle is now $(du -sh "$IOS_PUBLIC" 2>/dev/null | cut -f1)"
+
 echo "✓ Post-clone build prep complete."
