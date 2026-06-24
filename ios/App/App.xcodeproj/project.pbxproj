@@ -84,6 +84,7 @@
 				504EC3001FED79650016851F /* Sources */,
 				504EC3011FED79650016851F /* Frameworks */,
 				504EC3021FED79650016851F /* Resources */,
+				D1F5E7A1FACE0000CAFE0001 /* Prune web-only marketing assets */,
 			);
 			buildRules = (
 			);
@@ -150,6 +151,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		D1F5E7A1FACE0000CAFE0001 /* Prune web-only marketing assets */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Prune web-only marketing assets";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Strip web-only marketing art from the built app bundle so the IPA\n# stays small even on a local archive (the CI prune in ci_post_clone.sh\n# only runs in Xcode Cloud). Operates on the BUILT product, never the\n# source tree.\nPUBLIC=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/public\"\nif [ -d \"$PUBLIC\" ]; then\n  rm -rf \\\n    \"$PUBLIC/images/designer\" \\\n    \"$PUBLIC/images/designer.zip\" \\\n    \"$PUBLIC/images/etsy\" \\\n    \"$PUBLIC/images/etsy 2.zip\" \\\n    \"$PUBLIC/Archive.zip\" \\\n    \"$PUBLIC/IMG_4282.heic\" \\\n    \"$PUBLIC/WovenRainbowsByErin - Etsy.html\" \\\n    \"$PUBLIC/braid-reference.old.jpeg\" \\\n    2>/dev/null || true\n  echo \"Pruned web-only marketing assets from app bundle: $PUBLIC\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		504EC3001FED79650016851F /* Sources */ = {
