@@ -7,6 +7,7 @@
 import React, { useMemo, useState } from "react";
 import type { ExportRing, PaletteAssignment } from "../types/project";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { saveOrShare } from "../lib/saveOrShare";
 import { exportAsGLB, exportAsColorSTLs, estimateGLBSizeMB } from "../lib/export3dModel";
 import type { ExportGroups } from "../lib/export3dModel";
 import { track } from "../lib/analytics";
@@ -82,14 +83,12 @@ function formatInt(n: number) {
 }
 
 function downloadBlob(name: string, blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  // Web → anchor download; native (Android/iOS) → Filesystem + share sheet.
+  // Fixes PDF/CSV exports silently doing nothing inside the Android WebView.
+  void saveOrShare(name, blob).catch((err) => {
+    console.error("❌ Export failed:", err);
+    alert("Failed to export file.");
+  });
 }
 
 /* ---------------------- better palette matching (Lab) ---------------------- */

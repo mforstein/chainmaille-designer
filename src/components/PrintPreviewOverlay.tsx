@@ -1,5 +1,8 @@
 // src/components/PrintPreviewOverlay.tsx
 import React from "react";
+import { Capacitor } from "@capacitor/core";
+import { PDFDocument, StandardFonts } from "pdf-lib";
+import { saveOrShare } from "../lib/saveOrShare";
 
 interface UsageRow {
   supplier: string;
@@ -30,8 +33,80 @@ export default function PrintPreviewOverlay({
   printPages,
   onCancel,
 }: Props) {
+  // NATIVE: generate a real PDF (cover + tiled pages + BOM) and share it.
+  // The browser print path below is a no-op inside the Android WebView.
+  const handlePrintNative = async () => {
+    const pdf = await PDFDocument.create();
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+    const LETTER: [number, number] = [612, 792];
+
+    // Cover page
+    const cover = pdf.addPage(LETTER);
+    cover.drawText("Chainmail Project", { x: 50, y: 720, size: 24, font: bold });
+    cover.drawText(`Date: ${new Date().toLocaleDateString()}`, {
+      x: 50,
+      y: 690,
+      size: 12,
+      font,
+    });
+
+    // Tiled pattern pages (one image per page, sized to the image)
+    for (const url of printPages) {
+      const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+      const img = await pdf.embedPng(bytes);
+      const page = pdf.addPage([img.width, img.height]);
+      page.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
+    }
+
+    // Bill of Materials page(s)
+    let bom = pdf.addPage(LETTER);
+    let y = 740;
+    bom.drawText("Bill of Materials", { x: 50, y, size: 18, font: bold });
+    y -= 28;
+    bom.drawText("Supplier        Color                 Rings    Packs", {
+      x: 50,
+      y,
+      size: 11,
+      font: bold,
+    });
+    y -= 18;
+    for (const row of usageRows) {
+      if (y < 60) {
+        bom = pdf.addPage(LETTER);
+        y = 740;
+      }
+      const line = `${row.supplier.padEnd(14)} ${row.name.padEnd(20)} ${String(
+        row.count,
+      ).padStart(6)}  ${String(row.packs).padStart(5)}`;
+      bom.drawText(line, { x: 50, y, size: 10, font });
+      y -= 16;
+    }
+    bom.drawText(`Total Packs: ${totalPacks}`, {
+      x: 50,
+      y: y - 12,
+      size: 12,
+      font: bold,
+    });
+
+    const out = await pdf.save();
+    await saveOrShare(
+      "chainmail-pattern.pdf",
+      new Blob([out as BlobPart], { type: "application/pdf" }),
+    );
+    onCancel();
+  };
+
   // PRINT HANDLER — includes BOM
   const handlePrint = () => {
+    if (Capacitor.isNativePlatform()) {
+      void handlePrintNative().catch((err) => {
+        console.error("❌ PDF export failed:", err);
+        alert("Failed to create PDF.");
+      });
+      return;
+    }
+
     const printWin = window.open("", "_blank");
     if (!printWin) return;
     const doc = printWin.document;

@@ -1,6 +1,10 @@
 // src/components/BOMExport.ts
 // Build a color BOM and export as CSV, PNG, or printable HTML (PDF via browser print)
 
+import { Capacitor } from "@capacitor/core";
+import { saveOrShare } from "../lib/saveOrShare";
+import { imagesToPdf } from "../lib/imagesToPdf";
+
 export type RingLike = { colorHex?: string | null };
 
 export type BOMMeta = {
@@ -125,11 +129,11 @@ export function exportBOMCsv(
 }
 
 // ----------------- PNG (drawn on canvas, no external libs) -----------------
-export async function exportBOMPng(
+// Render the BOM to an offscreen canvas (shared by PNG export + native PDF).
+function renderBOMCanvas(
   rings: RingLike[],
   meta?: Partial<BOMMeta>,
-  filename = "freeform-bom.png",
-) {
+): HTMLCanvasElement {
   const { rows, total, meta: m } = summarizeByColor(rings, meta);
 
   // Layout
@@ -237,8 +241,15 @@ export async function exportBOMPng(
   ctx.fillStyle = m.textColor;
   ctx.fillText(`TOTAL RINGS: ${total}`, padding, height - 12);
 
-  // download
-  await new Promise<void>((res) => cvs.toBlob(() => res(), "image/png"));
+  return cvs;
+}
+
+export async function exportBOMPng(
+  rings: RingLike[],
+  meta?: Partial<BOMMeta>,
+  filename = "freeform-bom.png",
+) {
+  const cvs = renderBOMCanvas(rings, meta);
   cvs.toBlob((blob) => {
     if (blob) downloadBlob(filename, blob);
   }, "image/png");
@@ -250,6 +261,21 @@ export function openBOMPrintWindow(
   meta?: Partial<BOMMeta>,
   docTitle = "Color BOM",
 ) {
+  // Native: the Android WebView can't open a print window, so render the BOM
+  // canvas into a PDF and share it instead.
+  if (Capacitor.isNativePlatform()) {
+    const cvs = renderBOMCanvas(rings, meta);
+    void (async () => {
+      try {
+        const blob = await imagesToPdf([cvs.toDataURL("image/png")]);
+        await saveOrShare(`${docTitle.replace(/\s+/g, "-").toLowerCase()}.pdf`, blob);
+      } catch (err) {
+        console.error("❌ BOM PDF failed:", err);
+      }
+    })();
+    return;
+  }
+
   const { rows, total, meta: m } = summarizeByColor(rings, meta);
 
   const html = `<!doctype html>
@@ -359,14 +385,10 @@ function roundRect(
 }
 
 function downloadBlob(filename: string, data: Blob) {
-  const url = URL.createObjectURL(data);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  // Web → anchor download; native (Android/iOS) → Filesystem + share sheet.
+  void saveOrShare(filename, data).catch((err) => {
+    console.error("❌ BOM export failed:", err);
+  });
 }
 
 function escapeHtml(s: string) {

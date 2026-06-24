@@ -6,6 +6,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
+import AndroidBackButton from "./AndroidBackButton";
 import { AuthProvider } from "./auth/AuthContext";
 import { clampPersistedDims } from "./utils/limits";
 // ------------------------------------------------------
@@ -25,6 +26,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
+        <AndroidBackButton />
         <App />
       </AuthProvider>
     </BrowserRouter>

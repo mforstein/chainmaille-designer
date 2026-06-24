@@ -6,6 +6,7 @@
 import * as THREE from "three";
 import { GLTFExporter } from "three/examples/jsm/exporters/GLTFExporter.js";
 import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
+import { saveOrShare } from "./saveOrShare";
 
 export interface ExportGroups {
   rings: THREE.Group | null;
@@ -153,15 +154,10 @@ function buildExportScene(groups: ExportGroups): THREE.Scene {
 
 // ── Download helpers ──────────────────────────────────────────────────────
 function triggerDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 4_000);
+  // Web → anchor download; native (Android/iOS) → Filesystem + share sheet.
+  void saveOrShare(filename, blob).catch((err) => {
+    console.error("❌ 3D model export failed:", err);
+  });
 }
 
 // ── Public: GLB export ────────────────────────────────────────────────────

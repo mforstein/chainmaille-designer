@@ -3,6 +3,8 @@
 // ======================================================
 
 import React, { useEffect, useRef } from "react";
+import { Capacitor } from "@capacitor/core";
+import { saveOrShare } from "../lib/saveOrShare";
 
 type MaybePromise<T> = T | Promise<T>;
 
@@ -60,6 +62,14 @@ function triggerDownload(blob: Blob, filename: string) {
 async function shareOrDownloadJson(payload: any, filename: string) {
   const json = JSON.stringify(payload, null, 2);
   const blob = new Blob([json], { type: "application/json" });
+
+  // Native app (Android/iOS via Capacitor): write to disk + open the share
+  // sheet. The anchor-download fallback below silently fails in the Android
+  // WebView, so saving never produced a file there.
+  if (Capacitor.isNativePlatform()) {
+    await saveOrShare(filename, blob);
+    return;
+  }
 
   const iOS = isIOS();
   const navAny = (typeof navigator !== "undefined" ? (navigator as any) : null) as any;

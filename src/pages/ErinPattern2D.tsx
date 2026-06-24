@@ -11,6 +11,9 @@ import {
   clampPersistedDims,
   clampAndPersist,
 } from "../utils/limits";
+import { Capacitor } from "@capacitor/core";
+import { saveOrShare } from "../lib/saveOrShare";
+import { imagesToPdf } from "../lib/imagesToPdf";
 
 const PALETTE_24 = [
   "#000000",
@@ -789,12 +792,10 @@ const ErinPattern2D: React.FC = () => {
     const blob = new Blob([JSON.stringify(settings, null, 2)], {
       type: "application/json",
     });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "erin-pattern-settings.json";
-    a.click();
-    URL.revokeObjectURL(url);
+    // Web → download; native (Android/iOS) → Filesystem + share sheet.
+    void saveOrShare("erin-pattern-settings.json", blob).catch((err) => {
+      console.error("❌ Save settings failed:", err);
+    });
   };
 
   // cells: Map<string, string> where value is the fill color hex
@@ -818,6 +819,24 @@ const ErinPattern2D: React.FC = () => {
 
 
   const handlePrint = () => {
+    // Native: the Android WebView can't print, so snapshot the pattern canvas
+    // into a PDF and open the share sheet instead.
+    if (Capacitor.isNativePlatform()) {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      void (async () => {
+        try {
+          const dataUrl = canvas.toDataURL("image/png");
+          const blob = await imagesToPdf([dataUrl]);
+          await saveOrShare("erin-pattern.pdf", blob);
+        } catch (err) {
+          console.error("❌ Pattern PDF failed:", err);
+          alert("Failed to create PDF.");
+        }
+      })();
+      return;
+    }
+
     document.body.classList.add("printing");
     setTimeout(() => {
       window.print();
