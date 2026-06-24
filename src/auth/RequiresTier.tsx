@@ -3,6 +3,7 @@ import { Navigate, useLocation } from "react-router-dom";
 import { useAuth, tierAtLeast } from "./AuthContext";
 import type { Tier } from "./AuthContext";
 import { track } from "../lib/analytics";
+import { HIDE_STORE_PURCHASE_UI } from "../lib/native";
 
 const TIER_LABELS: Record<Tier, string> = {
   free: "Free",
@@ -96,28 +97,34 @@ export default function RequiresTier({
           <span style={{ color: "#f9fafb", fontWeight: 700, fontSize: 13, textAlign: "center" }}>
             {featureName ?? "This feature"} requires {TIER_LABELS[minTier]}
           </span>
-          <a
-            href="/pricing"
-            onClick={() =>
-              track("upgrade_click", {
-                feature: featureName ?? null,
-                min_tier: minTier,
-                current_tier: tier,
-                mode: "inline",
-              })
-            }
-            style={{
-              padding: "6px 14px",
-              background: "#7c3aed",
-              color: "white",
-              borderRadius: 7,
-              fontSize: 12,
-              fontWeight: 700,
-              textDecoration: "none",
-            }}
-          >
-            Upgrade — {TIER_PRICE[minTier]}
-          </a>
+          {HIDE_STORE_PURCHASE_UI ? (
+            <span style={{ color: "#9ca3af", fontSize: 12, textAlign: "center" }}>
+              Available with a subscribed account.
+            </span>
+          ) : (
+            <a
+              href="/pricing"
+              onClick={() =>
+                track("upgrade_click", {
+                  feature: featureName ?? null,
+                  min_tier: minTier,
+                  current_tier: tier,
+                  mode: "inline",
+                })
+              }
+              style={{
+                padding: "6px 14px",
+                background: "#7c3aed",
+                color: "white",
+                borderRadius: 7,
+                fontSize: 12,
+                fontWeight: 700,
+                textDecoration: "none",
+              }}
+            >
+              Upgrade — {TIER_PRICE[minTier]}
+            </a>
+          )}
         </div>
       </div>
     );
@@ -154,35 +161,47 @@ export default function RequiresTier({
       <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800 }}>
         {TIER_LABELS[minTier]} tier required
       </h2>
-      <p style={{ color: "#9ca3af", maxWidth: 380, margin: 0 }}>
-        {featureName ?? "This page"} is available on the{" "}
-        <strong style={{ color: "#f9fafb" }}>{TIER_LABELS[minTier]}</strong> plan
-        ({TIER_PRICE[minTier]}) and above. Your current plan is{" "}
-        <strong style={{ color: "#f9fafb" }}>{TIER_LABELS[tier]}</strong>.
-      </p>
-      <a
-        href="/pricing"
-        onClick={() =>
-          track("upgrade_click", {
-            feature: featureName ?? null,
-            min_tier: minTier,
-            current_tier: tier,
-            mode: "page",
-          })
-        }
-        style={{
-          marginTop: 8,
-          padding: "12px 28px",
-          background: "#7c3aed",
-          color: "white",
-          borderRadius: 10,
-          fontWeight: 700,
-          fontSize: 15,
-          textDecoration: "none",
-        }}
-      >
-        Upgrade to {TIER_LABELS[minTier]} — {TIER_PRICE[minTier]}
-      </a>
+      {HIDE_STORE_PURCHASE_UI ? (
+        <p style={{ color: "#9ca3af", maxWidth: 380, margin: 0 }}>
+          {featureName ?? "This page"} is available on the{" "}
+          <strong style={{ color: "#f9fafb" }}>{TIER_LABELS[minTier]}</strong> plan
+          and above. Your current plan is{" "}
+          <strong style={{ color: "#f9fafb" }}>{TIER_LABELS[tier]}</strong>. Sign in
+          with a subscribed account to unlock it.
+        </p>
+      ) : (
+        <>
+          <p style={{ color: "#9ca3af", maxWidth: 380, margin: 0 }}>
+            {featureName ?? "This page"} is available on the{" "}
+            <strong style={{ color: "#f9fafb" }}>{TIER_LABELS[minTier]}</strong> plan
+            ({TIER_PRICE[minTier]}) and above. Your current plan is{" "}
+            <strong style={{ color: "#f9fafb" }}>{TIER_LABELS[tier]}</strong>.
+          </p>
+          <a
+            href="/pricing"
+            onClick={() =>
+              track("upgrade_click", {
+                feature: featureName ?? null,
+                min_tier: minTier,
+                current_tier: tier,
+                mode: "page",
+              })
+            }
+            style={{
+              marginTop: 8,
+              padding: "12px 28px",
+              background: "#7c3aed",
+              color: "white",
+              borderRadius: 10,
+              fontWeight: 700,
+              fontSize: 15,
+              textDecoration: "none",
+            }}
+          >
+            Upgrade to {TIER_LABELS[minTier]} — {TIER_PRICE[minTier]}
+          </a>
+        </>
+      )}
       <a
         href="/wovenrainbowsbyerin"
         style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}

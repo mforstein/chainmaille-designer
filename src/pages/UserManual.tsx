@@ -3,6 +3,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { DraggableCompassNav, DraggablePill } from "../App";
 import { IconHamburger } from "../components/icons/ToolIcons";
+import { HIDE_STORE_PURCHASE_UI } from "../lib/native";
 
 // ─── section index ─────────────────────────────────────────────────────────────
 
@@ -276,15 +277,31 @@ export default function UserManual() {
           ]} />
 
           <Sub title="Tiers & gating" />
-          <Bullets items={[
-            <><strong>Free</strong> ($0): Home, Basic, Ring Chart, Atlas browse, Tuner preview.</>,
-            <><strong>Maker</strong> ($2.99/mo): 3D Designer (no image overlay), Tuner save, Atlas apply, CSV export.</>,
-            <><strong>Crafter</strong> ($5.99/mo): 3D Designer full (spline, flood fill, image overlay), Basic full, PDF BOM, Physical Pattern PDF.</>,
-            <><strong>Studio</strong> ($9.99/mo): Freeform (full), Freeform image overlay & transfer, shape/spline fill, check available colors at any supplier website, GLB/STL export, Commercial-use license.</>,
-          ]} />
-          <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.6, marginTop: 4 }}>
-            Subscribe via <a href="/pricing" style={{ color: "#a78bfa" }}>chainmaildesigner.com/pricing</a>. Mobile apps (iOS/Android) ship with Free tier features only — subscribe from the website to unlock paid tools.
-          </p>
+          {HIDE_STORE_PURCHASE_UI ? (
+            <>
+              <Bullets items={[
+                <><strong>Free</strong>: Home, Basic, Ring Chart, Atlas browse, Tuner preview.</>,
+                <><strong>Maker</strong>: 3D Designer (no image overlay), Tuner save, Atlas apply, CSV export.</>,
+                <><strong>Crafter</strong>: 3D Designer full (spline, flood fill, image overlay), Basic full, PDF BOM, Physical Pattern PDF.</>,
+                <><strong>Studio</strong>: Freeform (full), Freeform image overlay & transfer, shape/spline fill, check available colors at any supplier website, GLB/STL export, Commercial-use license.</>,
+              ]} />
+              <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.6, marginTop: 4 }}>
+                Paid tiers unlock automatically when you sign in with a subscribed account.
+              </p>
+            </>
+          ) : (
+            <>
+              <Bullets items={[
+                <><strong>Free</strong> ($0): Home, Basic, Ring Chart, Atlas browse, Tuner preview.</>,
+                <><strong>Maker</strong> ($2.99/mo): 3D Designer (no image overlay), Tuner save, Atlas apply, CSV export.</>,
+                <><strong>Crafter</strong> ($5.99/mo): 3D Designer full (spline, flood fill, image overlay), Basic full, PDF BOM, Physical Pattern PDF.</>,
+                <><strong>Studio</strong> ($9.99/mo): Freeform (full), Freeform image overlay & transfer, shape/spline fill, check available colors at any supplier website, GLB/STL export, Commercial-use license.</>,
+              ]} />
+              <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.6, marginTop: 4 }}>
+                Subscribe via <a href="/pricing" style={{ color: "#a78bfa" }}>chainmaildesigner.com/pricing</a>. Mobile apps (iOS/Android) ship with Free tier features only — subscribe from the website to unlock paid tools.
+              </p>
+            </>
+          )}
 
           <Sub title="Persistence" />
           <Bullets items={[

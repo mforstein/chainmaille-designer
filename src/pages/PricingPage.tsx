@@ -1,6 +1,7 @@
 // src/pages/PricingPage.tsx
 import React, { useEffect, useState } from "react";
-import { useSearchParams, useNavigate, Link } from "react-router-dom";
+import { useSearchParams, useNavigate, Link, Navigate } from "react-router-dom";
+import { HIDE_STORE_PURCHASE_UI } from "../lib/native";
 import { useAuth, tierAtLeast } from "../auth/AuthContext";
 import type { Tier } from "../auth/AuthContext";
 
@@ -441,6 +442,12 @@ export default function PricingPage() {
       setBusy(false);
     }
   };
+
+  // Native app builds may not show pricing or external-purchase steering
+  // (App Store / Play anti-steering). Subscriptions are web-only; bounce home.
+  if (HIDE_STORE_PURCHASE_UI) {
+    return <Navigate to="/wovenrainbowsbyerin" replace />;
+  }
 
   return (
     <div style={page}>

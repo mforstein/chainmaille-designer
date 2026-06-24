@@ -1,5 +1,6 @@
 import React from "react";
 import { Link } from "react-router-dom";
+import { HIDE_STORE_PURCHASE_UI } from "../lib/native";
 
 const section: React.CSSProperties = { marginBottom: 20 };
 const h3: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: "#f9fafb", marginBottom: 6 };
@@ -9,7 +10,7 @@ export default function CommercialLicensePage() {
   return (
     <div style={{ minHeight: "100vh", background: "#0b0f1a", color: "#e5e7eb", fontFamily: "system-ui, sans-serif", padding: "48px 24px 80px" }}>
       <div style={{ maxWidth: 760, margin: "0 auto" }}>
-        <Link to="/pricing" style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}>← Back to Pricing</Link>
+        <Link to={HIDE_STORE_PURCHASE_UI ? "/wovenrainbowsbyerin" : "/pricing"} style={{ color: "#6b7280", fontSize: 13, textDecoration: "none" }}>← Back</Link>
 
         <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "24px 0 4px" }}>
           <h1 style={{ fontSize: 28, fontWeight: 900, color: "#f9fafb", margin: 0 }}>Commercial Use License</h1>
@@ -78,27 +79,29 @@ export default function CommercialLicensePage() {
           </p>
         </div>
 
-        <div style={section}>
-          <h3 style={h3}>Upgrade to Studio</h3>
-          <p style={{ ...p, marginBottom: 12 }}>
-            Ready to sell your work commercially?
-          </p>
-          <Link
-            to="/pricing"
-            style={{
-              display: "inline-block",
-              padding: "10px 24px",
-              background: "#b45309",
-              color: "#fff",
-              borderRadius: 10,
-              fontWeight: 700,
-              fontSize: 14,
-              textDecoration: "none",
-            }}
-          >
-            View Studio Plan — $9.99/mo
-          </Link>
-        </div>
+        {!HIDE_STORE_PURCHASE_UI && (
+          <div style={section}>
+            <h3 style={h3}>Upgrade to Studio</h3>
+            <p style={{ ...p, marginBottom: 12 }}>
+              Ready to sell your work commercially?
+            </p>
+            <Link
+              to="/pricing"
+              style={{
+                display: "inline-block",
+                padding: "10px 24px",
+                background: "#b45309",
+                color: "#fff",
+                borderRadius: 10,
+                fontWeight: 700,
+                fontSize: 14,
+                textDecoration: "none",
+              }}
+            >
+              View Studio Plan — $9.99/mo
+            </Link>
+          </div>
+        )}
 
         <div style={section}>
           <h3 style={h3}>Questions</h3>

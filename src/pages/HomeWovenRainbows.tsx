@@ -10,6 +10,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { HIDE_STORE_PURCHASE_UI } from "../lib/native";
 
 const TIER_BADGE_COLOR: Record<string, string> = {
   free: "#6b7280",
@@ -177,23 +178,25 @@ const HomeWovenRainbows: React.FC = () => {
             Plan
           </h3>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
+            {!HIDE_STORE_PURCHASE_UI && (
+              <button
+                onClick={() => navigate("/pricing")}
+                style={{
+                  background: "#0f172a",
+                  color: "#a78bfa",
+                  border: "1px solid #334155",
+                  borderRadius: 8,
+                  padding: "7px 14px",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  fontWeight: 700,
+                }}
+              >
+                💲 Pricing
+              </button>
+            )}
             <button
-              onClick={() => navigate("/pricing")}
-              style={{
-                background: "#0f172a",
-                color: "#a78bfa",
-                border: "1px solid #334155",
-                borderRadius: 8,
-                padding: "7px 14px",
-                cursor: "pointer",
-                fontSize: 13,
-                fontWeight: 700,
-              }}
-            >
-              💲 Pricing
-            </button>
-            <button
-              onClick={() => navigate("/pricing")}
+              onClick={() => { if (!HIDE_STORE_PURCHASE_UI) navigate("/pricing"); }}
               title="Your current plan"
               style={{
                 background: TIER_BADGE_COLOR[displayPlan] ?? "#0f172a",

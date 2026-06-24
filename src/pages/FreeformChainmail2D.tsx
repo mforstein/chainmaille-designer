@@ -10,6 +10,7 @@ import React, {
   useCallback,
 } from "react";
 import { useNavigate } from "react-router-dom";
+import { HIDE_STORE_PURCHASE_UI } from "../lib/native";
 import * as THREE from "three";
 import SplineSandbox from "../splineSandbox/SplineSandbox";
 import RingRenderer from "../components/RingRenderer";
@@ -6746,7 +6747,7 @@ const derived = useMemo(() => {
                 active={showImageOverlay}
                 onClick={() => {
                   if (isStudioTier) setShowImageOverlay((v) => !v);
-                  else window.location.href = "/auth?mode=upgrade";
+                  else if (!HIDE_STORE_PURCHASE_UI) window.location.href = "/auth?mode=upgrade";
                 }}
                 title={isStudioTier ? "Image overlay (apply to rings)" : "Image Overlay (Studio)"}
                 style={{ opacity: isStudioTier ? 1 : 0.45, position: "relative" }}
@@ -8014,11 +8015,13 @@ const derived = useMemo(() => {
           display: "flex", alignItems: "center", justifyContent: "center", gap: 12,
         }}>
           <span>👁 Preview mode — default design from Woven Rainbows by Erin</span>
-          <a href="/auth?mode=upgrade" style={{
-            background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)",
-            borderRadius: 6, padding: "3px 10px", color: "white",
-            textDecoration: "none", fontSize: 12, fontWeight: 700,
-          }}>Upgrade to Studio →</a>
+          {!HIDE_STORE_PURCHASE_UI && (
+            <a href="/auth?mode=upgrade" style={{
+              background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)",
+              borderRadius: 6, padding: "3px 10px", color: "white",
+              textDecoration: "none", fontSize: 12, fontWeight: 700,
+            }}>Upgrade to Studio →</a>
+          )}
         </div>
       )}
 

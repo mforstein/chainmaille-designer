@@ -108,6 +108,7 @@ import ChainmailWeaveAtlas from "./pages/ChainmailWeaveAtlas";
 import PasswordGate from "./pages/PasswordGate";
 import AuthPage from "./pages/AuthPage";
 import PricingPage from "./pages/PricingPage";
+import { HIDE_STORE_PURCHASE_UI } from "./lib/native";
 import EulaPage from "./pages/EulaPage";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import CommercialLicensePage from "./pages/CommercialLicensePage";
@@ -2057,7 +2058,7 @@ const doClearPaint = () => {
                 {!isPaid && <span style={{ color: "#64748b" }}> (max 20×20)</span>}
               </div>
               <EdgeArrows onResize={resizeEdge} />
-              {!isPaid && (
+              {!isPaid && !HIDE_STORE_PURCHASE_UI && (
                 <button
                   onClick={() => navigate("/pricing")}
                   style={{
@@ -2113,7 +2114,7 @@ const doClearPaint = () => {
         e.stopPropagation();
         e.preventDefault();
         if (canUseOverlay) setShowOverlayPanel((v) => !v);
-        else window.location.href = "/auth?mode=upgrade";
+        else if (!HIDE_STORE_PURCHASE_UI) window.location.href = "/auth?mode=upgrade";
       }}
       style={{ opacity: canUseOverlay ? 1 : 0.45, position: "relative" }}
     >
@@ -2824,12 +2825,14 @@ function WorkspaceHome() {
             Workspace Navigator
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <Link
-              to="/pricing"
-              style={{ fontSize: 12, color: "#a78bfa", textDecoration: "none", fontWeight: 600 }}
-            >
-              Pricing
-            </Link>
+            {!HIDE_STORE_PURCHASE_UI && (
+              <Link
+                to="/pricing"
+                style={{ fontSize: 12, color: "#a78bfa", textDecoration: "none", fontWeight: 600 }}
+              >
+                Pricing
+              </Link>
+            )}
             <span style={{
               background: TIER_BADGE_COLOR[tier] ?? "#6b7280",
               color: "white",
