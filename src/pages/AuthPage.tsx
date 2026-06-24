@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate, useSearchParams, useLocation, Navigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
+import { HIDE_STORE_PURCHASE_UI } from "../lib/native";
 
 type Mode = "signin" | "signup" | "forgot" | "reset" | "upgrade";
 
@@ -277,11 +278,13 @@ export default function AuthPage() {
           </form>
         )}
 
-        <div style={{ textAlign: "center", marginTop: 20 }}>
-          <a href="/auth?mode=upgrade" style={{ color: "#6b7280", fontSize: 12, textDecoration: "none" }}>
-            View plans & pricing
-          </a>
-        </div>
+        {!HIDE_STORE_PURCHASE_UI && (
+          <div style={{ textAlign: "center", marginTop: 20 }}>
+            <a href="/auth?mode=upgrade" style={{ color: "#6b7280", fontSize: 12, textDecoration: "none" }}>
+              View plans & pricing
+            </a>
+          </div>
+        )}
       </div>
     </div>
   );
