@@ -2058,6 +2058,38 @@ const doClearPaint = () => {
                 {!isPaid && <span style={{ color: "#64748b" }}> (max 20×20)</span>}
               </div>
               <EdgeArrows onResize={resizeEdge} />
+              {isPaid && (
+                <select
+                  aria-label="Grid size preset"
+                  value={
+                    params.cols === params.rows &&
+                    [50, 80, 100, 160].includes(params.cols)
+                      ? String(params.cols)
+                      : ""
+                  }
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (!n) return;
+                    const { rows, cols } = clampAndPersist("designer", n, n);
+                    setParams((prev) => ({ ...prev, rows, cols }));
+                  }}
+                  style={{
+                    padding: "6px 8px",
+                    borderRadius: 8,
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    background: "#0f172a",
+                    color: "#e5e7eb",
+                    fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="">Preset size…</option>
+                  <option value="50">50 × 50</option>
+                  <option value="80">80 × 80</option>
+                  <option value="100">100 × 100</option>
+                  <option value="160">160 × 160</option>
+                </select>
+              )}
               {!isPaid && !HIDE_STORE_PURCHASE_UI && (
                 <button
                   onClick={() => navigate("/pricing")}
@@ -2439,6 +2471,50 @@ const doClearPaint = () => {
                   {mat.hex === "transparent" ? "×" : ""}
                 </div>
               ))}
+
+              {/* Anodized — full custom color picker (any color) */}
+              {(() => {
+                const matHexes = MATERIALS.map((m) => m.hex);
+                const isAnodized = !matHexes.includes(params.ringColor);
+                return (
+                  <label
+                    title="Anodized — choose any color"
+                    style={{
+                      position: "relative",
+                      width: 32,
+                      height: 32,
+                      borderRadius: 6,
+                      background: isAnodized
+                        ? params.ringColor
+                        : "conic-gradient(from 0deg, red, orange, yellow, lime, cyan, blue, magenta, red)",
+                      border: isAnodized ? "2px solid white" : "1px solid #444",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <input
+                      type="color"
+                      value={isAnodized ? params.ringColor : "#ff3b30"}
+                      onChange={(e) =>
+                        setParams((prev) => ({ ...prev, ringColor: e.target.value }))
+                      }
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        width: "100%",
+                        height: "100%",
+                        opacity: 0,
+                        cursor: "pointer",
+                        border: "none",
+                        padding: 0,
+                      }}
+                    />
+                  </label>
+                );
+              })()}
             </div>
 
             {/* Supplier color browser toggle */}
