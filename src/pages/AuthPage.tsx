@@ -222,8 +222,8 @@ export default function AuthPage() {
         {/* Sign In */}
         {mode === "signin" && (
           <form onSubmit={handleSignIn} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <input type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} style={fieldStyle} />
-            <input type="password" required placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} style={fieldStyle} />
+            <input type="email" required placeholder="Email" inputMode="email" autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} defaultValue={email} onChange={(e) => setEmail(e.target.value)} style={fieldStyle} />
+            <input type="password" required placeholder="Password" autoComplete="current-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} defaultValue={password} onChange={(e) => setPassword(e.target.value)} style={fieldStyle} />
             <button type="submit" disabled={busy} style={{ ...btnPrimary, opacity: busy ? 0.6 : 1 }}>
               {busy ? "Signing in…" : "Sign In"}
             </button>
@@ -236,9 +236,9 @@ export default function AuthPage() {
         {/* Sign Up */}
         {mode === "signup" && (
           <form onSubmit={handleSignUp} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <input type="email" required placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} style={fieldStyle} />
-            <input type="password" required placeholder="Password (8+ chars)" value={password} onChange={(e) => setPassword(e.target.value)} style={fieldStyle} />
-            <input type="password" required placeholder="Confirm password" value={confirm} onChange={(e) => setConfirm(e.target.value)} style={fieldStyle} />
+            <input type="email" required placeholder="Email" inputMode="email" autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} defaultValue={email} onChange={(e) => setEmail(e.target.value)} style={fieldStyle} />
+            <input type="password" required placeholder="Password (8+ chars)" autoComplete="new-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} defaultValue={password} onChange={(e) => setPassword(e.target.value)} style={fieldStyle} />
+            <input type="password" required placeholder="Confirm password" autoComplete="new-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} defaultValue={confirm} onChange={(e) => setConfirm(e.target.value)} style={fieldStyle} />
             <button type="submit" disabled={busy} style={{ ...btnPrimary, opacity: busy ? 0.6 : 1 }}>
               {busy ? "Creating account…" : "Create Account"}
             </button>
@@ -251,7 +251,7 @@ export default function AuthPage() {
         {/* Forgot */}
         {mode === "forgot" && (
           <form onSubmit={handleForgot} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <input type="email" required placeholder="Your email" value={email} onChange={(e) => setEmail(e.target.value)} style={fieldStyle} />
+            <input type="email" required placeholder="Your email" inputMode="email" autoComplete="email" autoCapitalize="none" autoCorrect="off" spellCheck={false} defaultValue={email} onChange={(e) => setEmail(e.target.value)} style={fieldStyle} />
             <button type="submit" disabled={busy} style={{ ...btnPrimary, opacity: busy ? 0.6 : 1 }}>
               {busy ? "Sending…" : "Send Reset Email"}
             </button>
@@ -267,8 +267,8 @@ export default function AuthPage() {
             <p style={{ color: "#9ca3af", fontSize: 13, margin: 0, textAlign: "center" }}>
               {user ? <>Signed in as <strong style={{ color: "#e5e7eb" }}>{user.email}</strong> via reset link.</> : "Loading your reset session…"}
             </p>
-            <input type="password" required placeholder="New password (8+ chars)" value={password} onChange={(e) => setPassword(e.target.value)} style={fieldStyle} minLength={8} autoFocus />
-            <input type="password" required placeholder="Confirm new password" value={confirm} onChange={(e) => setConfirm(e.target.value)} style={fieldStyle} minLength={8} />
+            <input type="password" required placeholder="New password (8+ chars)" autoComplete="new-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} defaultValue={password} onChange={(e) => setPassword(e.target.value)} style={fieldStyle} minLength={8} autoFocus />
+            <input type="password" required placeholder="Confirm new password" autoComplete="new-password" autoCapitalize="none" autoCorrect="off" spellCheck={false} defaultValue={confirm} onChange={(e) => setConfirm(e.target.value)} style={fieldStyle} minLength={8} />
             <button type="submit" disabled={busy || !user} style={{ ...btnPrimary, opacity: (busy || !user) ? 0.6 : 1 }}>
               {busy ? "Saving…" : "Set New Password"}
             </button>
