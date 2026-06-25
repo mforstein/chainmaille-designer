@@ -150,6 +150,10 @@ type Props = {
   onShapeDragUpdate?: (
     sel: { x0: number; y0: number; x1: number; y1: number } | null,
   ) => void;
+  // Flood-fill (paint bucket): when true, a tap calls onFloodFill(row, col)
+  // instead of painting a single cell; the parent fills the connected region.
+  fillMode?: boolean;
+  onFloodFill?: (row: number, col: number) => void;
   // Keys (formatted as "row-col" or "row,col" — both formats are accepted) of
   // scales/rings that should be visually highlighted as "selected". Selected
   // scales render with a bright outline + glow so the user can see which one
@@ -445,6 +449,8 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       shapeTool,
       onShapeFill,
       onShapeDragUpdate,
+      fillMode,
+      onFloodFill,
       overlay,
       externalViewState,
       initialPaintMode = true,
@@ -530,6 +536,12 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
     // Shape-fill tool (Designer): drag defines the shape in world coords.
     const shapeToolRef = useRef(shapeTool);
     const onShapeFillRef = useRef(onShapeFill);
+    const fillModeRef = useRef(fillMode);
+    const onFloodFillRef = useRef(onFloodFill);
+    // Guards flood-fill to fire once per pointer gesture (tap), not per move.
+    const didFloodRef = useRef(false);
+    useEffect(() => { fillModeRef.current = fillMode; }, [fillMode]);
+    useEffect(() => { onFloodFillRef.current = onFloodFill; }, [onFloodFill]);
     const onShapeDragUpdateRef = useRef(onShapeDragUpdate);
     const shapeDragRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
     // Parallel CLIENT-space drag for the ghost preview.
@@ -789,6 +801,15 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
       const row = mesh.userData.row as number;
       const col = mesh.userData.col as number;
       if (row == null || col == null) return;
+
+      // Flood-fill bucket: one fill per gesture, delegated to the parent.
+      if (fillModeRef.current && onFloodFillRef.current) {
+        if (!didFloodRef.current) {
+          didFloodRef.current = true;
+          onFloodFillRef.current(row, col);
+        }
+        return;
+      }
 
       const key = `${row},${col}`;
 
@@ -1192,6 +1213,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
 
         isPaintingGestureRef.current = true;
         lastKeyRef.current = null;
+        didFloodRef.current = false;
 
         // prevent iOS gesture interference
         try {
@@ -1293,6 +1315,7 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
 
         isPaintingGestureRef.current = true;
         lastKeyRef.current = null;
+        didFloodRef.current = false;
 
         const t = e.touches[0];
         e.preventDefault();

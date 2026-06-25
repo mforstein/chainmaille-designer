@@ -30,6 +30,15 @@ function pointInPoly(x: number, y: number, poly: Point[]) {
   return inside;
 }
 
+function rotatePoint(p: Point, cx: number, cy: number, a: number): Point {
+  if (!a) return p;
+  const s = Math.sin(a);
+  const c = Math.cos(a);
+  const dx = p.x - cx;
+  const dy = p.y - cy;
+  return { x: cx + dx * c - dy * s, y: cy + dx * s + dy * c };
+}
+
 function regularPolygon(cx: number, cy: number, r: number, sides: number, rotationRad = -Math.PI / 2) {
   const out: Point[] = [];
   for (let i = 0; i < sides; i++) {
@@ -85,8 +94,10 @@ export function computeShapeCells(args: {
   sel: SelectionDrag;
   logicalToRowColApprox: (x: number, y: number) => RowCol;
   rcToLogical: (row: number, col: number) => { x: number; y: number };
+  /** Rotation of the shape about its center, in radians (default 0). */
+  angleRad?: number;
 }): RowCol[] {
-  const { tool, sel, logicalToRowColApprox, rcToLogical } = args;
+  const { tool, sel, logicalToRowColApprox, rcToLogical, angleRad = 0 } = args;
 
   const cx = sel.lx0;
   const cy = sel.ly0;
@@ -100,11 +111,31 @@ export function computeShapeCells(args: {
   let minLY: number;
   let maxLY: number;
 
+  // For a rotated square we test against a polygon (4 rotated corners). For the
+  // axis-aligned case we keep the fast min/max bounds test.
+  let squarePoly: Point[] | null = null;
+
   if (tool === "square") {
-    minLX = Math.min(sel.lx0, sel.lx1);
-    maxLX = Math.max(sel.lx0, sel.lx1);
-    minLY = Math.min(sel.ly0, sel.ly1);
-    maxLY = Math.max(sel.ly0, sel.ly1);
+    const sx0 = Math.min(sel.lx0, sel.lx1);
+    const sx1 = Math.max(sel.lx0, sel.lx1);
+    const sy0 = Math.min(sel.ly0, sel.ly1);
+    const sy1 = Math.max(sel.ly0, sel.ly1);
+    if (angleRad) {
+      const sccx = (sx0 + sx1) / 2;
+      const sccy = (sy0 + sy1) / 2;
+      squarePoly = [
+        { x: sx0, y: sy0 },
+        { x: sx1, y: sy0 },
+        { x: sx1, y: sy1 },
+        { x: sx0, y: sy1 },
+      ].map((p) => rotatePoint(p, sccx, sccy, angleRad));
+      minLX = Math.min(...squarePoly.map((p) => p.x));
+      maxLX = Math.max(...squarePoly.map((p) => p.x));
+      minLY = Math.min(...squarePoly.map((p) => p.y));
+      maxLY = Math.max(...squarePoly.map((p) => p.y));
+    } else {
+      minLX = sx0; maxLX = sx1; minLY = sy0; maxLY = sy1;
+    }
   } else {
     minLX = cx - r;
     maxLX = cx + r;
@@ -129,6 +160,7 @@ export function computeShapeCells(args: {
   if (tool === "oct") poly = regularPolygon(cx, cy, r, 8, Math.PI / 8); // match preview
   if (tool === "tri") poly = regularPolygon(cx, cy, r, 3, -Math.PI / 2); // match preview
   if (tool === "heart") poly = heartBezierPolygon(cx, cy, r);
+  if (poly && angleRad) poly = poly.map((p) => rotatePoint(p, cx, cy, angleRad));
 
   for (let row = minRow; row <= maxRow; row++) {
     for (let col = minCol; col <= maxCol; col++) {
@@ -137,7 +169,9 @@ export function computeShapeCells(args: {
       let ok = false;
 
       if (tool === "square") {
-        ok = p.x >= minLX && p.x <= maxLX && p.y >= minLY && p.y <= maxLY;
+        ok = squarePoly
+          ? pointInPoly(p.x, p.y, squarePoly)
+          : p.x >= minLX && p.x <= maxLX && p.y >= minLY && p.y <= maxLY;
       } else if (tool === "circle") {
         const ddx = p.x - cx;
         const ddy = p.y - cy;
@@ -155,28 +189,44 @@ export function computeShapeCells(args: {
 
 /** The outline polygon of a shape for the given drag, in the same coordinate
  *  frame as `sel`. Used to draw the live "ghost" preview while dragging. */
-export function shapeOutline(tool: ShapeTool, sel: SelectionDrag): { x: number; y: number }[] {
+export function shapeOutline(
+  tool: ShapeTool,
+  sel: SelectionDrag,
+  angleRad = 0,
+): { x: number; y: number }[] {
   const cx = sel.lx0;
   const cy = sel.ly0;
   const dx = sel.lx1 - sel.lx0;
   const dy = sel.ly1 - sel.ly0;
   const r = Math.sqrt(dx * dx + dy * dy);
+
+  let pts: Point[] = [];
+  let pivot: Point = { x: cx, y: cy };
+
   if (tool === "square") {
     const minX = Math.min(sel.lx0, sel.lx1);
     const maxX = Math.max(sel.lx0, sel.lx1);
     const minY = Math.min(sel.ly0, sel.ly1);
     const maxY = Math.max(sel.ly0, sel.ly1);
-    return [
+    pts = [
       { x: minX, y: minY },
       { x: maxX, y: minY },
       { x: maxX, y: maxY },
       { x: minX, y: maxY },
     ];
+    pivot = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+  } else if (tool === "circle") {
+    pts = regularPolygon(cx, cy, r, 48);
+  } else if (tool === "hex") {
+    pts = regularPolygon(cx, cy, r, 6, Math.PI / 6);
+  } else if (tool === "oct") {
+    pts = regularPolygon(cx, cy, r, 8, Math.PI / 8);
+  } else if (tool === "tri") {
+    pts = regularPolygon(cx, cy, r, 3, -Math.PI / 2);
+  } else if (tool === "heart") {
+    pts = heartBezierPolygon(cx, cy, r);
   }
-  if (tool === "circle") return regularPolygon(cx, cy, r, 48);
-  if (tool === "hex") return regularPolygon(cx, cy, r, 6, Math.PI / 6);
-  if (tool === "oct") return regularPolygon(cx, cy, r, 8, Math.PI / 8);
-  if (tool === "tri") return regularPolygon(cx, cy, r, 3, -Math.PI / 2);
-  if (tool === "heart") return heartBezierPolygon(cx, cy, r);
-  return [];
+
+  if (angleRad) return pts.map((p) => rotatePoint(p, pivot.x, pivot.y, angleRad));
+  return pts;
 }

@@ -213,6 +213,8 @@ type Props = {
   shapeTool?: string | null;
   onShapeFill?: (tool: string, sel: { x0: number; y0: number; x1: number; y1: number }) => void;
   onShapeDragUpdate?: (sel: { x0: number; y0: number; x1: number; y1: number } | null) => void;
+  fillMode?: boolean;
+  onFloodFill?: (row: number, col: number) => void;
   overlay?: OverlayState | null;
   externalViewState?: ExternalViewState;
   initialPaintMode?: boolean;
@@ -253,6 +255,8 @@ const RingRendererInstanced = forwardRef<RingRendererHandle, Props>(
       shapeTool,
       onShapeFill,
       onShapeDragUpdate,
+      fillMode,
+      onFloodFill,
       overlay,
       externalViewState,
       initialPaintMode = true,
@@ -404,6 +408,11 @@ if (calibrationProfileRef.current == null) {
     // Shape-fill tool (same behavior as the non-instanced renderer).
     const shapeToolRef = useRef(shapeTool);
     const onShapeFillRef = useRef(onShapeFill);
+    const fillModeRef = useRef(fillMode);
+    const onFloodFillRef = useRef(onFloodFill);
+    const didFloodRef = useRef(false);
+    useEffect(() => { fillModeRef.current = fillMode; }, [fillMode]);
+    useEffect(() => { onFloodFillRef.current = onFloodFill; }, [onFloodFill]);
     const onShapeDragUpdateRef = useRef(onShapeDragUpdate);
     const shapeDragRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
     const shapeClientRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
@@ -840,6 +849,17 @@ const applyPaintAll = useCallback(() => {
 
       const applyPaintToRingKey = (ringKey: string) => {
         if (!ringKey) return;
+
+        // Flood-fill bucket: one fill per gesture, delegated to the parent.
+        if (fillModeRef.current && onFloodFillRef.current) {
+          if (!didFloodRef.current) {
+            didFloodRef.current = true;
+            const [r, c] = ringKey.split(",").map(Number);
+            if (Number.isFinite(r) && Number.isFinite(c)) onFloodFillRef.current(r, c);
+          }
+          return;
+        }
+
         if (lastPaintKeyRef.current === ringKey) return;
         lastPaintKeyRef.current = ringKey;
 
@@ -878,6 +898,7 @@ const applyPaintAll = useCallback(() => {
 
         isPainting = true;
         lastPaintKeyRef.current = "";
+        didFloodRef.current = false;
 
         try {
           (renderer.domElement as any).setPointerCapture?.(e.pointerId);

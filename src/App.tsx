@@ -109,6 +109,7 @@ import PasswordGate from "./pages/PasswordGate";
 import AuthPage from "./pages/AuthPage";
 import PricingPage from "./pages/PricingPage";
 import { HIDE_STORE_PURCHASE_UI } from "./lib/native";
+import { buildColorSnapMap } from "./lib/quantizeColors";
 import EulaPage from "./pages/EulaPage";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import CommercialLicensePage from "./pages/CommercialLicensePage";
@@ -958,6 +959,8 @@ function ChainmailDesigner() {
   // added). null = normal paint.
   const [shapeTool, setShapeTool] = useState<ShapeToolId | null>(null);
   const [shapePanelOpen, setShapePanelOpen] = useState(false);
+  // Rotation (radians) applied to the shape-fill region + its ghost preview.
+  const [shapeAngle, setShapeAngle] = useState(0);
   // Live shape drag rect in screen coords → drives the blue ghost preview.
   const [shapeDragScreen, setShapeDragScreen] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   // When true, the next shape drag transfers the IMAGE OVERLAY into the shape
@@ -972,8 +975,11 @@ function ChainmailDesigner() {
   // Interactive tool state
   const [paintMode, setPaintMode] = useState(true);
   const [eraseMode, setEraseMode] = useState(false);
+  const [fillMode, setFillMode] = useState(false);
   const [rotationLocked, setRotationLocked] = useState(true);
   const [activeColor, setActiveColor] = useState("#8F00FF");
+  // Color-limit (k-means) target — reduce the design's distinct ring colors.
+  const [colorLimit, setColorLimit] = useState(8);
   const [activeMenu, setActiveMenu] = useState<"camera" | "controls" | null>(
     null,
   );
@@ -1129,6 +1135,50 @@ function ChainmailDesigner() {
   });
 
   const [paint, setPaint] = useState<PaintMap>(() => new Map());
+
+  // Limit the number of distinct ring colors in the design via k-means.
+  // Useful after an image-overlay transfer leaves hundreds of near-dup colors.
+  const applyColorLimit = useCallback(() => {
+    const hexes: string[] = [];
+    paint.forEach((v) => { if (v) hexes.push(v); });
+    if (hexes.length === 0) return;
+    const snap = buildColorSnapMap(hexes, colorLimit);
+    const next: PaintMap = new Map();
+    paint.forEach((v, k) => next.set(k, v ? (snap.get(v) ?? v) : v));
+    setPaint(next);
+    pushPaintHistory(next);
+  }, [paint, colorLimit, pushPaintHistory]);
+
+  // Flood-fill (paint bucket): from the tapped cell, fill the connected region
+  // of same-colored rings (4-neighbor) with the active color. Called by the
+  // renderer when fillMode is on.
+  const handleFloodFill = useCallback(
+    (row: number, col: number) => {
+      const rows = params.rows;
+      const cols = params.cols;
+      if (row < 0 || col < 0 || row >= rows || col >= cols) return;
+      const base = params.ringColor;
+      const target = paint.get(`${row},${col}`) ?? base; // effective color of tapped cell
+      const replacement = eraseMode ? null : activeColor;
+      const next: PaintMap = new Map(paint);
+      const seen = new Set<string>();
+      const stack: [number, number][] = [[row, col]];
+      while (stack.length) {
+        const [r, c] = stack.pop()!;
+        if (r < 0 || c < 0 || r >= rows || c >= cols) continue;
+        const k = `${r},${c}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const eff = next.get(k) ?? base;
+        if (eff !== target) continue;
+        next.set(k, replacement);
+        stack.push([r + 1, c], [r - 1, c], [r, c + 1], [r, c - 1]);
+      }
+      setPaint(next);
+      pushPaintHistory(next);
+    },
+    [paint, params.rows, params.cols, params.ringColor, activeColor, eraseMode, pushPaintHistory],
+  );
 
   // persist params & paint updates
   useEffect(() => {
@@ -1808,6 +1858,7 @@ const doClearPaint = () => {
         sel: { lx0: worldSel.x0, ly0: -worldSel.y0, lx1: worldSel.x1, ly1: -worldSel.y1 },
         logicalToRowColApprox,
         rcToLogical,
+        angleRad: shapeAngle,
       });
       if (!cells.length) return;
       const inBounds = cells.filter(
@@ -1832,7 +1883,7 @@ const doClearPaint = () => {
         return next;
       });
     },
-    [params.centerSpacing, params.rows, params.cols, effectiveColor, overlayShapeMode, overlayState],
+    [params.centerSpacing, params.rows, params.cols, effectiveColor, overlayShapeMode, overlayState, shapeAngle],
   );
 
   // --- render ---
@@ -1864,6 +1915,8 @@ const doClearPaint = () => {
           shapeTool={shapeTool}
           onShapeFill={onShapeFill}
           onShapeDragUpdate={setShapeDragScreen}
+          fillMode={fillMode}
+          onFloodFill={handleFloodFill}
         />
       </div>
 
@@ -1872,7 +1925,7 @@ const doClearPaint = () => {
         const pts = shapeOutline(shapeTool, {
           lx0: shapeDragScreen.x0, ly0: shapeDragScreen.y0,
           lx1: shapeDragScreen.x1, ly1: shapeDragScreen.y1,
-        });
+        }, shapeAngle);
         if (pts.length < 2) return null;
         const d = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ") + " Z";
         return (
@@ -1883,6 +1936,46 @@ const doClearPaint = () => {
           </svg>
         );
       })()}
+
+      {/* Rotate the shape-fill region (and its blue ghost) — shows while a shape
+          tool is selected. Each tap rotates 15°; long-press style reset via the
+          badge. */}
+      {shapeTool && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: "calc(96px + env(safe-area-inset-bottom))",
+            right: 16,
+            zIndex: 50,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          <button
+            onClick={(e) => { e.stopPropagation(); setShapeAngle((a) => a + Math.PI / 12); }}
+            onDoubleClick={(e) => { e.stopPropagation(); setShapeAngle(0); }}
+            title="Rotate fill shape 15° (double-tap to reset)"
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 999,
+              border: "1px solid rgba(255,255,255,0.15)",
+              background: "rgba(17,24,39,0.95)",
+              color: "#fff",
+              fontSize: 22,
+              cursor: "pointer",
+              boxShadow: "0 6px 18px rgba(0,0,0,0.45)",
+            }}
+          >
+            ⟳
+          </button>
+          <span style={{ fontSize: 10, color: "#cbd5e1", background: "rgba(0,0,0,0.4)", padding: "1px 6px", borderRadius: 6 }}>
+            {Math.round(((shapeAngle * 180) / Math.PI) % 360)}°
+          </span>
+        </div>
+      )}
 
       {/* Free-trial countdown banner (free tier only, while the trial is live) */}
       {trial.onTrial && !trial.expired && (
@@ -1986,6 +2079,28 @@ const doClearPaint = () => {
             }}
           >
             {eraseMode ? <IconEraser size={18} /> : "🎨"}
+          </ToolBtn>
+
+          {/* Fill bucket — tap an area to flood-fill the connected same-color region */}
+          <ToolBtn
+            title={fillMode ? "Fill bucket ON — tap an area to flood-fill" : "Fill bucket (tap to flood-fill an area)"}
+            active={fillMode}
+            onClick={(e) => {
+              e.stopPropagation();
+              const next = !fillMode;
+              setFillMode(next);
+              if (next) {
+                setEraseMode(false);
+                setPaintMode(true);
+                setTimeout(() => {
+                  rendererRef.current?.setPaintMode?.(true);
+                  rendererRef.current?.setEraseMode?.(false);
+                  rendererRef.current?.setPanEnabled?.(false);
+                }, 0);
+              }
+            }}
+          >
+            🪣
           </ToolBtn>
 
           <ToolBtn
@@ -2406,6 +2521,54 @@ const doClearPaint = () => {
                 calibration in place (progress bar only), then auto-saves +
                 applies. No page or dialog. */}
             <AutoCalibrateButton from="designer" />
+
+            {/* Limit colors — k-means quantize the design's distinct ring
+                colors down to N (2 = black & white). Handy after an image
+                overlay transfer leaves hundreds of near-duplicate colors. */}
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 4,
+                width: "100%",
+                marginTop: 4,
+                paddingTop: 6,
+                borderTop: "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              <div style={{ fontSize: 10, color: "#cbd5e1", textAlign: "center" }}>
+                Limit colors: <strong>{colorLimit}</strong>
+              </div>
+              <input
+                type="range"
+                min={2}
+                max={64}
+                step={1}
+                value={colorLimit}
+                onChange={(e) => setColorLimit(Number(e.target.value))}
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{ width: "100%", cursor: "pointer" }}
+              />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  applyColorLimit();
+                }}
+                style={{
+                  padding: "4px 8px",
+                  borderRadius: 7,
+                  border: "1px solid rgba(255,255,255,0.12)",
+                  background: "rgba(124,58,237,0.55)",
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                Limit to {colorLimit}
+              </button>
+            </div>
           </div>
         </DraggablePill>
       )}
