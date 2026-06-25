@@ -8,6 +8,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import AndroidBackButton from "./AndroidBackButton";
 import { AuthProvider } from "./auth/AuthContext";
+import { PaywallProvider } from "./components/NativePaywall";
 import { clampPersistedDims } from "./utils/limits";
 // ------------------------------------------------------
 // Global Styles
@@ -26,8 +27,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>
-        <AndroidBackButton />
-        <App />
+        <PaywallProvider>
+          <AndroidBackButton />
+          <App />
+        </PaywallProvider>
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>,

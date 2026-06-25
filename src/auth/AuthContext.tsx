@@ -8,6 +8,7 @@ import React, {
 import type { User, Session } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
 import { track, flush } from "../lib/analytics";
+import { initIAP, currentTier as iapCurrentTier, iapAvailable } from "../lib/iap";
 
 // ─── Tier hierarchy ───────────────────────────────────────────────────────────
 export type Tier = "free" | "maker" | "crafter" | "studio";
@@ -125,6 +126,8 @@ interface AuthContextValue {
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
+  /** Re-read the native IAP entitlement (call after a purchase/restore). */
+  refreshIapTier: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -134,7 +137,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [tier, setTier] = useState<Tier>(() => devOverrideTier() ?? legacyTier() ?? "free");
+  // Tier unlocked via native In-App Purchase (RevenueCat entitlement). On web
+  // this stays "free" and has no effect; on native the effective tier is the
+  // stronger of the Supabase tier and this one.
+  const [iapTier, setIapTier] = useState<Tier>("free");
   const [loading, setLoading] = useState(true);
+
+  const refreshIapTier = useCallback(async () => {
+    if (!iapAvailable()) return;
+    try {
+      setIapTier(await iapCurrentTier());
+    } catch { /* offline / not configured — ignore */ }
+  }, []);
+
+  // Native only: configure RevenueCat for the signed-in user and read their
+  // entitlement. Re-runs when the account changes.
+  useEffect(() => {
+    if (!iapAvailable()) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await initIAP(user?.id ?? null);
+        const t = await iapCurrentTier();
+        if (!cancelled) setIapTier(t);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.id]);
 
   function tierFromUser(u: User | null): Tier {
     // Dev override beats all other tier sources (URL param + localStorage).
@@ -235,6 +264,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(DEV_TIER_KEY);
     try { sessionStorage.removeItem(DEV_TIER_KEY); } catch { /* ignore */ }
     setTier("free");
+    setIapTier("free");
   }, []);
 
   const resetPassword = useCallback(
@@ -257,9 +287,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
+  // Effective tier = the stronger of the account tier and any native IAP tier.
+  const effectiveTier: Tier =
+    TIER_RANK[iapTier] > TIER_RANK[tier] ? iapTier : tier;
+
   return (
     <AuthContext.Provider
-      value={{ user, session, tier, loading, signIn, signUp, signOut, resetPassword, updatePassword }}
+      value={{ user, session, tier: effectiveTier, loading, signIn, signUp, signOut, resetPassword, updatePassword, refreshIapTier }}
     >
       {children}
     </AuthContext.Provider>
