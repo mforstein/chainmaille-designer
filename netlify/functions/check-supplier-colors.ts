@@ -229,6 +229,29 @@ const COLOR_NAME_HEX_TABLE: Array<{
   { re: /\bgold[-\s]?filled\b/i,                              hex: "#d4af37", label: "Gold Filled" },
 ];
 
+// Bare color names — used ONLY when the page is clearly an anodized line
+// (most supplier catalogs list colors as plain variant names like "Blue" /
+// "Red" in dropdowns, not as "Anodized Blue"). Gated on the page mentioning
+// "anodized" so we don't pick up random marketing copy. Mirrors the anodized
+// hexes above.
+const BARE_ANODIZED_COLORS: Array<{ re: RegExp; hex: string; label: string }> = [
+  { re: /\bblack\b/i,                          hex: "#1a1a1a", label: "Anodized Black" },
+  { re: /\b(?:royal\s+|sky\s+|ice\s+)?blue\b/i, hex: "#1d4ed8", label: "Anodized Blue" },
+  { re: /\b(?:red|crimson|scarlet)\b/i,        hex: "#dc2626", label: "Anodized Red" },
+  { re: /\b(?:green|emerald)\b/i,              hex: "#16a34a", label: "Anodized Green" },
+  { re: /\b(?:gold|yellow)\b/i,                hex: "#facc15", label: "Anodized Gold" },
+  { re: /\b(?:purple|violet)\b/i,              hex: "#7c3aed", label: "Anodized Purple" },
+  { re: /\b(?:pink|magenta|fuchsia)\b/i,       hex: "#ec4899", label: "Anodized Pink" },
+  { re: /\borange\b/i,                         hex: "#f97316", label: "Anodized Orange" },
+  { re: /\b(?:turquoise|teal|aqua|cyan)\b/i,   hex: "#0ea5e9", label: "Anodized Turquoise" },
+  { re: /\blime\b/i,                           hex: "#84cc16", label: "Anodized Lime" },
+  { re: /\bchampagne\b/i,                      hex: "#e5d4a8", label: "Anodized Champagne" },
+  { re: /\b(?:burgundy|wine|maroon)\b/i,       hex: "#7f1d1d", label: "Anodized Burgundy" },
+  { re: /\bseafoam\b/i,                        hex: "#5eead4", label: "Anodized Seafoam" },
+  { re: /\bbrown\b/i,                          hex: "#92400e", label: "Anodized Brown" },
+  { re: /\bgun\s?metal\b/i,                    hex: "#2a2e35", label: "Gunmetal" },
+];
+
 function findColorWords(text: string): Array<{ hex: string; label: string; source?: "ring"|"scale"|"both"; nearText?: string }> {
   const hits: Array<{ hex: string; label: string; source?: "ring"|"scale"|"both"; nearText?: string }> = [];
   const seen = new Set<string>();
@@ -364,11 +387,25 @@ function extractSwatches(html: string): ScrapedSwatch[] {
   const existingHexes = new Set(final.map((s) => s.colorHex.toLowerCase()));
   for (const hit of nameHits) {
     if (existingHexes.has(hit.hex.toLowerCase())) continue;
+    existingHexes.add(hit.hex.toLowerCase());
     final.push({
       colorHex: hit.hex,
       colorName: hit.label,
       source: hit.source,
     });
+  }
+
+  // Bare-color fallback for anodized catalogs: when the page sells anodized
+  // rings but lists colors as plain variant names ("Blue", "Red", …), the
+  // strict "Anodized <color>" regexes above miss them. Pick those up here.
+  if (/\banodized\b/i.test(textOnly)) {
+    for (const c of BARE_ANODIZED_COLORS) {
+      if (existingHexes.has(c.hex.toLowerCase())) continue;
+      if (c.re.test(textOnly)) {
+        existingHexes.add(c.hex.toLowerCase());
+        final.push({ colorHex: c.hex, colorName: c.label, source: "ring" });
+      }
+    }
   }
 
   return final;

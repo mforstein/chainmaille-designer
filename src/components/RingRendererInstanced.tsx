@@ -766,10 +766,13 @@ const applyPaintAll = useCallback(() => {
 
         if (locked) {
           controls.enableRotate = false;
-          controls.enablePan = panAllowed && !painting;
+          // Desktop: left mouse paints (pointer listener), right mouse pans.
+          // Disabling LEFT in OrbitControls keeps left-drag as pure paint and
+          // lets right-drag pan even mid-paint, no mode toggle needed.
+          controls.enablePan = panAllowed;
 
           controls.mouseButtons = {
-            LEFT: THREE.MOUSE.PAN,
+            LEFT: null as any, // disabled — left-drag is reserved for painting
             MIDDLE: THREE.MOUSE.DOLLY,
             RIGHT: THREE.MOUSE.PAN,
           };

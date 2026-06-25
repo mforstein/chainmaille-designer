@@ -1132,10 +1132,14 @@ const RingRendererNonInstanced = forwardRef<RingRendererHandle, Props>(
 
         if (locked) {
           controls.enableRotate = false;
-          controls.enablePan = panAllowed && !painting;
+          // Desktop: left mouse is reserved for PAINTING (handled by the pointer
+          // listener), right mouse PANS. Disabling LEFT in OrbitControls means a
+          // left-drag never pans the view, and right-drag always pans — even mid
+          // paint — so pan stays available without a mode toggle.
+          controls.enablePan = panAllowed;
 
           controls.mouseButtons = {
-            LEFT: THREE.MOUSE.PAN,
+            LEFT: null as any, // disabled — left-drag is reserved for painting
             MIDDLE: THREE.MOUSE.DOLLY,
             RIGHT: THREE.MOUSE.PAN,
           };

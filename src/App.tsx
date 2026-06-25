@@ -2264,7 +2264,10 @@ const doClearPaint = () => {
           setShapeTool(null);
           setShapePanelOpen(false);
         } else {
-          setShapePanelOpen((v) => !v);
+          // Default to Square and make it immediately usable (like the paint
+          // tool); the panel opens so they can switch shape / rotate.
+          setShapeTool("square");
+          setShapePanelOpen(true);
         }
       }}
     >
