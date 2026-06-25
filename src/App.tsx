@@ -1158,7 +1158,32 @@ function ChainmailDesigner() {
       const cols = params.cols;
       if (row < 0 || col < 0 || row >= rows || col >= cols) return;
       const base = params.ringColor;
-      const target = paint.get(`${row},${col}`) ?? base; // effective color of tapped cell
+
+      // Color match uses a small tolerance: rings that LOOK the same often have
+      // slightly different hexes (image-overlay sampling, anti-aliased edges,
+      // hex case), and exact equality would refuse to fill them. ~48 euclidean.
+      const TOL2 = 48 * 48;
+      const toRgb = (h: string | null | undefined): [number, number, number] | null => {
+        const hex = h ?? base;
+        if (!/^#[0-9a-fA-F]{6}$/.test(hex)) return null;
+        return [
+          parseInt(hex.slice(1, 3), 16),
+          parseInt(hex.slice(3, 5), 16),
+          parseInt(hex.slice(5, 7), 16),
+        ];
+      };
+      const targetHex = paint.get(`${row},${col}`) ?? base;
+      const targetRgb = toRgb(targetHex);
+      const matches = (k: string) => {
+        const eff = next.get(k) ?? base;
+        const rgb = toRgb(eff);
+        if (!rgb || !targetRgb) return eff === targetHex; // non-hex (e.g. transparent)
+        const dr = rgb[0] - targetRgb[0];
+        const dg = rgb[1] - targetRgb[1];
+        const db = rgb[2] - targetRgb[2];
+        return dr * dr + dg * dg + db * db <= TOL2;
+      };
+
       const replacement = eraseMode ? null : activeColor;
       const next: PaintMap = new Map(paint);
       const seen = new Set<string>();
@@ -1169,8 +1194,7 @@ function ChainmailDesigner() {
         const k = `${r},${c}`;
         if (seen.has(k)) continue;
         seen.add(k);
-        const eff = next.get(k) ?? base;
-        if (eff !== target) continue;
+        if (!matches(k)) continue;
         next.set(k, replacement);
         stack.push([r + 1, c], [r - 1, c], [r, c + 1], [r, c - 1]);
       }
@@ -1936,46 +1960,6 @@ const doClearPaint = () => {
           </svg>
         );
       })()}
-
-      {/* Rotate the shape-fill region (and its blue ghost) — shows while a shape
-          tool is selected. Each tap rotates 15°; long-press style reset via the
-          badge. */}
-      {shapeTool && (
-        <div
-          style={{
-            position: "fixed",
-            bottom: "calc(96px + env(safe-area-inset-bottom))",
-            right: 16,
-            zIndex: 50,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 4,
-          }}
-        >
-          <button
-            onClick={(e) => { e.stopPropagation(); setShapeAngle((a) => a + Math.PI / 12); }}
-            onDoubleClick={(e) => { e.stopPropagation(); setShapeAngle(0); }}
-            title="Rotate fill shape 15° (double-tap to reset)"
-            style={{
-              width: 48,
-              height: 48,
-              borderRadius: 999,
-              border: "1px solid rgba(255,255,255,0.15)",
-              background: "rgba(17,24,39,0.95)",
-              color: "#fff",
-              fontSize: 22,
-              cursor: "pointer",
-              boxShadow: "0 6px 18px rgba(0,0,0,0.45)",
-            }}
-          >
-            ⟳
-          </button>
-          <span style={{ fontSize: 10, color: "#cbd5e1", background: "rgba(0,0,0,0.4)", padding: "1px 6px", borderRadius: 6 }}>
-            {Math.round(((shapeAngle * 180) / Math.PI) % 360)}°
-          </span>
-        </div>
-      )}
 
       {/* Free-trial countdown banner (free tier only, while the trial is live) */}
       {trial.onTrial && !trial.expired && (
@@ -2771,9 +2755,12 @@ const doClearPaint = () => {
         active={shapeTool ?? "square"}
         onClose={() => setShapePanelOpen(false)}
         onPick={(t) => {
+          // Keep the panel open so the rotate control stays available while drawing.
           setShapeTool(t);
-          setShapePanelOpen(false);
         }}
+        angleDeg={Math.round(((shapeAngle * 180) / Math.PI) % 360)}
+        onRotate={() => setShapeAngle((a) => a + Math.PI / 12)}
+        onResetAngle={() => setShapeAngle(0)}
       />
 
       {/* === Image Overlay Panel === */}

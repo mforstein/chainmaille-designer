@@ -1341,6 +1341,13 @@ useEffect(() => {
 
   applyPaintDiff();
 }, [paint, applyPaintDiff, applyPaintAll]);
+
+// Recolor unpainted/base rings immediately when the Base Material (ringColor)
+// changes — previously this only took effect after a geometry rebuild.
+useEffect(() => {
+  applyPaintAll();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [params.ringColor]);
     // ------------------------------------------------------------
     // Overlay sampler + apply overlay to rings (feature preserved)
     // ------------------------------------------------------------

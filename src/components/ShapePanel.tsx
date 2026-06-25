@@ -14,8 +14,11 @@ export default function ShapePanel(props: {
   onClose: () => void;
   active: ShapeTool;
   onPick: (t: ShapeTool) => void;
+  angleDeg?: number;
+  onRotate?: () => void;
+  onResetAngle?: () => void;
 }) {
-  const { open, onClose, active, onPick } = props;
+  const { open, onClose, active, onPick, angleDeg = 0, onRotate, onResetAngle } = props;
   if (!open) return null;
 
   const btn: React.CSSProperties = {
@@ -124,6 +127,22 @@ export default function ShapePanel(props: {
         {Item("heart", "♥")}
         {Item("tri", "◺")}
       </div>
+
+      {/* Rotation — rotates the fill region + its blue ghost preview */}
+      {onRotate && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}>
+          <button
+            type="button"
+            style={btn}
+            onClick={onRotate}
+            onDoubleClick={onResetAngle}
+            title="Rotate 15° (double-tap to reset)"
+          >
+            ⟳
+          </button>
+          <span style={{ color: "#e5e7eb", fontSize: 12 }}>Rotate: {angleDeg}°</span>
+        </div>
+      )}
 
       <div style={hint}>
         Drag on canvas to fill the shape.
