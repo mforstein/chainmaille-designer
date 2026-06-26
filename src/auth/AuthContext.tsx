@@ -150,19 +150,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch { /* offline / not configured — ignore */ }
   }, []);
 
-  // Native only: configure RevenueCat for the signed-in user and read their
-  // entitlement. Re-runs when the account changes.
+  // Native only: associate RevenueCat purchases with the signed-in account so
+  // the revenuecat-webhook can sync the tier to Supabase. We do NOT passively
+  // read the device entitlement into the tier here — that would let any
+  // signed-in (even Free) account inherit a subscription that lives on the
+  // device. The account tier (synced by the webhook) is authoritative; iapTier
+  // is only set on an explicit purchase/restore (refreshIapTier) for an instant
+  // unlock before the webhook lands.
   useEffect(() => {
     if (!iapAvailable()) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        await initIAP(user?.id ?? null);
-        const t = await iapCurrentTier();
-        if (!cancelled) setIapTier(t);
-      } catch { /* ignore */ }
-    })();
-    return () => { cancelled = true; };
+    initIAP(user?.id ?? null).catch(() => { /* ignore */ });
   }, [user?.id]);
 
   function tierFromUser(u: User | null): Tier {
