@@ -11,6 +11,7 @@
 // ======================================================
 
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { iapAvailable, getPackages, purchase, restore, type IapPackage } from "../lib/iap";
 
@@ -44,6 +45,12 @@ const TIER_BLURB: Record<string, string> = {
 
 function PaywallModal({ onClose }: { onClose: () => void }) {
   const { refreshIapTier } = useAuth();
+  const navigate = useNavigate();
+  // Open a legal page (EULA / Privacy). Apple requires functional links to both
+  // inside the subscription purchase flow (Guideline 3.1.2(c)). We close the
+  // paywall and route to the in-app page so the content is always reachable,
+  // even offline (it ships in the app bundle).
+  const goLegal = (path: string) => { onClose(); navigate(path); };
   const [pkgs, setPkgs] = useState<IapPackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -146,8 +153,14 @@ function PaywallModal({ onClose }: { onClose: () => void }) {
                 <span style={{ display: "block", color: "#cbd5e1", fontSize: 11, marginTop: 2 }}>
                   {TIER_BLURB[p.tier] ?? ""}
                 </span>
+                <span style={{ display: "block", color: "#a5b4fc", fontSize: 11, marginTop: 4, fontWeight: 700 }}>
+                  Monthly subscription · auto-renews
+                </span>
               </span>
-              <span style={{ fontWeight: 800, fontSize: 15, whiteSpace: "nowrap" }}>{p.priceString}/mo</span>
+              <span style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                <span style={{ display: "block", fontWeight: 800, fontSize: 15 }}>{p.priceString}</span>
+                <span style={{ display: "block", color: "#cbd5e1", fontSize: 11 }}>per month</span>
+              </span>
             </button>
           ))}
 
@@ -163,6 +176,29 @@ function PaywallModal({ onClose }: { onClose: () => void }) {
         >
           Restore purchases
         </button>
+
+        {/* Required subscription disclosure + legal links (App Store 3.1.2(c) /
+            Play). Length + price are shown per plan above. */}
+        <p style={{ margin: "14px 0 8px", color: "#6b7280", fontSize: 11, lineHeight: 1.6 }}>
+          Payment is charged to your App Store / Google Play account at confirmation.
+          Subscriptions renew automatically for the same price and period unless canceled
+          at least 24 hours before the end of the current period. Manage or cancel anytime
+          in your account settings.
+        </p>
+        <div style={{ display: "flex", justifyContent: "center", gap: 18 }}>
+          <button
+            onClick={() => goLegal("/eula")}
+            style={{ background: "none", border: "none", color: "#94a3b8", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}
+          >
+            Terms of Use (EULA)
+          </button>
+          <button
+            onClick={() => goLegal("/privacy")}
+            style={{ background: "none", border: "none", color: "#94a3b8", fontSize: 12, cursor: "pointer", textDecoration: "underline" }}
+          >
+            Privacy Policy
+          </button>
+        </div>
       </div>
     </div>
   );
