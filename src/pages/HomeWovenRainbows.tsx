@@ -57,7 +57,10 @@ const HomeWovenRainbows: React.FC = () => {
   const stripeCustomerId = (user as any)?.user_metadata?.stripeCustomerId as
     | string
     | undefined;
-  const displayPlan = user && stripeCustomerId ? tier : "free";
+  // Show the effective tier from useAuth (already includes Stripe-web tier AND
+  // native IAP entitlement). The old check gated on a Stripe customer id, which
+  // wrongly showed "Free" for App Store / Play subscribers.
+  const displayPlan = user ? tier : "free";
 
   return (
     <div
