@@ -11,6 +11,7 @@ import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { HIDE_STORE_PURCHASE_UI } from "../lib/native";
+import { usePaywall } from "../components/NativePaywall";
 
 const TIER_BADGE_COLOR: Record<string, string> = {
   free: "#6b7280",
@@ -45,6 +46,7 @@ const sectionPanel: React.CSSProperties = {
 
 const HomeWovenRainbows: React.FC = () => {
   const navigate = useNavigate();
+  const { openPaywall, available: iapPaywall } = usePaywall();
   const { user, tier, signOut } = useAuth();
   const [showAbout, setShowAbout] = useState(false);
 
@@ -178,7 +180,11 @@ const HomeWovenRainbows: React.FC = () => {
             Plan
           </h3>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
-            {!HIDE_STORE_PURCHASE_UI && (
+            {/* Web: link to the Stripe pricing page. Native (iOS/Android with
+                IAP configured): open the in-app store paywall — compliant, no
+                external steering. Native without IAP yet (Android pre-setup):
+                no button (those users subscribe on the website). */}
+            {!HIDE_STORE_PURCHASE_UI ? (
               <button
                 onClick={() => navigate("/pricing")}
                 style={{
@@ -194,9 +200,28 @@ const HomeWovenRainbows: React.FC = () => {
               >
                 💲 Pricing
               </button>
-            )}
+            ) : iapPaywall ? (
+              <button
+                onClick={() => openPaywall()}
+                style={{
+                  background: "#7c3aed",
+                  color: "#fff",
+                  border: "1px solid #7c3aed",
+                  borderRadius: 8,
+                  padding: "7px 14px",
+                  cursor: "pointer",
+                  fontSize: 13,
+                  fontWeight: 800,
+                }}
+              >
+                ✦ Subscribe
+              </button>
+            ) : null}
             <button
-              onClick={() => { if (!HIDE_STORE_PURCHASE_UI) navigate("/pricing"); }}
+              onClick={() => {
+                if (!HIDE_STORE_PURCHASE_UI) navigate("/pricing");
+                else if (iapPaywall) openPaywall();
+              }}
               title="Your current plan"
               style={{
                 background: TIER_BADGE_COLOR[displayPlan] ?? "#0f172a",
