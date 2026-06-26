@@ -39,9 +39,7 @@ export default async (request: Request, context: { next: () => Promise<Response>
   });
 };
 
-// /privacy.html and /eula.html are intentionally public even while the site is
-// in private preview: the App Store / Play Store require functional, publicly
-// reachable links to the privacy policy and Terms of Use (EULA). These are
-// self-contained static pages (no app bundle), so exposing them does not unlock
-// the gated SPA.
-export const config = { path: "/*", excludedPath: ["/privacy.html", "/eula.html"] };
+// NOTE: path + excludedPath are declared in netlify.toml (single source of
+// truth). /privacy.html and /eula.html are excluded there so the App Store /
+// Play required policy links stay publicly reachable while the SPA stays gated.
+export const config = { path: "/*" };

@@ -15,7 +15,9 @@
 [[edge_functions]]
   path = "/*"
   function = "gate"
-  excludedPath = ["/.netlify/functions/*"]
+  # /privacy.html and /eula.html stay public (App Store / Play require reachable
+  # policy links); serverless functions stay reachable for Stripe's webhook.
+  excludedPath = ["/.netlify/functions/*", "/privacy.html", "/eula.html"]
 
 [build.environment]
   NODE_VERSION = "20"
