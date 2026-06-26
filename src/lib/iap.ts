@@ -31,7 +31,8 @@ const IOS_KEY =
   (import.meta.env.VITE_REVENUECAT_IOS_KEY as string | undefined) ||
   "appl_fAMAisyVmWHALFrzEdtJmwssSBi";
 const ANDROID_KEY =
-  (import.meta.env.VITE_REVENUECAT_ANDROID_KEY as string | undefined) || "";
+  (import.meta.env.VITE_REVENUECAT_ANDROID_KEY as string | undefined) ||
+  "goog_nsqzklQfFlsXSrWQHKOuJPsWuBh";
 
 /** Tiers ranked low→high so we can pick the strongest active entitlement. */
 const TIER_RANK: Record<string, number> = { maker: 1, crafter: 2, studio: 3 };
