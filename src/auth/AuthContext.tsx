@@ -287,9 +287,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  // Effective tier = the stronger of the account tier and any native IAP tier.
+  // Effective tier = the stronger of the account tier and any native IAP tier —
+  // but the IAP tier only counts when SIGNED IN. The device's App Store/Play
+  // subscription is tied to the Apple/Google account, not the app login, so a
+  // not-signed-in (free) session must stay capped at Free regardless of what's
+  // on the device.
   const effectiveTier: Tier =
-    TIER_RANK[iapTier] > TIER_RANK[tier] ? iapTier : tier;
+    user && TIER_RANK[iapTier] > TIER_RANK[tier] ? iapTier : tier;
 
   return (
     <AuthContext.Provider
