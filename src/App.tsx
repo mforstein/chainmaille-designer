@@ -108,7 +108,7 @@ import ChainmailWeaveAtlas from "./pages/ChainmailWeaveAtlas";
 import PasswordGate from "./pages/PasswordGate";
 import AuthPage from "./pages/AuthPage";
 import PricingPage from "./pages/PricingPage";
-import { HIDE_STORE_PURCHASE_UI } from "./lib/native";
+import { HIDE_STORE_PURCHASE_UI, IS_IOS, IS_ANDROID } from "./lib/native";
 import { buildColorSnapMap } from "./lib/quantizeColors";
 import EulaPage from "./pages/EulaPage";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
@@ -3161,10 +3161,14 @@ function WorkspaceHome() {
             gap: 12,
           }}
         >
-          <a href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer" style={homeLinkStyle}>
-            ▶️ Chainmail Studio on Google Play
-          </a>
-          {APP_STORE_URL && (
+          {/* Apple 2.3.10: the iOS binary must not reference Google Play. Hide the
+              Play link on iOS (and the App Store link on Android); web shows both. */}
+          {!IS_IOS && (
+            <a href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer" style={homeLinkStyle}>
+              ▶️ Chainmail Studio on Google Play
+            </a>
+          )}
+          {APP_STORE_URL && !IS_ANDROID && (
             <a href={APP_STORE_URL} target="_blank" rel="noopener noreferrer" style={homeLinkStyle}>
               🍎 Chainmail Studio on the App Store
             </a>

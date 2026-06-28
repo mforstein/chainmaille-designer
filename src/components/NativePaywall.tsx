@@ -14,6 +14,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { iapAvailable, getPackages, purchase, restore, type IapPackage } from "../lib/iap";
+import { STORE_NAME } from "../lib/native";
 
 interface PaywallCtx {
   openPaywall: () => void;
@@ -119,7 +120,7 @@ function PaywallModal({ onClose }: { onClose: () => void }) {
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#94a3b8", fontSize: 22, cursor: "pointer" }}>✕</button>
         </div>
         <p style={{ margin: "0 0 14px", color: "#9ca3af", fontSize: 13 }}>
-          Choose a plan. Billed through your {/* platform */}App Store / Google Play account; cancel anytime.
+          Choose a plan. Billed through your {STORE_NAME} account; cancel anytime.
         </p>
 
         {loading && <div style={{ padding: 24, textAlign: "center", color: "#9ca3af" }}>Loading plans…</div>}
@@ -180,7 +181,7 @@ function PaywallModal({ onClose }: { onClose: () => void }) {
         {/* Required subscription disclosure + legal links (App Store 3.1.2(c) /
             Play). Length + price are shown per plan above. */}
         <p style={{ margin: "14px 0 8px", color: "#6b7280", fontSize: 11, lineHeight: 1.6 }}>
-          Payment is charged to your App Store / Google Play account at confirmation.
+          Payment is charged to your {STORE_NAME} account at confirmation.
           Subscriptions renew automatically for the same price and period unless canceled
           at least 24 hours before the end of the current period. Manage or cancel anytime
           in your account settings.
