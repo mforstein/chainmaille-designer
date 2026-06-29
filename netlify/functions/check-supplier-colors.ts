@@ -18,6 +18,9 @@
 // message; the front end keeps the user's default palette active.
 
 export const handler = async (event: any) => {
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 204, headers: CORS, body: "" };
+  }
   if (event.httpMethod !== "POST") {
     return jsonResponse(405, { ok: false, message: "Method not allowed" });
   }
@@ -125,10 +128,20 @@ export const handler = async (event: any) => {
   });
 };
 
+// The native app (origin capacitor:// or https://localhost) calls this
+// cross-origin, and the POST+JSON request triggers a CORS preflight. "*" is safe:
+// this only reads a public URL the user typed and returns colors.
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, content-type",
+};
+
 function jsonResponse(statusCode: number, body: unknown) {
   return {
     statusCode,
     headers: {
+      ...CORS,
       "content-type": "application/json",
       "cache-control": "no-store",
     },

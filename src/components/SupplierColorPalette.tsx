@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import type { ItemType } from "../data/supplierCatalog";
+import { functionBase } from "../lib/native";
 
 // Specific-supplier tabs were removed 2026-06-01 (per Erin). The panel is now
 // a generic "check available colors at a supplier website" flow: enter any
@@ -28,6 +29,8 @@ interface Props {
   activeColor?: string;
   /** Colors already in the user's palette — shown with a checkmark */
   paletteColors?: string[];
+  /** Fired once with ALL found hexes when a search returns results (auto-add flow). */
+  onColorsFound?: (hexes: string[]) => void;
 }
 
 const ITEM_FILTERS: Array<{ value: ItemType | "all"; label: string }> = [
@@ -40,6 +43,7 @@ export default function SupplierColorPalette({
   onSelectColor,
   activeColor,
   paletteColors = [],
+  onColorsFound,
 }: Props) {
   const [url, setUrl] = useState("");
   const [typeFilter, setTypeFilter] = useState<ItemType | "all">("all");
@@ -84,7 +88,7 @@ export default function SupplierColorPalette({
     setBusy(true);
     setStatus({ kind: "idle" });
     try {
-      const res = await fetch("/.netlify/functions/check-supplier-colors", {
+      const res = await fetch(`${functionBase()}/.netlify/functions/check-supplier-colors`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ url: normalized }),
@@ -100,6 +104,8 @@ export default function SupplierColorPalette({
         setStatus({ kind: "empty", sourceUrl: normalized });
       } else {
         setStatus({ kind: "ok", swatches: data.swatches, sourceUrl: normalized });
+        // Auto-add flow: hand the whole found set to the parent at once.
+        onColorsFound?.(data.swatches.map((s) => s.colorHex));
       }
     } catch (err: any) {
       setStatus({

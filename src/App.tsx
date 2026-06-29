@@ -127,6 +127,7 @@ import { useAuth, tierAtLeast } from "./auth/AuthContext";
 import type { Tier } from "./auth/AuthContext";
 import SupplierColorPalette from "./components/SupplierColorPalette";
 import AutoCalibrateButton from "./components/AutoCalibrateButton";
+import { runAutoColorCalibration } from "./lib/autoColorCalibration";
 import ShapePanel, { ShapeTool as ShapeToolId } from "./components/ShapePanel";
 import { computeShapeCells, shapeOutline } from "./utils/shapeFill";
 import { calibrationUpdatedEventName } from "./utils/colorCalibration";
@@ -987,7 +988,24 @@ function ChainmailDesigner() {
 
   const [showMagnet, setShowMagnet] = useState(false);
   const [showMaterialPalette, setShowMaterialPalette] = useState(false);
-  const [showDesignerSupplierColors, setShowDesignerSupplierColors] = useState(false);
+  // Extra paint colors pulled in from a supplier site (appended to the universal
+  // palette). The gear menu itself reuses the existing `showGearMenu` subpanel.
+  const [extraPaletteColors, setExtraPaletteColors] = useState<string[]>([]);
+
+  // Append found supplier colors to the paint palette (dedup), then auto-calibrate.
+  const addSupplierColors = useCallback((hexes: string[]) => {
+    setExtraPaletteColors((prev) => {
+      const seen = new Set([...UNIVERSAL_COLORS, ...prev].map((c) => c.toLowerCase()));
+      const next = [...prev];
+      for (const h of hexes) {
+        const lo = h.toLowerCase();
+        if (!seen.has(lo)) { seen.add(lo); next.push(h); }
+      }
+      return next;
+    });
+    // Calibrate the (now-larger) palette so the new colors render true.
+    runAutoColorCalibration(() => {}).catch(() => { /* headless WebGL may fail on locked devices */ });
+  }, []);
   const [showCompass, setShowCompass] = useState(false);
   // Persist the image overlay (incl. its dataURL) so a refresh / "Continue"
   // doesn't wipe it. Restored from localStorage on load.
@@ -1763,12 +1781,13 @@ const doClearPaint = () => {
       version: 1,
       params,
       paint: Array.from(paint.entries()),
+      extraPaletteColors,
       metadata: {
         page: "designer",
         createdAt: Date.now(),
       },
     };
-  }, [params, paint]);
+  }, [params, paint, extraPaletteColors]);
 
   const loadDesignerProject = useCallback((data: any) => {
     if (!data || data.type !== "designer") {
@@ -1784,6 +1803,10 @@ const doClearPaint = () => {
 
     if (Array.isArray(data.paint)) {
       setPaint(new Map<string, string | null>(data.paint));
+    }
+
+    if (Array.isArray(data.extraPaletteColors)) {
+      setExtraPaletteColors(data.extraPaletteColors.filter((c: unknown) => typeof c === "string"));
     }
 
     console.log("✅ Designer project loaded");
@@ -2349,14 +2372,15 @@ const doClearPaint = () => {
 
 {/* ✅ Designer Gear Subpanel (thin, draggable) */}
 {showGearMenu && (
-  <DraggablePill id="designer-gear-menu" defaultPosition={{ x: 110, y: 520 }}>
+  <DraggablePill id="designer-gear-menu" defaultPosition={{ x: 110, y: 360 }}>
     <div
       style={{
         display: "flex",
         flexDirection: "column",
         gap: 12,
-        alignItems: "center",
-        width: 64,
+        width: 234,
+        maxHeight: "70vh",
+        overflowY: "auto",
         padding: 12,
         background: "#0b1324",
         border: "1px solid #0b1020",
@@ -2368,18 +2392,36 @@ const doClearPaint = () => {
       onTouchStart={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >
-      {/* 🧰 "Supplier & Atlas" toolbox removed for the first release (per Erin)
-          — it toggled the Atlas/supplier-driven rings strip, and the Atlas is
-          hidden until scales return. The strip + showMagnet state remain in the
-          code (just unreachable) for an easy re-add. */}
-
       {/* Save / Open */}
-      <ProjectSaveLoadButtons
-        onSave={saveDesignerProject}
-        onLoad={loadDesignerProject}
-        defaultFileName="chainmail-designer"
-      />
+      <div>
+        <div style={{ fontSize: 10, color: "#9ca3af", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+          Project
+        </div>
+        <ProjectSaveLoadButtons
+          onSave={saveDesignerProject}
+          onLoad={loadDesignerProject}
+          defaultFileName="chainmail-designer"
+        />
+      </div>
 
+      {/* Supplier color search — found colors auto-add to the paint palette
+          (above) and trigger a calibration. */}
+      <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 10 }}>
+        <SupplierColorPalette
+          activeColor={activeColor}
+          paletteColors={[...UNIVERSAL_COLORS, ...extraPaletteColors]}
+          onColorsFound={addSupplierColors}
+          onSelectColor={(hex) => setActiveColor(hex)}
+        />
+      </div>
+
+      {/* Manual re-calibrate (was the palette's "C" button) */}
+      <div style={{ borderTop: "1px solid rgba(255,255,255,0.08)", paddingTop: 10 }}>
+        <div style={{ fontSize: 10, color: "#9ca3af", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>
+          Calibrate colors
+        </div>
+        <AutoCalibrateButton from="designer" />
+      </div>
     </div>
   </DraggablePill>
 )}
@@ -2475,7 +2517,7 @@ const doClearPaint = () => {
                 gap: 5,
               }}
             >
-              {UNIVERSAL_COLORS.map((hex) => (
+              {[...UNIVERSAL_COLORS, ...extraPaletteColors].map((hex) => (
                 <div
                   key={hex}
                   onClick={(e) => {
@@ -2504,10 +2546,26 @@ const doClearPaint = () => {
               ))}
             </div>
 
-            {/* Auto color-calibration — small "C" button. Runs a headless
-                calibration in place (progress bar only), then auto-saves +
-                applies. No page or dialog. */}
-            <AutoCalibrateButton from="designer" />
+            {/* ⚙ Gear — replaces the old "C" button. Opens the gear menu
+                (Save / Open + supplier-color search + Calibrate). */}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setShowGearMenu((v) => !v); }}
+              title="Menu: save, open, supplier colors, calibrate"
+              style={{
+                alignSelf: "stretch",
+                padding: "6px 0",
+                borderRadius: 8,
+                border: "1px solid rgba(255,255,255,0.12)",
+                background: showGearMenu ? "rgba(124,58,237,0.55)" : "rgba(255,255,255,0.06)",
+                color: "#e5e7eb",
+                cursor: "pointer",
+                fontSize: 14,
+                fontWeight: 700,
+              }}
+            >
+              ⚙
+            </button>
 
             {/* Limit colors — k-means quantize the design's distinct ring
                 colors down to N (2 = black & white). Handy after an image
@@ -2667,33 +2725,8 @@ const doClearPaint = () => {
               })()}
             </div>
 
-            {/* Supplier color browser toggle */}
-            <button
-              type="button"
-              onClick={() => setShowDesignerSupplierColors((v) => !v)}
-              style={{
-                padding: "6px 10px",
-                borderRadius: 8,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: showDesignerSupplierColors ? "rgba(180,83,9,0.5)" : "rgba(255,255,255,0.06)",
-                color: "#ddd",
-                cursor: "pointer",
-                fontSize: 12,
-                fontWeight: 600,
-              }}
-            >
-              🏭 Supplier Colors
-            </button>
-
-            {showDesignerSupplierColors && (
-              <SupplierColorPalette
-                activeColor={params.ringColor}
-                onSelectColor={(hex) => {
-                  setParams((prev) => ({ ...prev, ringColor: hex }));
-                  setShowMaterialPalette(false);
-                }}
-              />
-            )}
+            {/* Supplier color search moved into the ⚙ gear menu (it now adds
+                found colors to the paint palette + calibrates). */}
           </div>
         </DraggablePill>
       )}
