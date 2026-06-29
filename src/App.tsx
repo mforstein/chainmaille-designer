@@ -1006,6 +1006,20 @@ function ChainmailDesigner() {
     // Calibrate the (now-larger) palette so the new colors render true.
     runAutoColorCalibration(() => {}).catch(() => { /* headless WebGL may fail on locked devices */ });
   }, []);
+
+  // Dismiss the ⚙ gear menu on any click outside it (capture phase so it beats
+  // the designer's stopPropagation handlers). Elements tagged data-gear-menu
+  // (the panel + the two gear buttons) are exempt.
+  useEffect(() => {
+    if (!showGearMenu) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      if (t && t.closest("[data-gear-menu]")) return;
+      setShowGearMenu(false);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [showGearMenu]);
   const [showCompass, setShowCompass] = useState(false);
   // Persist the image overlay (incl. its dataURL) so a refresh / "Continue"
   // doesn't wipe it. Restored from localStorage on load.
@@ -2357,16 +2371,18 @@ const doClearPaint = () => {
     </ToolBtn>
 
     {/* ✅ Gear opens the thin draggable tools subpanel */}
-    <ToolBtn
-      title="Tools Menu"
-      active={showGearMenu}
-      onClick={(e) => {
-        e.stopPropagation();
-        setShowGearMenu((v) => !v);
-      }}
-    >
-      ⚙️
-    </ToolBtn>
+    <span data-gear-menu="1" style={{ display: "inline-flex" }}>
+      <ToolBtn
+        title="Tools Menu"
+        active={showGearMenu}
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowGearMenu((v) => !v);
+        }}
+      >
+        ⚙️
+      </ToolBtn>
+    </span>
   </div>
 )}
 
@@ -2374,6 +2390,7 @@ const doClearPaint = () => {
 {showGearMenu && (
   <DraggablePill id="designer-gear-menu" defaultPosition={{ x: 110, y: 360 }}>
     <div
+      data-gear-menu="1"
       style={{
         display: "flex",
         flexDirection: "column",
@@ -2550,6 +2567,7 @@ const doClearPaint = () => {
                 (Save / Open + supplier-color search + Calibrate). */}
             <button
               type="button"
+              data-gear-menu="1"
               onClick={(e) => { e.stopPropagation(); setShowGearMenu((v) => !v); }}
               title="Menu: save, open, supplier colors, calibrate"
               style={{
