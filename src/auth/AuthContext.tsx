@@ -9,6 +9,7 @@ import type { User, Session } from "@supabase/supabase-js";
 import { supabase } from "./supabaseClient";
 import { track, flush } from "../lib/analytics";
 import { initIAP, currentTier as iapCurrentTier, iapAvailable } from "../lib/iap";
+import { functionBase } from "../lib/native";
 
 // ─── Tier hierarchy ───────────────────────────────────────────────────────────
 export type Tier = "free" | "maker" | "crafter" | "studio";
@@ -124,6 +125,8 @@ interface AuthContextValue {
   // project settings and the user must click an email link before signing in).
   signUp: (email: string, password: string) => Promise<{ error: string | null; needsEmailConfirm: boolean }>;
   signOut: () => Promise<void>;
+  /** Permanently delete the signed-in account + its data, then sign out. */
+  deleteAccount: () => Promise<{ error: string | null }>;
   resetPassword: (email: string) => Promise<{ error: string | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: string | null }>;
   /** Re-read the native IAP entitlement (call after a purchase/restore). */
@@ -264,6 +267,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIapTier("free");
   }, []);
 
+  const deleteAccount = useCallback(async (): Promise<{ error: string | null }> => {
+    if (!supabase) return { error: "Auth not configured" };
+    const { data } = await supabase.auth.getSession();
+    const token = data.session?.access_token;
+    if (!token) return { error: "You must be signed in to delete your account." };
+    try {
+      const res = await fetch(`${functionBase()}/.netlify/functions/delete-account`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        return { error: j.error ?? "Could not delete account. Please try again." };
+      }
+    } catch {
+      return { error: "Network error. Please try again." };
+    }
+    track("account_deleted");
+    await flush();
+    // The account is gone server-side; clear the local session + any backdoor flags.
+    await supabase.auth.signOut().catch(() => { /* already invalid — ignore */ });
+    for (const key of LEGACY_FLAG_KEYS) {
+      localStorage.removeItem(key);
+      try { sessionStorage.removeItem(key); } catch { /* ignore */ }
+    }
+    localStorage.removeItem(DEV_TIER_KEY);
+    try { sessionStorage.removeItem(DEV_TIER_KEY); } catch { /* ignore */ }
+    setTier("free");
+    setIapTier("free");
+    return { error: null };
+  }, []);
+
   const resetPassword = useCallback(
     async (email: string): Promise<{ error: string | null }> => {
       if (!supabase) return { error: "Auth not configured" };
@@ -294,7 +329,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, session, tier: effectiveTier, loading, signIn, signUp, signOut, resetPassword, updatePassword, refreshIapTier }}
+      value={{ user, session, tier: effectiveTier, loading, signIn, signUp, signOut, deleteAccount, resetPassword, updatePassword, refreshIapTier }}
     >
       {children}
     </AuthContext.Provider>

@@ -47,8 +47,20 @@ const sectionPanel: React.CSSProperties = {
 const HomeWovenRainbows: React.FC = () => {
   const navigate = useNavigate();
   const { openPaywall, available: iapPaywall } = usePaywall();
-  const { user, tier, signOut } = useAuth();
+  const { user, tier, signOut, deleteAccount } = useAuth();
   const [showAbout, setShowAbout] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
+
+  async function confirmDelete() {
+    setDeleting(true);
+    setDeleteErr(null);
+    const { error } = await deleteAccount();
+    setDeleting(false);
+    if (error) { setDeleteErr(error); return; }
+    setShowDelete(false);
+  }
 
   // Plan shown on the home page: Free unless the user is signed in AND has a
   // Stripe customer (i.e. a real paid subscription set by the Stripe webhook).
@@ -241,21 +253,38 @@ const HomeWovenRainbows: React.FC = () => {
               {displayPlan}
             </button>
             {user ? (
-              <button
-                onClick={async () => { await signOut(); }}
-                style={{
-                  background: "#0f172a",
-                  color: "#9ca3af",
-                  border: "1px solid #334155",
-                  borderRadius: 8,
-                  padding: "7px 14px",
-                  cursor: "pointer",
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
-              >
-                Sign Out
-              </button>
+              <>
+                <button
+                  onClick={async () => { await signOut(); }}
+                  style={{
+                    background: "#0f172a",
+                    color: "#9ca3af",
+                    border: "1px solid #334155",
+                    borderRadius: 8,
+                    padding: "7px 14px",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    fontWeight: 600,
+                  }}
+                >
+                  Sign Out
+                </button>
+                <button
+                  onClick={() => { setDeleteErr(null); setShowDelete(true); }}
+                  style={{
+                    background: "#0f172a",
+                    color: "#f87171",
+                    border: "1px solid #5b2330",
+                    borderRadius: 8,
+                    padding: "7px 14px",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    fontWeight: 600,
+                  }}
+                >
+                  Delete Account
+                </button>
+              </>
             ) : (
               <button
                 onClick={() => navigate("/auth")}
@@ -417,6 +446,58 @@ const HomeWovenRainbows: React.FC = () => {
               >
                 Close
               </button>
+            </div>
+          </div>
+        )}
+
+        {showDelete && (
+          <div
+            onClick={() => !deleting && setShowDelete(false)}
+            style={{
+              position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(6px)",
+              zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                background: "#0f172a", border: "1px solid rgba(148,163,184,0.25)", borderRadius: 18,
+                padding: "24px 26px calc(24px + env(safe-area-inset-bottom))", maxWidth: 420, width: "100%",
+                boxShadow: "0 24px 64px rgba(0,0,0,0.75)", color: "#e5e7eb",
+              }}
+            >
+              <div style={{ fontSize: 19, fontWeight: 800, marginBottom: 10 }}>Delete your account?</div>
+              <p style={{ fontSize: 13.5, color: "#cbd5e1", lineHeight: 1.6, margin: "0 0 12px" }}>
+                This permanently deletes your Chainmail Studio account{user?.email ? ` (${user.email})` : ""} and all
+                associated data. This <strong>cannot be undone</strong>.
+              </p>
+              <p style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.55, margin: "0 0 16px" }}>
+                Any active subscription is billed by the app store, not by us — manage or cancel it in your
+                device's Settings → account → Subscriptions.
+              </p>
+              {deleteErr && <div style={{ color: "#f87171", fontSize: 12.5, marginBottom: 12 }}>{deleteErr}</div>}
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+                <button
+                  onClick={() => setShowDelete(false)}
+                  disabled={deleting}
+                  style={{
+                    background: "rgba(148,163,184,0.12)", color: "#e5e7eb", border: "1px solid rgba(148,163,184,0.4)",
+                    borderRadius: 10, padding: "9px 18px", cursor: deleting ? "default" : "pointer", fontSize: 13.5, fontWeight: 700,
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  disabled={deleting}
+                  style={{
+                    background: "#dc2626", color: "#fff", border: "none", borderRadius: 10,
+                    padding: "9px 18px", cursor: deleting ? "default" : "pointer", fontSize: 13.5, fontWeight: 800, opacity: deleting ? 0.7 : 1,
+                  }}
+                >
+                  {deleting ? "Deleting…" : "Delete account"}
+                </button>
+              </div>
             </div>
           </div>
         )}

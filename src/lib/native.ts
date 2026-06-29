@@ -25,3 +25,14 @@ export const HIDE_STORE_PURCHASE_UI = IS_NATIVE;
 // iOS binary; Google is symmetric. Show only the CURRENT store's name in
 // subscription disclosures, and hide cross-platform store links on each native build.
 export const STORE_NAME = IS_IOS ? "App Store" : IS_ANDROID ? "Google Play" : "App Store / Google Play";
+
+// Base URL for Netlify function calls. On the web it's relative (same origin);
+// in the native app the origin is capacitor://localhost, so functions must be
+// called against the production site.
+export function functionBase(): string {
+  try {
+    const o = window.location.origin;
+    if (o.startsWith("capacitor://") || o.includes("localhost")) return "https://chainmaildesigner.com";
+  } catch { /* SSR / no window */ }
+  return "";
+}
