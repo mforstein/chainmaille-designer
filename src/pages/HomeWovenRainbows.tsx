@@ -10,7 +10,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
-import { HIDE_STORE_PURCHASE_UI } from "../lib/native";
+import { HIDE_STORE_PURCHASE_UI, STORE_NAME } from "../lib/native";
 import { usePaywall } from "../components/NativePaywall";
 
 const TIER_BADGE_COLOR: Record<string, string> = {
@@ -471,10 +471,24 @@ const HomeWovenRainbows: React.FC = () => {
                 This permanently deletes your Chainmail Studio account{user?.email ? ` (${user.email})` : ""} and all
                 associated data. This <strong>cannot be undone</strong>.
               </p>
-              <p style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.55, margin: "0 0 16px" }}>
-                Any active subscription is billed by the app store, not by us — manage or cancel it in your
-                device's Settings → account → Subscriptions.
-              </p>
+              {user && tier !== "free" ? (
+                <div style={{ background: "rgba(220,38,38,0.12)", border: "1px solid rgba(248,113,113,0.45)", borderRadius: 10, padding: "10px 12px", margin: "0 0 16px" }}>
+                  <div style={{ fontSize: 12.5, color: "#fecaca", fontWeight: 700, marginBottom: 4 }}>
+                    ⚠️ You have an active {tier} subscription
+                  </div>
+                  <p style={{ fontSize: 12, color: "#fca5a5", lineHeight: 1.55, margin: 0 }}>
+                    Deleting your account does <strong>not</strong> cancel it. Your subscription stays active
+                    until the <strong>end of the current billing period</strong>, and to stop it from renewing you
+                    must cancel it in your {STORE_NAME} account settings (Settings → Subscriptions). We cannot
+                    cancel a store subscription for you.
+                  </p>
+                </div>
+              ) : (
+                <p style={{ fontSize: 12, color: "#94a3b8", lineHeight: 1.55, margin: "0 0 16px" }}>
+                  Any active subscription is billed by the app store, not by us — manage or cancel it in your
+                  device's Settings → account → Subscriptions.
+                </p>
+              )}
               {deleteErr && <div style={{ color: "#f87171", fontSize: 12.5, marginBottom: 12 }}>{deleteErr}</div>}
               <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                 <button
