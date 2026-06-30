@@ -12,7 +12,7 @@ const SECTIONS = [
   { id: "accounts",      icon: "🔑", title: "Accounts & Pricing" },
   { id: "home",          icon: "🏠", title: "Home" },
   { id: "workspace",     icon: "🗂️", title: "Workspace" },
-  { id: "studio",        icon: "✨", title: "Freeform Studio" },
+  { id: "studio",        icon: "✨", title: "Studio (Designer)" },
   { id: "designer",      icon: "💎", title: "3D Designer" },
   { id: "chart",         icon: "📊", title: "Ring Chart" },
   // Weave Tuner + Weave Atlas hidden for first release (per Erin).
@@ -123,7 +123,7 @@ const HomeFallback = () => (
 );
 
 const StudioFallback = () => (
-  <Mock label="Freeform Studio (fallback)" height={170}>
+  <Mock label="Studio (Designer) (fallback)" height={170}>
     <div style={{ display: "flex", height: 170, background: "#111827" }}>
       <div style={{ width: 44, background: "#0f172a", borderRight: "1px solid #1e293b" }} />
       <div style={{ flex: 1 }}>
@@ -270,10 +270,10 @@ export default function UserManual() {
 
           <Sub title="Geometry" />
           <Bullets items={[
-            <>The canvas is a <strong>4-in-1 European hex grid</strong>. All renderers (Freeform, Designer, Basic) place rings on this grid. Other weaves (Box Chain, Byzantine, Persian) are configured in the Atlas but the canvas engine for them is in progress.</>,
+            <>The canvas is a <strong>4-in-1 European hex grid</strong>. All renderers (Designer, Basic) place rings on this grid. Other weaves (Box Chain, Byzantine, Persian) are configured in the Atlas but the canvas engine for them is in progress.</>,
             <>Ring positions use <code>"row-col"</code> keys (e.g. <code>"3-7"</code>). Saved-project files preserve them.</>,
             <>All distances are in mm. Inner Diameter (ID), Wire Diameter (WD), and Aspect Ratio (AR = ID ÷ WD) drive geometry. AR &lt; 3 is too tight; 3.5–5.5 is the workable range.</>,
-            <>The Tuner snapshot is the source of truth for ring geometry. It writes to <code>localStorage["freeform.tunerSnapshot.v1"]</code> and pushes live to Freeform without a reload.</>,
+            <>The Tuner snapshot is the source of truth for ring geometry. It writes to <code>localStorage["freeform.tunerSnapshot.v1"]</code> and pushes live to the Designer without a reload.</>,
           ]} />
 
           <Sub title="Tiers & gating" />
@@ -283,7 +283,7 @@ export default function UserManual() {
                 <><strong>Free</strong>: Home, Basic, Ring Chart, Atlas browse, Tuner preview.</>,
                 <><strong>Maker</strong>: 3D Designer (no image overlay), Tuner save, Atlas apply, CSV export.</>,
                 <><strong>Crafter</strong>: 3D Designer full (spline, flood fill, image overlay), Basic full, PDF BOM, Physical Pattern PDF.</>,
-                <><strong>Studio</strong>: Freeform (full), Freeform image overlay & transfer, shape/spline fill, check available colors at any supplier website, GLB/STL export, Commercial-use license.</>,
+                <><strong>Studio</strong>: Designer (full), image overlay & transfer, shape/spline fill, check available colors at any supplier website, GLB/STL export, Commercial-use license.</>,
               ]} />
               <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.6, marginTop: 4 }}>
                 Paid tiers unlock automatically when you sign in with a subscribed account.
@@ -295,7 +295,7 @@ export default function UserManual() {
                 <><strong>Free</strong> ($0): Home, Basic, Ring Chart, Atlas browse, Tuner preview.</>,
                 <><strong>Maker</strong> ($2.99/mo): 3D Designer (no image overlay), Tuner save, Atlas apply, CSV export.</>,
                 <><strong>Crafter</strong> ($5.99/mo): 3D Designer full (spline, flood fill, image overlay), Basic full, PDF BOM, Physical Pattern PDF.</>,
-                <><strong>Studio</strong> ($9.99/mo): Freeform (full), Freeform image overlay & transfer, shape/spline fill, check available colors at any supplier website, GLB/STL export, Commercial-use license.</>,
+                <><strong>Studio</strong> ($9.99/mo): Designer (full), image overlay & transfer, shape/spline fill, check available colors at any supplier website, GLB/STL export, Commercial-use license.</>,
               ]} />
               <p style={{ color: "#94a3b8", fontSize: 12, lineHeight: 1.6, marginTop: 4 }}>
                 Subscribe via <a href="/pricing" style={{ color: "#a78bfa" }}>chainmaildesigner.com/pricing</a>. Mobile apps (iOS/Android) ship with Free tier features only — subscribe from the website to unlock paid tools.
@@ -379,15 +379,15 @@ export default function UserManual() {
           <Sub title="Design tools" />
           <Feat title="🪡 Basic — Grid color planner">Free for all tiers. Quick row-and-column color-way sketching.</Feat>
           <Feat title="💎 Designer (3D Ring Grid)">Full 3D-rendered ring grid with paint, erase, flood fill, spline fill, and image overlay. Maker tier or higher.</Feat>
-          <Feat title="✨ Studio (Freeform Designer)">Free-form ring placement, image overlay with color transfer, shape + spline fill, copy/paste, full export. Studio tier.</Feat>
+          <Feat title="✨ Studio (Designer — full)">Everything in the Designer plus image overlay with color transfer, shape + spline fill, copy/paste, and full GLB/STL export. Studio tier.</Feat>
 
           <Sub title="Utilities" />
           <Feat title="📊 Ring Size Chart">Interactive AR reference. Always free, no account.</Feat>
           {/* Weave Tuner + Weave Atlas hidden for first release (per Erin). */}
         </Sec>
 
-        {/* ── FREEFORM STUDIO ─────────────────────────────────────────────── */}
-        <Sec id="studio" icon="✨" title="Freeform Studio · /freeform">
+        {/* ── STUDIO (DESIGNER) ───────────────────────────────────────────── */}
+        <Sec id="studio" icon="✨" title="Studio Tier — Full Designer · /designer">
           <UnderConstruction />
         </Sec>
 
@@ -403,7 +403,7 @@ export default function UserManual() {
           <Feat title="🎨 Paint">Click any ring to color it. Drag to paint multiple in a stroke. Paint mode locks the camera to top-down.</Feat>
           <Feat title="⌫ Erase">Resets rings to the base material color.</Feat>
           <Feat title="Flood Fill">Tap any ring to fill its contiguous same-colored region.</Feat>
-          <Feat title="〰️ Spline Fill">Identical to Freeform's spline tool.</Feat>
+          <Feat title="〰️ Spline Fill">The same spline tool used across the app.</Feat>
           <Feat title="↩️/↪️ Undo / Redo">Per-action history. <KS>Ctrl/Cmd+Z</KS>.</Feat>
           <Feat title="🧹 Clear Paint">Reverts all rings to base material.</Feat>
 
@@ -423,7 +423,7 @@ export default function UserManual() {
           <Sub title="Materials & geometry presets" />
           <Feat title="Material picker">Quick presets (aluminum, sterling, stainless, brass, copper, etc.).</Feat>
           <Feat title="🧰 Rings strip — UPDATED">
-            Open the gear (⚙️) → toolbox (🧰). The ring picker now matches Freeform's <strong>Calibrated Rings strip</strong>: each Tuner-saved ring is drawn to true proportions and color-coded by solution status (<span style={{ color: "#19c37d" }}>🟢 valid</span> · <span style={{ color: "#f59e0b" }}>🟡 rings-only</span> · <span style={{ color: "#ef4444" }}>🔴 no-solution</span>). Click a ring to apply its geometry (ID, WD, spacing, tilt) — the active ring stays highlighted. The strip is a draggable floating panel and stays open as a selection manager.
+            Open the gear (⚙️) → toolbox (🧰). The ring picker uses the <strong>Calibrated Rings strip</strong>: each Tuner-saved ring is drawn to true proportions and color-coded by solution status (<span style={{ color: "#19c37d" }}>🟢 valid</span> · <span style={{ color: "#f59e0b" }}>🟡 rings-only</span> · <span style={{ color: "#ef4444" }}>🔴 no-solution</span>). Click a ring to apply its geometry (ID, WD, spacing, tilt) — the active ring stays highlighted. The strip is a draggable floating panel and stays open as a selection manager.
           </Feat>
         </Sec>
 
@@ -511,9 +511,9 @@ export default function UserManual() {
             Worked examples for the common workflows. Each one assumes you're logged in at the required tier.
           </p>
 
-          <HowTo title="Design a 2-color bracelet from scratch in Freeform"
+          <HowTo title="Design a 2-color bracelet from scratch in the Designer"
             steps={[
-              "Go to /freeform.",
+              "Go to /designer.",
               "Click 🎨 Draw. Pick a base color from the palette.",
               <>Click ◼ Shapes → Square. Drag a 4×24 rectangle on the canvas — the rings fill in the chosen shape.</>,
               "Pick a second color from the palette.",
@@ -523,7 +523,7 @@ export default function UserManual() {
 
           <HowTo title="Transfer a photo onto a heart design"
             steps={[
-              "Open /freeform and place a heart of rings using Shapes → Heart.",
+              "Open /designer and place a heart of rings using Shapes → Heart.",
               "Click 🖼️ Image Overlay. Drag a photo into the drop zone.",
               "Adjust Scale / Pan / Rotation so the focal point of the photo aligns with the heart on the canvas.",
               "Transfer Scope: All rings. Transfer Target: Rings.",
@@ -545,7 +545,7 @@ export default function UserManual() {
 
         {/* ── SHORTCUTS ───────────────────────────────────────────────────── */}
         <Sec id="shortcuts" icon="⌨️" title="Keyboard Shortcuts & Gestures">
-          <Sub title="Universal (Freeform & Designer)" />
+          <Sub title="Universal (Designer)" />
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {[
               [<><KS>Ctrl+Z</KS> / <KS>Cmd+Z</KS></>, "Undo last action"],
@@ -559,7 +559,7 @@ export default function UserManual() {
             ))}
           </div>
 
-          <Sub title="Freeform Studio — Copy / Paste (NEW)" />
+          <Sub title="Designer — Copy / Paste (NEW)" />
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {[
               [<><KS>Cmd+C</KS> / <KS>Ctrl+C</KS></>, "Copy current (or most-recent) selection of rings — captures pre-paint state"],
